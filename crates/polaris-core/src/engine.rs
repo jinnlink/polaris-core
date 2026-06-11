@@ -3,6 +3,7 @@ use std::path::Path;
 use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
+use crate::consolidation::{run_nightly_consolidation, ConsolidationSummary};
 use crate::diagnosis::{diagnose_concept, GraphDiagnosis};
 use crate::error::{PolarisError, Result};
 use crate::fsrs::{retrievability, FsrsParams, FsrsState, Rating};
@@ -106,6 +107,10 @@ impl Engine {
 
     pub fn fused_p_known(&self, concept_id: &str, task_type: &str) -> Result<FusedPKnown> {
         fused_p_known(&self.conn, concept_id, task_type)
+    }
+
+    pub fn run_nightly_consolidation(&self) -> Result<ConsolidationSummary> {
+        run_nightly_consolidation(&self.conn)
     }
 
     pub fn init_pack(&mut self, path: impl AsRef<Path>) -> Result<()> {

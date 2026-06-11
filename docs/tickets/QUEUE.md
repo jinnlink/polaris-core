@@ -1,6 +1,6 @@
 # 票队列（单票制）
 
-状态：**P03A 已完成并提交；P03B 未认领**。任何时刻只允许 1 张票 In Progress。
+状态：**P03B 已完成，等待提交后认领下一票**。任何时刻只允许 1 张票 In Progress。
 新增票必须标注它服务主命题（验证真懂→定位模糊→针对性补缺）的哪一环。
 
 ## Phase 1 — Walking Skeleton
@@ -16,7 +16,7 @@
 ## Phase 3 — 潜因子 + 心智动力学
 
 - [x] **P03A MIRT 潜因子层**（`TICKET_P03A_MIRT_LATENT.md`）← 已实现并通过验收；服务环节：定位模糊 → 针对性补缺
-- P03B 夜间巩固 v1：残差因子分解→LLM 溯因→留出验证门+回滚（consolidation_runs）
+- [x] **P03B 夜间巩固 v1**（`TICKET_P03B_NIGHTLY_CONSOLIDATION.md`）← 已实现并通过验收；服务环节：定位模糊 → 针对性补缺
 - P03C 几何层：嵌入 + HNSW 候选检索
 - P03D 状态 HMM + 行为发射 + 离散时 hazard 放弃模型
 - P03E 知识相图视图 + 误解语法 G_u v1（前瞻预测验证）

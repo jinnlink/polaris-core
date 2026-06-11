@@ -1,5 +1,6 @@
 pub mod citation;
 pub mod config;
+pub mod consolidation;
 pub mod db;
 pub mod diagnosis;
 pub mod engine;
