@@ -63,12 +63,19 @@ pub fn grade_with_config(
             api_key,
         } => {
             let rubric = rubric_for_attempt(conn, &request.attempt_id)?;
+            let evidence_prompt = evidence_prompt_for_attempt(conn, &request.attempt_id)?;
             let mut last_error = String::new();
             for _ in 0..2 {
-                match call_openai_compatible(&request, &rubric, &base_url, &model, &api_key)
-                    .and_then(|response| {
-                        grade_with_static_response(conn, request.clone(), &response)
-                    }) {
+                match call_openai_compatible(
+                    &request,
+                    &rubric,
+                    &evidence_prompt,
+                    &base_url,
+                    &model,
+                    &api_key,
+                )
+                .and_then(|response| grade_with_static_response(conn, request.clone(), &response))
+                {
                     Ok(result) if !result.degraded => return Ok(result),
                     Ok(_) => last_error = "strict citation validation failed".to_owned(),
                     Err(error) => last_error = error.to_string(),
@@ -238,6 +245,7 @@ fn apply_grade(
 fn call_openai_compatible(
     request: &GradeRequest,
     rubric: &str,
+    evidence_prompt: &str,
     base_url: &str,
     model: &str,
     api_key: &str,
@@ -267,7 +275,7 @@ fn call_openai_compatible(
             },
             {
                 "role": "user",
-                "content": format!("Attempt id: {}\nSelf confidence: {}\nRubric:\n{}\nEvidence:\n{}", request.attempt_id, request.self_confidence, rubric, request.response_text)
+                "content": format!("Attempt id: {}\nSelf confidence: {}\nRubric:\n{}\nAllowed evidence:\n{}", request.attempt_id, request.self_confidence, rubric, evidence_prompt)
             }
         ]
     });
@@ -286,6 +294,15 @@ fn call_openai_compatible(
         .next()
         .map(|choice| choice.message.content)
         .ok_or_else(|| PolarisError::InvalidGraderResponse("empty choices".to_owned()))
+}
+
+fn evidence_prompt_for_attempt(conn: &Connection, attempt_id: &str) -> Result<String> {
+    let evidence = evidence_for_attempt(conn, attempt_id)?;
+    Ok(evidence
+        .iter()
+        .map(|item| format!("evidence_id: {}\ntext: {}", item.id, item.text))
+        .collect::<Vec<_>>()
+        .join("\n\n"))
 }
 
 fn rubric_for_attempt(conn: &Connection, attempt_id: &str) -> Result<String> {

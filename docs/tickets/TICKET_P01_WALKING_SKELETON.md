@@ -152,7 +152,7 @@ ingest 证据 → Tier 1 评分（strict-citation、异步、乐观更新）→ 
   - 补齐 DATA_MODEL “后续激活（建表即可）”表：`theta`、`theta_history`、`residual_stats`、`consolidation_runs`、`moves_effects`、`mrt_log`、`param_tuning_runs`。
   - 修正 fold/FSRS 时间语义：按 `created_at ASC, id ASC` 回放，按相邻 attempt 的真实日期计算 `elapsed_days`，`next_due_at` 存真实 UTC 04:00 ISO 时间。
   - Tier 1 grader 接入 `POLARIS_LLM_FAST_*` / `POLARIS_LLM_STRONG_*`，解析 `{score, depth, misconception_id?, citations[]}`，strict-citation 校验失败重试后降级入队；`grade-pending` 真实处理队列。
-  - `rubric.md` 随 pack 初始化写入 `meta('pack.<id>.rubric')`，真实 LLM prompt 注入 rubric。
+  - `rubric.md` 随 pack 初始化写入 `meta('pack.<id>.rubric')`，真实 LLM prompt 注入 rubric 与 allowed evidence id/text。
   - CLI `next` 记录行为事件；`submit` 自动计算 next→submit latency 与 hint_count；`status` 使用真实 R 衰减和 due 时间。
   - 补属性测试：任意序列 final 乱序到达后重放等价、同输入同输出、misconception_active 14 天窗口与后续成功清除语义。
 - 验收输出：
@@ -174,7 +174,7 @@ ingest 证据 → Tier 1 评分（strict-citation、异步、乐观更新）→ 
 
   running 37 tests
   ...
-  test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+  test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
 
   Doc-tests polaris_core
   ```
@@ -184,7 +184,7 @@ ingest 证据 → Tier 1 评分（strict-citation、异步、乐观更新）→ 
   ```text
   Checking polaris-core v0.1.0 (C:\MyProject\polaris-core\crates\polaris-core)
   Checking polaris-cli v0.1.0 (C:\MyProject\polaris-core\crates\polaris-cli)
-  Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.63s
+  Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.23s
   ```
 
   README quickstart 实跑（使用 `target\p01-followup-quickstart.db`）：
