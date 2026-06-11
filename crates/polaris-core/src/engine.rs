@@ -7,6 +7,11 @@ use crate::consolidation::{run_nightly_consolidation, ConsolidationSummary};
 use crate::diagnosis::{diagnose_concept, GraphDiagnosis};
 use crate::error::{PolarisError, Result};
 use crate::fsrs::{retrievability, FsrsParams, FsrsState, Rating};
+use crate::geometry::{
+    geometry_candidates, refresh_missing_embeddings, refresh_missing_embeddings_with_provider,
+    upsert_geometry_maps_to_candidates, EmbeddingProvider, EmbeddingRefreshSummary,
+    GeometryCandidate,
+};
 use crate::grader::{
     grade_request_for_attempt, grade_with_config, grade_with_static_response,
     heuristic_score_with_conn, GradeRequest, LlmConfig,
@@ -111,6 +116,33 @@ impl Engine {
 
     pub fn run_nightly_consolidation(&self) -> Result<ConsolidationSummary> {
         run_nightly_consolidation(&self.conn)
+    }
+
+    pub fn refresh_missing_embeddings(&self) -> Result<EmbeddingRefreshSummary> {
+        refresh_missing_embeddings(&self.conn)
+    }
+
+    pub fn refresh_missing_embeddings_with_provider<P: EmbeddingProvider>(
+        &self,
+        provider: &P,
+    ) -> Result<EmbeddingRefreshSummary> {
+        refresh_missing_embeddings_with_provider(&self.conn, provider)
+    }
+
+    pub fn geometry_candidates(
+        &self,
+        source: &str,
+        limit: usize,
+    ) -> Result<Vec<GeometryCandidate>> {
+        geometry_candidates(&self.conn, source, limit)
+    }
+
+    pub fn upsert_geometry_maps_to_candidates(
+        &mut self,
+        source: &str,
+        limit: usize,
+    ) -> Result<Vec<StructuralMapping>> {
+        upsert_geometry_maps_to_candidates(&self.conn, source, limit)
     }
 
     pub fn init_pack(&mut self, path: impl AsRef<Path>) -> Result<()> {

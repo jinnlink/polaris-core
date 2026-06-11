@@ -16,6 +16,7 @@ serde_json = "1"
 thiserror = "2"
 toml = "0.8"
 uuid = { version = "1", features = ["v4"] }
+hnsw_rs = "0.3"
 
 [dev-dependencies]
 proptest = "1"

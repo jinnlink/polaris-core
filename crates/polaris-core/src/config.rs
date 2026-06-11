@@ -262,6 +262,27 @@ pub fn default_registry() -> BTreeMap<&'static str, ParameterSpec> {
             TuningRoute::Manual,
         ),
         spec(
+            "geometry.hnsw_m",
+            "16",
+            ParameterClass::B,
+            Some("[4,64]"),
+            TuningRoute::Manual,
+        ),
+        spec(
+            "geometry.ef_search",
+            "64",
+            ParameterClass::B,
+            Some("[8,512]"),
+            TuningRoute::Manual,
+        ),
+        spec(
+            "embedding.dim",
+            "0",
+            ParameterClass::C,
+            Some("[0,8192]"),
+            TuningRoute::Fit,
+        ),
+        spec(
             "mirt.eta",
             "0.05",
             ParameterClass::B,
@@ -603,5 +624,17 @@ mod tests {
         assert_eq!(threshold.default_value, "0.40");
         assert_eq!(threshold.class, ParameterClass::A);
         assert_eq!(threshold.tuning_route, TuningRoute::Manual);
+
+        let hnsw_m = registry.get("geometry.hnsw_m").expect("geometry.hnsw_m");
+        assert_eq!(hnsw_m.default_value, "16");
+
+        let ef_search = registry
+            .get("geometry.ef_search")
+            .expect("geometry.ef_search");
+        assert_eq!(ef_search.default_value, "64");
+
+        let embedding_dim = registry.get("embedding.dim").expect("embedding.dim");
+        assert_eq!(embedding_dim.default_value, "0");
+        assert_eq!(embedding_dim.class, ParameterClass::C);
     }
 }
