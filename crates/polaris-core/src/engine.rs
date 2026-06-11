@@ -9,6 +9,7 @@ use crate::grader::{
     grade_request_for_attempt, grade_with_config, grade_with_static_response,
     heuristic_score_with_conn, GradeRequest, LlmConfig,
 };
+use crate::graph::{structural_mapping_score, upsert_maps_to_candidate, StructuralMapping};
 use crate::mastery::{fold_all, AttemptObservation, MasteryParams};
 use crate::pack::load_pack;
 use crate::scheduler::{rank_candidates_with_params, ScheduleCandidate, SchedulerParams};
@@ -68,6 +69,18 @@ impl Engine {
         &self.conn
     }
 
+    pub fn structural_mapping_score(&self, left: &str, right: &str) -> Result<StructuralMapping> {
+        structural_mapping_score(&self.conn, left, right)
+    }
+
+    pub fn upsert_maps_to_candidate(
+        &mut self,
+        left: &str,
+        right: &str,
+    ) -> Result<Option<StructuralMapping>> {
+        upsert_maps_to_candidate(&self.conn, left, right)
+    }
+
     pub fn init_pack(&mut self, path: impl AsRef<Path>) -> Result<()> {
         let pack = load_pack(path)?;
         let tx = self.conn.transaction()?;
@@ -94,9 +107,16 @@ impl Engine {
 
         for edge in &pack.edges {
             tx.execute(
-                "INSERT OR REPLACE INTO edges(id, src, dst, type, weight, provenance, evidence_ids_json, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, 'pack-seed', '[]', strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
-                params![edge.id, edge.src, edge.dst, edge.edge_type, edge.weight],
+                "INSERT OR REPLACE INTO edges(id, src, dst, type, weight, alignment_json, provenance, evidence_ids_json, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pack-seed', '[]', strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
+                params![
+                    edge.id,
+                    edge.src,
+                    edge.dst,
+                    edge.edge_type,
+                    edge.weight,
+                    edge.alignment_json
+                ],
             )?;
         }
 

@@ -255,6 +255,13 @@ pub fn default_registry() -> BTreeMap<&'static str, ParameterSpec> {
             TuningRoute::Manual,
         ),
         spec(
+            "graph.struct_threshold",
+            "0.40",
+            ParameterClass::A,
+            None,
+            TuningRoute::Manual,
+        ),
+        spec(
             "mirt.eta",
             "0.05",
             ParameterClass::B,
@@ -584,5 +591,17 @@ mod tests {
         ] {
             assert!(registry.contains_key(key), "missing {key}");
         }
+    }
+
+    #[test]
+    fn parameter_registry_contains_p02a_graph_threshold() {
+        let registry = default_registry();
+        let threshold = registry
+            .get("graph.struct_threshold")
+            .expect("graph.struct_threshold");
+
+        assert_eq!(threshold.default_value, "0.40");
+        assert_eq!(threshold.class, ParameterClass::A);
+        assert_eq!(threshold.tuning_route, TuningRoute::Manual);
     }
 }

@@ -12,6 +12,10 @@ pub enum PolarisError {
     Pack(#[from] crate::pack::PackError),
     #[error("missing attempt {0}")]
     MissingAttempt(String),
+    #[error("missing concept {0}")]
+    MissingConcept(String),
+    #[error("invalid graph node {id}: expected {expected}")]
+    InvalidGraphNode { id: String, expected: String },
     #[error("invalid grader response: {0}")]
     InvalidGraderResponse(String),
     #[error("invalid parameter {key}: {value}")]

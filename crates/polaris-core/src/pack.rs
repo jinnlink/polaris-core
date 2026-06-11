@@ -3,6 +3,8 @@ use std::path::Path;
 
 use serde::Deserialize;
 
+use crate::graph::{is_valid_concept_kind, is_valid_edge_type};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackValidationReport {
     pub concept_count: usize,
@@ -40,6 +42,10 @@ pub enum PackError {
         misconception_id: String,
         concept_id: String,
     },
+    #[error("concept {concept_id} has invalid kind {kind}")]
+    InvalidConceptKind { concept_id: String, kind: String },
+    #[error("edge {edge_id} has invalid type {edge_type}")]
+    InvalidEdgeType { edge_id: String, edge_type: String },
     #[error("pack must contain at least one move template")]
     MissingMove,
     #[error("rubric.md is empty")]
@@ -78,6 +84,7 @@ pub struct EdgeToml {
     pub edge_type: String,
     #[serde(default = "default_weight")]
     pub weight: f64,
+    pub alignment_json: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -151,7 +158,22 @@ pub fn validate_pack_path(path: impl AsRef<Path>) -> Result<PackValidationReport
         .map(|concept| concept.id.as_str())
         .collect();
 
+    for concept in &concepts.concept {
+        if !is_valid_concept_kind(&concept.kind) {
+            return Err(PackError::InvalidConceptKind {
+                concept_id: concept.id.clone(),
+                kind: concept.kind.clone(),
+            });
+        }
+    }
+
     for edge in &concepts.edge {
+        if !is_valid_edge_type(&edge.edge_type) {
+            return Err(PackError::InvalidEdgeType {
+                edge_id: edge.id.clone(),
+                edge_type: edge.edge_type.clone(),
+            });
+        }
         if !concept_ids.contains(edge.src.as_str()) {
             return Err(PackError::MissingEdgeReference {
                 edge_id: edge.id.clone(),
@@ -285,6 +307,76 @@ title = "Bad reference"
             result,
             Err(PackError::MissingConceptReference { .. })
         ));
+    }
+
+    #[test]
+    fn rejects_unknown_concept_kind() {
+        let root = temp_pack_dir("unknown-kind");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("pack.toml"), "id = \"bad\"\ntitle = \"Bad\"\n").unwrap();
+        fs::write(
+            root.join("concepts.toml"),
+            r#"
+[[concept]]
+id = "schema1"
+name = "Schema 1"
+kind = "ontology"
+seed_order = 1
+"#,
+        )
+        .unwrap();
+        fs::write(root.join("misconceptions.toml"), "misconception = []\n").unwrap();
+        fs::write(root.join("rubric.md"), "# Rubric\n").unwrap();
+        fs::write(
+            root.join("moves.toml"),
+            "[[move]]\nid = \"recall\"\ntemplate = \"Explain {concept}.\"\n",
+        )
+        .unwrap();
+
+        let result = validate_pack_path(&root);
+
+        let _ = fs::remove_dir_all(root);
+        assert!(matches!(result, Err(PackError::InvalidConceptKind { .. })));
+    }
+
+    #[test]
+    fn rejects_unknown_edge_type() {
+        let root = temp_pack_dir("unknown-edge-type");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("pack.toml"), "id = \"bad\"\ntitle = \"Bad\"\n").unwrap();
+        fs::write(
+            root.join("concepts.toml"),
+            r#"
+[[concept]]
+id = "a"
+name = "A"
+seed_order = 1
+
+[[concept]]
+id = "b"
+name = "B"
+seed_order = 2
+
+[[edge]]
+id = "bad_edge"
+src = "a"
+dst = "b"
+type = "causes"
+"#,
+        )
+        .unwrap();
+        fs::write(root.join("misconceptions.toml"), "misconception = []\n").unwrap();
+        fs::write(root.join("rubric.md"), "# Rubric\n").unwrap();
+        fs::write(
+            root.join("moves.toml"),
+            "[[move]]\nid = \"recall\"\ntemplate = \"Explain {concept}.\"\n",
+        )
+        .unwrap();
+
+        let result = validate_pack_path(&root);
+
+        let _ = fs::remove_dir_all(root);
+        assert!(matches!(result, Err(PackError::InvalidEdgeType { .. })));
     }
 
     fn temp_pack_dir(name: &str) -> std::path::PathBuf {
