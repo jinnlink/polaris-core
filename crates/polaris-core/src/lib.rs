@@ -8,6 +8,7 @@ pub mod fsrs;
 pub mod grader;
 pub mod graph;
 pub mod mastery;
+pub mod mirt;
 pub mod pack;
 pub mod scheduler;
 pub mod status;

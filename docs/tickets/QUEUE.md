@@ -1,6 +1,6 @@
 # 票队列（单票制）
 
-状态：**P02C 已完成待用户确认 commit；P03A 未认领（确认/commit 前不要认领新票）**。任何时刻只允许 1 张票 In Progress。
+状态：**P03A 已完成并提交；P03B 未认领**。任何时刻只允许 1 张票 In Progress。
 新增票必须标注它服务主命题（验证真懂→定位模糊→针对性补缺）的哪一环。
 
 ## Phase 1 — Walking Skeleton
@@ -11,11 +11,11 @@
 
 - [x] **P02A 类型化超图**（`TICKET_P02A_TYPED_HYPERGRAPH.md`）← 已实现并提交（`e876de3`）；服务环节：定位模糊
 - [x] **P02B 图谱感知诊断**（`TICKET_P02B_GRAPH_AWARE_DIAGNOSIS.md`）← 已实现并提交（`0cec9f5`）；服务环节：定位模糊 → 针对性补缺
-- [x] **P02C MCP server**（`TICKET_P02C_MCP_SERVER.md`）← 已实现并通过验收，待用户确认 commit；服务环节：验证真懂 → 定位模糊 → 针对性补缺；Tier 2 门
+- [x] **P02C MCP server**（`TICKET_P02C_MCP_SERVER.md`）← 已实现并提交（`b11fa02`）；服务环节：验证真懂 → 定位模糊 → 针对性补缺；Tier 2 门
 
 ## Phase 3 — 潜因子 + 心智动力学
 
-- P03A MIRT 潜因子层：LLM 初始化 Q、θ 在线更新、BKT-MIRT Kalman 融合
+- [x] **P03A MIRT 潜因子层**（`TICKET_P03A_MIRT_LATENT.md`）← 已实现并通过验收；服务环节：定位模糊 → 针对性补缺
 - P03B 夜间巩固 v1：残差因子分解→LLM 溯因→留出验证门+回滚（consolidation_runs）
 - P03C 几何层：嵌入 + HNSW 候选检索
 - P03D 状态 HMM + 行为发射 + 离散时 hazard 放弃模型
@@ -39,4 +39,4 @@
 
 ## Backlog（票外发现的问题记在这里，不顺手做）
 
-（空）
+- P03A 审查后续：当前 Q 降级初始化在单 Rust pack 下使用 `q[0]=1.0` 作为 deterministic one-hot track 维；多 pack/多 track 前需补 `latent.dims` 或 pack/track→维度映射，避免所有概念共用同一潜因子。

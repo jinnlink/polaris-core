@@ -12,6 +12,10 @@ use crate::grader::{
 };
 use crate::graph::{structural_mapping_score, upsert_maps_to_candidate, StructuralMapping};
 use crate::mastery::{fold_all, AttemptObservation, MasteryParams};
+use crate::mirt::{
+    ensure_theta, fused_p_known, initial_track_q_blob, latent_prediction, update_theta_for_attempt,
+    FusedPKnown, LatentPrediction,
+};
 use crate::pack::load_pack;
 use crate::scheduler::{rank_candidates_with_params, ScheduleCandidate, SchedulerParams};
 use crate::status::{status_snapshot, StatusSnapshot};
@@ -96,8 +100,17 @@ impl Engine {
         teaching_instruction(&self.conn, concept_id)
     }
 
+    pub fn latent_prediction(&self, concept_id: &str, task_type: &str) -> Result<LatentPrediction> {
+        latent_prediction(&self.conn, concept_id, task_type)
+    }
+
+    pub fn fused_p_known(&self, concept_id: &str, task_type: &str) -> Result<FusedPKnown> {
+        fused_p_known(&self.conn, concept_id, task_type)
+    }
+
     pub fn init_pack(&mut self, path: impl AsRef<Path>) -> Result<()> {
         let pack = load_pack(path)?;
+        let initial_q = initial_track_q_blob(&self.conn)?;
         let tx = self.conn.transaction()?;
 
         tx.execute(
@@ -107,15 +120,16 @@ impl Engine {
 
         for concept in &pack.concepts {
             tx.execute(
-                "INSERT OR REPLACE INTO concepts(id, pack, name, kind, seed_order, p_init, provenance, evidence_ids_json, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pack-seed', '[]', strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
+                "INSERT OR REPLACE INTO concepts(id, pack, name, kind, seed_order, p_init, q, provenance, evidence_ids_json, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, COALESCE((SELECT q FROM concepts WHERE id=?1), ?7), 'pack-seed', '[]', strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
                 params![
                     concept.id,
                     pack.id,
                     concept.name,
                     concept.kind,
                     concept.seed_order,
-                    concept.p_init
+                    concept.p_init,
+                    initial_q
                 ],
             )?;
         }
@@ -136,6 +150,7 @@ impl Engine {
         }
 
         tx.commit()?;
+        ensure_theta(&self.conn)?;
         Ok(())
     }
 
@@ -266,6 +281,7 @@ impl Engine {
             LlmConfig::from_env(),
         )?;
         if !grade.degraded {
+            update_theta_for_attempt(&self.conn, &attempt_id)?;
             self.replay_concept(&input.concept_id)?;
         }
 
@@ -304,6 +320,7 @@ impl Engine {
                 attempt_id
             ],
         )?;
+        update_theta_for_attempt(&self.conn, attempt_id)?;
         self.replay_concept(&concept_id)
     }
 
@@ -446,6 +463,7 @@ impl Engine {
                 continue;
             }
             let concept_id = self.concept_id_for_attempt(&attempt_id)?;
+            update_theta_for_attempt(&self.conn, &attempt_id)?;
             self.replay_concept(&concept_id)?;
             processed += 1;
         }
