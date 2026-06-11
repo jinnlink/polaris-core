@@ -131,7 +131,7 @@ ingest 证据 → Tier 1 评分（strict-citation、异步、乐观更新）→ 
   ownership	Ownership	R=1.000	p_known=0.200	calib_gap=0.015	phase=正常
 
   cargo run -p polaris-cli -- --db target\p01-quickstart.db grade-pending
-  pending=1
+  processed=0 pending=1
   ```
 
 - 阻塞与裁决记录：
@@ -141,12 +141,112 @@ ingest 证据 → Tier 1 评分（strict-citation、异步、乐观更新）→ 
   - 为 UUIDv4 文本 ID 增加 `uuid` 依赖；其余核心依赖按票面要求使用。
   - 回滚：删除 `Cargo.toml`、`Cargo.lock`、`crates/`、`packs/`、`docs/superpowers/plans/2026-06-11-p01-walking-skeleton.md`，并还原 `README.md`、`AGENTS.md`、`docs/AI_RUNBOOK.md`、`docs/tickets/QUEUE.md`、本票交付记录。测试 quickstart DB 位于 `target\p01-quickstart.db`，可手动删除；默认用户 DB 未被写入。
 
+## 子 agent 审查补修记录（2026-06-11）
+
+- 审查来源：
+  - Ptolemy：DATA_MODEL/DDL/公式一致性审查。
+  - Plato：CLI/engine/pack/P01 闭环审查。
+  - Pauli：测试与文档验收审查。
+- 补修变更：
+  - `meta` 参数读取改为运行时路径：BKT、FSRS、scheduler、strict-citation、provisional score、status 幻影阈值均从 DB `meta` 读取。
+  - 补齐 DATA_MODEL “后续激活（建表即可）”表：`theta`、`theta_history`、`residual_stats`、`consolidation_runs`、`moves_effects`、`mrt_log`、`param_tuning_runs`。
+  - 修正 fold/FSRS 时间语义：按 `created_at ASC, id ASC` 回放，按相邻 attempt 的真实日期计算 `elapsed_days`，`next_due_at` 存真实 UTC 04:00 ISO 时间。
+  - Tier 1 grader 接入 `POLARIS_LLM_FAST_*` / `POLARIS_LLM_STRONG_*`，解析 `{score, depth, misconception_id?, citations[]}`，strict-citation 校验失败重试后降级入队；`grade-pending` 真实处理队列。
+  - `rubric.md` 随 pack 初始化写入 `meta('pack.<id>.rubric')`，真实 LLM prompt 注入 rubric。
+  - CLI `next` 记录行为事件；`submit` 自动计算 next→submit latency 与 hint_count；`status` 使用真实 R 衰减和 due 时间。
+  - 补属性测试：任意序列 final 乱序到达后重放等价、同输入同输出、misconception_active 14 天窗口与后续成功清除语义。
+- 验收输出：
+
+  `cargo fmt --check`
+
+  ```text
+  exit 0（无 stdout）
+  ```
+
+  `cargo test --workspace`
+
+  ```text
+  running 2 tests
+  test tests::parses_required_command_set ... ok
+  test tests::behavior_observation_reads_latency_and_hint_count_since_last_next ... ok
+
+  test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+  running 37 tests
+  ...
+  test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+  Doc-tests polaris_core
+  ```
+
+  `cargo clippy --workspace --all-targets -- -D warnings`
+
+  ```text
+  Checking polaris-core v0.1.0 (C:\MyProject\polaris-core\crates\polaris-core)
+  Checking polaris-cli v0.1.0 (C:\MyProject\polaris-core\crates\polaris-cli)
+  Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.63s
+  ```
+
+  README quickstart 实跑（使用 `target\p01-followup-quickstart.db`）：
+
+  ```text
+  cargo run -p polaris-cli -- pack validate packs/rust
+  pack ok: concepts=24 prerequisites=21 misconceptions=11
+
+  cargo run -p polaris-cli -- --db target\p01-followup-quickstart.db init --pack packs/rust
+  initialized
+
+  cargo run -p polaris-cli -- --db target\p01-followup-quickstart.db next --session quickstart
+  concept: ownership
+  task_type: recall
+  prompt: 用自己的话说明 Ownership 的核心约束。
+  选它因为：当前效用最高。
+  证据是：U=0.100，按 FSRS/校准/误解/新概念门槛计算。
+  现在做什么：完成一个 recall 任务。
+
+  cargo run -p polaris-cli -- --db target\p01-followup-quickstart.db submit --concept ownership --response "Ownership controls which binding can drop a value." --confidence 4 --session quickstart
+  attempt: a233e9b8-7db5-4735-a292-f331b09a021c provisional_score=0.700 degraded=true
+
+  cargo run -p polaris-cli -- --db target\p01-followup-quickstart.db status
+  due_today=0
+  ownership	Ownership	R=1.000	p_known=0.200	calib_gap=0.015	phase=正常
+  moves	Moves	R=-	p_known=0.200	calib_gap=0.000	phase=正常
+  borrowing	Borrowing	R=-	p_known=0.200	calib_gap=0.000	phase=正常
+  mutable_borrowing	Mutable borrowing	R=-	p_known=0.200	calib_gap=0.000	phase=正常
+  lifetimes	Lifetimes	R=-	p_known=0.200	calib_gap=0.000	phase=正常
+  references	References	R=-	p_known=0.200	calib_gap=0.000	phase=正常
+  string_str	String and &str	R=-	p_known=0.200	calib_gap=0.000	phase=正常
+  vec_slices	Vec and slices	R=-	p_known=0.200	calib_gap=0.000	phase=正常
+  option_result	Result and Option	R=-	p_known=0.200	calib_gap=0.000	phase=正常
+  error_handling	Error handling	R=-	p_known=0.200	calib_gap=0.000	phase=正常
+  pattern_matching	Pattern matching	R=-	p_known=0.200	calib_gap=0.000	phase=正常
+  traits	Traits	R=-	p_known=0.200	calib_gap=0.000	phase=正常
+  generics	Generics	R=-	p_known=0.200	calib_gap=0.000	phase=正常
+  iterators	Iterators	R=-	p_known=0.200	calib_gap=0.000	phase=正常
+  closures	Closures	R=-	p_known=0.200	calib_gap=0.000	phase=正常
+  modules	Module system	R=-	p_known=0.200	calib_gap=0.000	phase=正常
+  smart_pointers	Smart pointers	R=-	p_known=0.200	calib_gap=0.000	phase=正常
+  box_rc_arc	Box, Rc, and Arc	R=-	p_known=0.200	calib_gap=0.000	phase=正常
+  interior_mutability	Interior mutability	R=-	p_known=0.200	calib_gap=0.000	phase=正常
+  drop	Drop	R=-	p_known=0.200	calib_gap=0.000	phase=正常
+  copy_clone	Copy and Clone	R=-	p_known=0.200	calib_gap=0.000	phase=正常
+  concurrency	Concurrency	R=-	p_known=0.200	calib_gap=0.000	phase=正常
+  send_sync	Send and Sync	R=-	p_known=0.200	calib_gap=0.000	phase=正常
+  async_await	Async and await	R=-	p_known=0.200	calib_gap=0.000	phase=正常
+
+  cargo run -p polaris-cli -- --db target\p01-followup-quickstart.db grade-pending
+  processed=0 pending=1
+  ```
+
+- 阻塞与裁决记录：
+  - `cargo clippy --workspace --all-targets -- -D warnings` 在普通沙箱内写 `target\debug\deps\*.rmeta` 时再次出现 Windows `拒绝访问 (os error 5)`；按沙箱规则提升权限重跑同一条命令，验收通过。
+- 回滚：
+  - 本次补修可通过回退 follow-up commit 撤销；quickstart DB 位于 `target\p01-followup-quickstart.db`，可手动删除。
+
 ## AI 交接记录（2026-06-11 开工）
 
-- 当前状态：P01 已认领，开始按 `docs/superpowers/plans/2026-06-11-p01-walking-skeleton.md` 执行。
-- 已完成：读取 `SPEC.md`、`docs/tickets/QUEUE.md`、本票、`docs/DATA_MODEL.md`，确认范围和禁区。
-- 未完成：全部实现与验收尚未开始。
-- 已跑验证：尚未跑 Cargo 验证；当前仓库还没有 Cargo workspace。
-- 未跑验证及原因：实现前无可运行 workspace。
+- 当前状态：P01 已实现并完成子 agent 审查补修；`docs/tickets/QUEUE.md` 已标为完成，P02 未认领。
+- 已完成：Rust workspace、SQLite 迁移、pack、FSRS/BKT/校准、Tier 1 grader 降级与队列、CLI 闭环、属性测试、README quickstart 与票尾验收记录。
+- 已跑验证：`cargo fmt --check`、`cargo test --workspace`、`cargo clippy --workspace --all-targets -- -D warnings` 均通过；quickstart 使用 `target\p01-followup-quickstart.db` 实跑。
 - 阻塞点：无。
-- 下一步建议：先建立 workspace 和最小失败测试，再按 TDD 推进 SQLite 迁移、FSRS、fold、grader、pack、scheduler、CLI 和集成流。
+- 下一步建议：等待本次 follow-up commit 后，再按单票制认领 P02。

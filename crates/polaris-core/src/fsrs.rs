@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-use crate::config::default_registry;
+use rusqlite::Connection;
+
+use crate::config::{default_registry, meta_f64, meta_i64, meta_json};
+use crate::error::Result;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -14,6 +17,10 @@ pub enum Rating {
 impl Rating {
     pub fn from_score(score: f64) -> Self {
         let params = FsrsParams::defaults();
+        Self::from_score_with_params(score, &params)
+    }
+
+    pub fn from_score_with_params(score: f64, params: &FsrsParams) -> Self {
         if score < params.r_again {
             Self::Again
         } else if score < params.r_hard {
@@ -82,10 +89,37 @@ impl FsrsParams {
             r_good: parse_f64(&registry, "fsrs.r_good"),
         }
     }
+
+    pub fn from_conn(conn: &Connection) -> Result<Self> {
+        let w_values: Vec<f64> = meta_json(conn, "fsrs.w")?;
+        let w: [f64; 17] =
+            w_values
+                .try_into()
+                .map_err(|_| crate::error::PolarisError::InvalidParameter {
+                    key: "fsrs.w".to_owned(),
+                    value: "expected 17 numeric entries".to_owned(),
+                })?;
+
+        Ok(Self {
+            w,
+            request_retention: meta_f64(conn, "fsrs.request_retention")?,
+            maximum_interval: meta_i64(conn, "fsrs.maximum_interval")?,
+            min_interval: meta_i64(conn, "fsrs.min_interval")?,
+            initial_stability: meta_f64(conn, "fsrs.initial_stability")?,
+            initial_difficulty: meta_f64(conn, "fsrs.initial_difficulty")?,
+            r_again: meta_f64(conn, "fsrs.r_again")?,
+            r_hard: meta_f64(conn, "fsrs.r_hard")?,
+            r_good: meta_f64(conn, "fsrs.r_good")?,
+        })
+    }
 }
 
 pub fn create_initial_state() -> FsrsState {
     let params = FsrsParams::defaults();
+    create_initial_state_with_params(&params)
+}
+
+pub fn create_initial_state_with_params(params: &FsrsParams) -> FsrsState {
     FsrsState {
         stability: params.initial_stability,
         difficulty: params.initial_difficulty,

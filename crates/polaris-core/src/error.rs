@@ -6,10 +6,16 @@ pub enum PolarisError {
     Io(#[from] std::io::Error),
     #[error("json error: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("http error: {0}")]
+    Http(#[from] reqwest::Error),
     #[error("pack error: {0}")]
     Pack(#[from] crate::pack::PackError),
     #[error("missing attempt {0}")]
     MissingAttempt(String),
+    #[error("invalid grader response: {0}")]
+    InvalidGraderResponse(String),
+    #[error("invalid parameter {key}: {value}")]
+    InvalidParameter { key: String, value: String },
 }
 
 pub type Result<T> = std::result::Result<T, PolarisError>;

@@ -1,4 +1,7 @@
-use crate::config::{default_registry, ParameterSpec};
+use rusqlite::Connection;
+
+use crate::config::{default_registry, meta_f64, ParameterSpec};
+use crate::error::Result;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScheduleCandidate {
@@ -35,6 +38,15 @@ impl SchedulerParams {
             w_mis: parse_f64(&registry, "sched.w_mis"),
             w_new: parse_f64(&registry, "sched.w_new"),
         }
+    }
+
+    pub fn from_conn(conn: &Connection) -> Result<Self> {
+        Ok(Self {
+            w_r: meta_f64(conn, "sched.w_r")?,
+            w_cal: meta_f64(conn, "sched.w_cal")?,
+            w_mis: meta_f64(conn, "sched.w_mis")?,
+            w_new: meta_f64(conn, "sched.w_new")?,
+        })
     }
 }
 
@@ -101,6 +113,15 @@ pub fn misconception_active_from_attempts(
     now_day: i64,
     window_days: i64,
 ) -> bool {
+    misconception_active_from_attempts_with_cut(attempts, now_day, window_days, 0.75)
+}
+
+pub fn misconception_active_from_attempts_with_cut(
+    attempts: &[MisconceptionAttempt],
+    now_day: i64,
+    window_days: i64,
+    success_cut: f64,
+) -> bool {
     let mut ordered = attempts.to_vec();
     ordered.sort_by(|left, right| {
         left.at_day
@@ -112,12 +133,15 @@ pub fn misconception_active_from_attempts(
         if attempt.misconception_id.is_none() {
             continue;
         }
+        if attempt.at_day > now_day {
+            continue;
+        }
         if now_day - attempt.at_day > window_days {
             continue;
         }
         let later_success = ordered[index + 1..]
             .iter()
-            .any(|later| later.final_score.unwrap_or(0.0) >= 0.75);
+            .any(|later| later.final_score.unwrap_or(0.0) >= success_cut);
         if !later_success {
             return true;
         }
@@ -270,5 +294,44 @@ mod tests {
             },
         ];
         assert!(!misconception_active_from_attempts(&corrected, 20, 14));
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn misconception_active_property_matches_window_and_later_success_semantics(
+            raw in proptest::collection::vec((0_i64..40, proptest::bool::ANY, 0_i32..100), 1..30),
+            now_day in 14_i64..50
+        ) {
+            let attempts = raw
+                .iter()
+                .enumerate()
+                .map(|(idx, (at_day, has_misconception, score))| MisconceptionAttempt {
+                    id: format!("a{idx:04}"),
+                    at_day: *at_day,
+                    final_score: Some(f64::from(*score) / 100.0),
+                    misconception_id: has_misconception.then(|| "m1".to_owned()),
+                })
+                .collect::<Vec<_>>();
+
+            let mut ordered = attempts.clone();
+            ordered.sort_by(|left, right| {
+                left.at_day
+                    .cmp(&right.at_day)
+                    .then_with(|| left.id.cmp(&right.id))
+            });
+            let expected = ordered.iter().enumerate().any(|(index, attempt)| {
+                attempt.misconception_id.is_some()
+                    && attempt.at_day <= now_day
+                    && now_day - attempt.at_day <= 14
+                    && !ordered[index + 1..]
+                        .iter()
+                        .any(|later| later.final_score.unwrap_or(0.0) >= 0.75)
+            });
+
+            proptest::prop_assert_eq!(
+                misconception_active_from_attempts(&attempts, now_day, 14),
+                expected
+            );
+        }
     }
 }

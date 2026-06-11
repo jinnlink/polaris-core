@@ -1,10 +1,12 @@
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
+use polaris_core::config::{meta_f64, meta_i64};
 use polaris_core::db::open_database;
 use polaris_core::engine::{Engine, SubmitInput};
 use polaris_core::fsrs::{retrievability, FsrsState};
 use polaris_core::pack::validate_pack_path;
+use rusqlite::OptionalExtension;
 
 #[derive(Debug, Parser)]
 #[command(name = "polaris")]
@@ -29,7 +31,10 @@ enum Commands {
         #[arg(long, default_value = "cli")]
         source: String,
     },
-    Next,
+    Next {
+        #[arg(long, default_value = "cli")]
+        session: String,
+    },
     Submit {
         #[arg(long)]
         concept: String,
@@ -105,8 +110,25 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     )?;
                     println!("ingested");
                 }
-                Commands::Next => {
+                Commands::Next { session } => {
                     if let Some(task) = engine.next_task()? {
+                        engine.conn().execute(
+                            "INSERT INTO sessions(id, started_at, context_json)
+                             VALUES (?1, strftime('%Y-%m-%dT%H:%M:%SZ','now'), '{}')
+                             ON CONFLICT(id) DO NOTHING",
+                            [&session],
+                        )?;
+                        let payload = serde_json::json!({
+                            "task_type": &task.task_type,
+                            "prompt": &task.prompt_text,
+                            "reason": &task.reason,
+                        })
+                        .to_string();
+                        engine.conn().execute(
+                            "INSERT INTO behavior_events(id, session_id, at, type, concept_id, payload_json)
+                             VALUES (lower(hex(randomblob(16))), ?1, strftime('%Y-%m-%dT%H:%M:%SZ','now'), 'next', ?2, ?3)",
+                            (&session, &task.concept_id, &payload),
+                        )?;
                         println!("concept: {}", task.concept_id);
                         println!("task_type: {}", task.task_type);
                         println!("prompt: {}", task.prompt_text);
@@ -123,6 +145,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     prompt,
                     session,
                 } => {
+                    let observation =
+                        read_behavior_observation_now(engine.conn(), &session, &concept)?;
                     let receipt = engine.submit(SubmitInput {
                         session_id: session,
                         concept_id: concept,
@@ -130,8 +154,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                         prompt_text: prompt,
                         response_text: response,
                         self_confidence: confidence,
-                        latency_ms: 0,
-                        hint_count: 0,
+                        latency_ms: observation.latency_ms,
+                        hint_count: observation.hint_count,
                     })?;
                     println!(
                         "attempt: {} provisional_score={:.3} degraded={}",
@@ -156,14 +180,21 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 }
                 Commands::Status => {
                     let due_today: i64 = engine.conn().query_row(
-                        "SELECT COUNT(*) FROM mastery_states WHERE next_due_at IS NOT NULL AND next_due_at='today'",
+                        "SELECT COUNT(*) FROM mastery_states WHERE next_due_at IS NOT NULL AND julianday(next_due_at) <= julianday('now')",
                         [],
                         |row| row.get(0),
                     )?;
                     println!("due_today={due_today}");
+                    let phantom_n = meta_i64(engine.conn(), "calib.phantom_n")?;
+                    let phantom_gap = meta_f64(engine.conn(), "calib.phantom_gap")?;
+                    let phantom_p = meta_f64(engine.conn(), "calib.phantom_p")?;
                     let mut stmt = engine.conn().prepare(
                         "SELECT c.id, c.name, COALESCE(ms.p_known, c.p_init, CAST((SELECT value FROM meta WHERE key='bkt.p_init') AS REAL)),
-                                COALESCE(ms.calib_gap, 0.0), COALESCE(ms.attempt_count, 0), ms.fsrs_json
+                                COALESCE(ms.calib_gap, 0.0), COALESCE(ms.attempt_count, 0), ms.fsrs_json,
+                                CASE
+                                    WHEN ms.last_review_at IS NULL THEN NULL
+                                    ELSE julianday('now') - julianday(ms.last_review_at)
+                                END
                          FROM concepts c
                          LEFT JOIN mastery_states ms ON ms.concept_id=c.id
                          ORDER BY c.seed_order ASC, c.id ASC",
@@ -176,16 +207,29 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                             row.get::<_, f64>(3)?,
                             row.get::<_, i64>(4)?,
                             row.get::<_, Option<String>>(5)?,
+                            row.get::<_, Option<f64>>(6)?,
                         ))
                     })?;
                     for row in rows {
-                        let (id, name, p_known, calib_gap, attempts, fsrs_json) = row?;
+                        let (id, name, p_known, calib_gap, attempts, fsrs_json, elapsed_days) =
+                            row?;
                         let retrieval = fsrs_json
                             .as_deref()
                             .and_then(|json| serde_json::from_str::<FsrsState>(json).ok())
-                            .map(|state| format!("{:.3}", retrievability(state.stability, 0.0)))
+                            .map(|state| {
+                                format!(
+                                    "{:.3}",
+                                    retrievability(
+                                        state.stability,
+                                        elapsed_days.unwrap_or(0.0).max(0.0)
+                                    )
+                                )
+                            })
                             .unwrap_or_else(|| "-".to_owned());
-                        let phase = if attempts >= 2 && calib_gap >= 0.25 && p_known < 0.60 {
+                        let phase = if attempts >= phantom_n
+                            && calib_gap >= phantom_gap
+                            && p_known < phantom_p
+                        {
                             "幻影!"
                         } else {
                             "正常"
@@ -196,17 +240,80 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 Commands::GradePending => {
-                    let count: i64 =
-                        engine
-                            .conn()
-                            .query_row("SELECT COUNT(*) FROM grade_queue", [], |row| row.get(0))?;
-                    println!("pending={count}");
+                    let summary = engine.grade_pending()?;
+                    println!(
+                        "processed={} pending={}",
+                        summary.processed, summary.pending
+                    );
                 }
                 Commands::Pack { .. } => unreachable!("handled before database open"),
             }
         }
     }
     Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BehaviorObservation {
+    latency_ms: i64,
+    hint_count: i64,
+}
+
+fn read_behavior_observation_now(
+    conn: &rusqlite::Connection,
+    session: &str,
+    concept: &str,
+) -> Result<BehaviorObservation, Box<dyn std::error::Error>> {
+    let now: String = conn.query_row("SELECT strftime('%Y-%m-%dT%H:%M:%SZ','now')", [], |row| {
+        row.get(0)
+    })?;
+    Ok(read_behavior_observation_at(conn, session, concept, &now)?)
+}
+
+fn read_behavior_observation_at(
+    conn: &rusqlite::Connection,
+    session: &str,
+    concept: &str,
+    now: &str,
+) -> rusqlite::Result<BehaviorObservation> {
+    let last_next_at: Option<String> = conn
+        .query_row(
+            "SELECT at
+             FROM behavior_events
+             WHERE session_id=?1 AND concept_id=?2 AND type='next'
+             ORDER BY julianday(at) DESC, id DESC
+             LIMIT 1",
+            (session, concept),
+            |row| row.get(0),
+        )
+        .optional()?;
+
+    let Some(last_next_at) = last_next_at else {
+        return Ok(BehaviorObservation {
+            latency_ms: 0,
+            hint_count: 0,
+        });
+    };
+
+    let latency_ms = conn.query_row(
+        "SELECT CAST(MAX(0, ROUND((julianday(?1)-julianday(?2))*86400000.0)) AS INTEGER)",
+        (now, last_next_at.as_str()),
+        |row| row.get(0),
+    )?;
+    let hint_count = conn.query_row(
+        "SELECT COUNT(*)
+         FROM behavior_events
+         WHERE session_id=?1 AND concept_id=?2 AND type='hint'
+           AND julianday(at) >= julianday(?3)
+           AND julianday(at) <= julianday(?4)",
+        (session, concept, last_next_at.as_str(), now),
+        |row| row.get(0),
+    )?;
+
+    Ok(BehaviorObservation {
+        latency_ms,
+        hint_count,
+    })
 }
 
 fn default_db_path() -> PathBuf {
@@ -232,7 +339,7 @@ mod tests {
         for args in [
             vec!["polaris", "init", "--pack", "packs/rust"],
             vec!["polaris", "ingest", "--text", "hello"],
-            vec!["polaris", "next"],
+            vec!["polaris", "next", "--session", "cli"],
             vec![
                 "polaris",
                 "submit",
@@ -251,5 +358,29 @@ mod tests {
         ] {
             Cli::try_parse_from(args).unwrap();
         }
+    }
+
+    #[test]
+    fn behavior_observation_reads_latency_and_hint_count_since_last_next() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        polaris_core::db::migrate(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO behavior_events(id, session_id, at, type, concept_id, payload_json)
+             VALUES ('next1', 's1', '2026-06-11T00:00:00Z', 'next', 'ownership', '{}')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO behavior_events(id, session_id, at, type, concept_id, payload_json)
+             VALUES ('hint1', 's1', '2026-06-11T00:00:02Z', 'hint', 'ownership', '{}')",
+            [],
+        )
+        .unwrap();
+
+        let observation =
+            read_behavior_observation_at(&conn, "s1", "ownership", "2026-06-11T00:00:05Z").unwrap();
+
+        assert_eq!(observation.latency_ms, 5000);
+        assert_eq!(observation.hint_count, 1);
     }
 }

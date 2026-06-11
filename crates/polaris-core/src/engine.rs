@@ -4,11 +4,14 @@ use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
 use crate::error::{PolarisError, Result};
-use crate::fsrs::{retrievability, FsrsState, Rating};
-use crate::grader::{grade_with_config, heuristic_score, GradeRequest, LlmConfig};
+use crate::fsrs::{retrievability, FsrsParams, FsrsState, Rating};
+use crate::grader::{
+    grade_request_for_attempt, grade_with_config, grade_with_static_response,
+    heuristic_score_with_conn, GradeRequest, LlmConfig,
+};
 use crate::mastery::{fold_all, AttemptObservation, MasteryParams};
 use crate::pack::load_pack;
-use crate::scheduler::{rank_candidates, ScheduleCandidate};
+use crate::scheduler::{rank_candidates_with_params, ScheduleCandidate, SchedulerParams};
 
 pub struct Engine {
     conn: Connection,
@@ -41,6 +44,12 @@ pub struct SubmitReceipt {
     pub degraded: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GradePendingSummary {
+    pub processed: i64,
+    pub pending: i64,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct StoredMasteryState {
     pub concept_id: String,
@@ -62,6 +71,11 @@ impl Engine {
     pub fn init_pack(&mut self, path: impl AsRef<Path>) -> Result<()> {
         let pack = load_pack(path)?;
         let tx = self.conn.transaction()?;
+
+        tx.execute(
+            "INSERT OR REPLACE INTO meta(key, value) VALUES (?1, ?2)",
+            params![format!("pack.{}.rubric", pack.id), pack.rubric],
+        )?;
 
         for concept in &pack.concepts {
             tx.execute(
@@ -95,7 +109,11 @@ impl Engine {
             "SELECT c.id, c.seed_order,
                     COALESCE(ms.p_known, c.p_init, CAST((SELECT value FROM meta WHERE key='bkt.p_init') AS REAL)) AS p_known,
                     ms.fsrs_json, COALESCE(ms.calib_gap, 0.0),
-                    COALESCE((SELECT COUNT(*) FROM attempts a WHERE a.concept_id=c.id), 0)
+                    COALESCE((SELECT COUNT(*) FROM attempts a WHERE a.concept_id=c.id), 0),
+                    CASE
+                        WHEN ms.last_review_at IS NULL THEN NULL
+                        ELSE julianday('now') - julianday(ms.last_review_at)
+                    END
              FROM concepts c
              LEFT JOIN mastery_states ms ON ms.concept_id=c.id
              ORDER BY c.seed_order ASC, c.id ASC",
@@ -110,10 +128,11 @@ impl Engine {
             let fsrs_json: Option<String> = row.get(3)?;
             let calib_gap: f64 = row.get(4)?;
             let attempt_count: i64 = row.get(5)?;
+            let elapsed_days: Option<f64> = row.get(6)?;
             let retrieval = fsrs_json
                 .as_deref()
                 .and_then(|json| serde_json::from_str::<FsrsState>(json).ok())
-                .map(|state| retrievability(state.stability, 0.0));
+                .map(|state| retrievability(state.stability, elapsed_days.unwrap_or(0.0).max(0.0)));
 
             candidates.push(ScheduleCandidate {
                 id: concept_id.clone(),
@@ -126,7 +145,8 @@ impl Engine {
             });
         }
 
-        let ranked = rank_candidates(candidates);
+        let scheduler_params = SchedulerParams::from_conn(&self.conn)?;
+        let ranked = rank_candidates_with_params(candidates, &scheduler_params);
         let Some(best) = ranked.first() else {
             return Ok(None);
         };
@@ -167,7 +187,8 @@ impl Engine {
         )?;
 
         let attempt_id = Uuid::new_v4().to_string();
-        let provisional_score = heuristic_score(input.self_confidence);
+        let provisional_score = heuristic_score_with_conn(&self.conn, input.self_confidence)?;
+        let fsrs_params = FsrsParams::from_conn(&self.conn)?;
         self.conn.execute(
             "INSERT INTO attempts(id, session_id, concept_id, task_type, prompt_text, response_evidence_id,
                                   self_confidence, latency_ms, hint_count, provisional_score, depth, rating, created_at)
@@ -183,7 +204,7 @@ impl Engine {
                 input.latency_ms,
                 input.hint_count,
                 provisional_score,
-                format!("{:?}", Rating::from_score(provisional_score)).to_lowercase()
+                format!("{:?}", Rating::from_score_with_params(provisional_score, &fsrs_params)).to_lowercase()
             ],
         )?;
 
@@ -207,8 +228,11 @@ impl Engine {
                 self_confidence: input.self_confidence,
                 response_text: input.response_text,
             },
-            LlmConfig::Unavailable,
+            LlmConfig::from_env(),
         )?;
+        if !grade.degraded {
+            self.replay_concept(&input.concept_id)?;
+        }
 
         Ok(SubmitReceipt {
             attempt_id,
@@ -234,11 +258,40 @@ impl Engine {
              WHERE id=?3",
             params![
                 final_score,
-                format!("{:?}", Rating::from_score(final_score)).to_lowercase(),
+                format!(
+                    "{:?}",
+                    Rating::from_score_with_params(
+                        final_score,
+                        &FsrsParams::from_conn(&self.conn)?
+                    )
+                )
+                .to_lowercase(),
                 attempt_id
             ],
         )?;
         self.replay_concept(&concept_id)
+    }
+
+    pub fn grade_pending(&mut self) -> Result<GradePendingSummary> {
+        let config = LlmConfig::from_env();
+        if matches!(config, LlmConfig::Unavailable) {
+            return Ok(GradePendingSummary {
+                processed: 0,
+                pending: self.pending_grade_count()?,
+            });
+        }
+        self.process_queued_attempts(|conn, request| {
+            grade_with_config(conn, request, config.clone())
+        })
+    }
+
+    pub fn grade_pending_with_static_response(
+        &mut self,
+        response_json: &str,
+    ) -> Result<GradePendingSummary> {
+        self.process_queued_attempts(|conn, request| {
+            grade_with_static_response(conn, request, response_json)
+        })
     }
 
     pub fn mastery_state(&self, concept_id: &str) -> Result<Option<StoredMasteryState>> {
@@ -271,7 +324,8 @@ impl Engine {
 
         let mut stmt = self.conn.prepare(
             "SELECT id, COALESCE(task_type, 'recall'), COALESCE(final_score, provisional_score),
-                    self_confidence, COALESCE(depth, 'recall')
+                    self_confidence, COALESCE(depth, 'recall'), COALESCE(created_at, '1970-01-01T00:00:00Z'),
+                    COALESCE(julianday(created_at), julianday('1970-01-01T00:00:00Z'))
              FROM attempts
              WHERE concept_id=?1 AND COALESCE(final_score, provisional_score) IS NOT NULL
              ORDER BY created_at ASC, id ASC",
@@ -284,19 +338,27 @@ impl Engine {
                     row.get::<_, f64>(2)?,
                     row.get::<_, i32>(3)?,
                     0.0,
-                );
+                )
+                .with_created_at(row.get::<_, String>(5)?)
+                .with_occurred_day(row.get::<_, f64>(6)?);
                 attempt.depth = Some(row.get(4)?);
                 Ok(attempt)
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
 
-        let state = fold_all(p_init, &attempts, &MasteryParams::defaults());
+        let params = MasteryParams::from_conn(&self.conn)?;
+        let state = fold_all(p_init, &attempts, &params);
         let fsrs_json = serde_json::to_string(&state.fsrs)?;
+        let last_review_at = attempts.last().map(|attempt| attempt.created_at.as_str());
+        let next_due_at = match (last_review_at, state.fsrs.scheduled_days) {
+            (Some(last_review_at), Some(days)) => Some(self.next_due_at(last_review_at, days)?),
+            _ => None,
+        };
         self.conn.execute(
             "INSERT INTO mastery_states(concept_id, p_known, fsrs_json, next_due_at, last_review_at,
                                         calib_gap, brier_ewma, last_depth, max_depth,
                                         attempt_count, lapses, updated_at)
-             VALUES (?1, ?2, ?3, ?4, strftime('%Y-%m-%dT%H:%M:%SZ','now'), ?5, ?6, ?7, ?8, ?9, ?10, strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, strftime('%Y-%m-%dT%H:%M:%SZ','now'))
              ON CONFLICT(concept_id) DO UPDATE SET
                 p_known=excluded.p_known,
                 fsrs_json=excluded.fsrs_json,
@@ -313,7 +375,8 @@ impl Engine {
                 concept_id,
                 state.p_known,
                 fsrs_json,
-                state.fsrs.scheduled_days.map(|days| format!("in-{days}-days")),
+                next_due_at,
+                last_review_at,
                 state.calib_gap,
                 state.brier_ewma,
                 state.last_depth,
@@ -323,6 +386,77 @@ impl Engine {
             ],
         )?;
         Ok(())
+    }
+
+    fn process_queued_attempts<F>(&mut self, mut grade: F) -> Result<GradePendingSummary>
+    where
+        F: FnMut(&Connection, GradeRequest) -> Result<crate::grader::GradeResult>,
+    {
+        let attempt_ids = {
+            let mut stmt = self.conn.prepare(
+                "SELECT attempt_id FROM grade_queue ORDER BY enqueued_at ASC, attempt_id ASC",
+            )?;
+            let rows = stmt
+                .query_map([], |row| row.get::<_, String>(0))?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            rows
+        };
+
+        let mut processed = 0;
+        for attempt_id in attempt_ids {
+            let request = grade_request_for_attempt(&self.conn, &attempt_id)?;
+            let result = grade(&self.conn, request)?;
+            if result.degraded {
+                self.increment_grade_retry(&attempt_id)?;
+                continue;
+            }
+            let concept_id = self.concept_id_for_attempt(&attempt_id)?;
+            self.replay_concept(&concept_id)?;
+            processed += 1;
+        }
+
+        Ok(GradePendingSummary {
+            processed,
+            pending: self.pending_grade_count()?,
+        })
+    }
+
+    fn pending_grade_count(&self) -> Result<i64> {
+        self.conn
+            .query_row("SELECT COUNT(*) FROM grade_queue", [], |row| row.get(0))
+            .map_err(Into::into)
+    }
+
+    fn increment_grade_retry(&self, attempt_id: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE grade_queue
+             SET retry_count=COALESCE(retry_count, 0)+1
+             WHERE attempt_id=?1",
+            [attempt_id],
+        )?;
+        Ok(())
+    }
+
+    fn concept_id_for_attempt(&self, attempt_id: &str) -> Result<String> {
+        self.conn
+            .query_row(
+                "SELECT concept_id FROM attempts WHERE id=?1",
+                [attempt_id],
+                |row| row.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| PolarisError::MissingAttempt(attempt_id.to_owned()))
+    }
+
+    fn next_due_at(&self, last_review_at: &str, days: i64) -> Result<String> {
+        let modifier = format!("+{days} days");
+        self.conn
+            .query_row(
+                "SELECT strftime('%Y-%m-%dT04:00:00Z', date(?1, ?2))",
+                params![last_review_at, modifier],
+                |row| row.get(0),
+            )
+            .map_err(Into::into)
     }
 
     fn prerequisites_met(&self, concept_id: &str) -> Result<bool> {
@@ -389,6 +523,15 @@ mod tests {
         let next = engine.next_task().unwrap().expect("next task");
 
         assert_eq!(next.concept_id, "ownership");
+        let rubric: String = engine
+            .conn()
+            .query_row(
+                "SELECT value FROM meta WHERE key='pack.rust.rubric'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(rubric.contains("Rubric"));
         assert!(next.reason.contains("选它因为"));
     }
 
@@ -485,6 +628,7 @@ mod tests {
             "traits",
             "traits",
             "modules",
+            "closures",
         ];
         let mut receipts = Vec::new();
         for (idx, concept) in concepts.iter().enumerate() {
@@ -520,7 +664,7 @@ mod tests {
             .conn()
             .query_row("SELECT COUNT(*) FROM grade_queue", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(queued, 10);
+        assert_eq!(queued, 11);
 
         let due: String = engine
             .conn()
@@ -530,7 +674,108 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert!(due.starts_with("in-"));
+        assert!(due.ends_with("T04:00:00Z"), "due was {due}");
+
+        let due_order: i64 = engine
+            .conn()
+            .query_row(
+                "SELECT julianday((SELECT next_due_at FROM mastery_states WHERE concept_id='ownership')) <=
+                        julianday((SELECT next_due_at FROM mastery_states WHERE concept_id='traits'))",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(due_order, 1);
+    }
+
+    #[test]
+    fn replay_uses_attempt_created_at_for_fsrs_elapsed_days() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let mut engine = Engine::new(conn);
+        engine.init_pack(workspace_pack_path("packs/rust")).unwrap();
+
+        for (id, at) in [
+            ("a1", "2026-06-01T00:00:00Z"),
+            ("a2", "2026-06-04T00:00:00Z"),
+        ] {
+            engine
+                .conn()
+                .execute(
+                    "INSERT INTO attempts(id, session_id, concept_id, task_type, self_confidence, provisional_score, final_score, created_at)
+                     VALUES (?1, 's1', 'ownership', 'recall', 4, 0.80, 0.80, ?2)",
+                    (id, at),
+                )
+                .unwrap();
+        }
+
+        engine.replay_concept("ownership").unwrap();
+
+        let fsrs_json: String = engine
+            .conn()
+            .query_row(
+                "SELECT fsrs_json FROM mastery_states WHERE concept_id='ownership'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let state: FsrsState = serde_json::from_str(&fsrs_json).unwrap();
+        assert!(
+            state.stability > 2.4,
+            "second review should use three elapsed days, got stability {}",
+            state.stability
+        );
+    }
+
+    #[test]
+    fn grade_pending_processes_queued_attempts() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let mut engine = Engine::new(conn);
+        engine.init_pack(workspace_pack_path("packs/rust")).unwrap();
+
+        engine
+            .conn()
+            .execute(
+                "INSERT INTO evidence_items(id, session_id, source, content_type, text, concept_ids_json, created_at)
+                 VALUES ('ev1', 's1', 'cli-submit', 'text/plain', 'Ownership controls which binding can drop a value.', '[\"ownership\"]', '2026-06-11T00:00:00Z')",
+                [],
+            )
+            .unwrap();
+        engine
+            .conn()
+            .execute(
+                "INSERT INTO attempts(id, session_id, concept_id, task_type, response_evidence_id, self_confidence, provisional_score, created_at)
+                 VALUES ('attempt-queued', 's1', 'ownership', 'recall', 'ev1', 4, 0.70, '2026-06-11T00:00:00Z')",
+                [],
+            )
+            .unwrap();
+        engine
+            .conn()
+            .execute(
+                "INSERT INTO grade_queue(attempt_id, enqueued_at, retry_count, last_error)
+                 VALUES ('attempt-queued', '2026-06-11T00:00:00Z', 0, 'llm config missing')",
+                [],
+            )
+            .unwrap();
+
+        let summary = engine
+            .grade_pending_with_static_response(
+                r#"{"score":0.83,"depth":"explain","citations":[{"evidence_id":"ev1","quote":"controls which binding"}]}"#,
+            )
+            .unwrap();
+
+        assert_eq!(summary.processed, 1);
+        assert_eq!(summary.pending, 0);
+        let final_score: f64 = engine
+            .conn()
+            .query_row(
+                "SELECT final_score FROM attempts WHERE id='attempt-queued'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!((final_score - 0.83).abs() < 1e-9);
     }
 
     #[test]

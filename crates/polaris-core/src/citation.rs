@@ -2,7 +2,10 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::{default_registry, ParameterSpec};
+use rusqlite::Connection;
+
+use crate::config::{default_registry, meta_usize, ParameterSpec};
+use crate::error::Result as PolarisResult;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Citation {
@@ -41,6 +44,13 @@ impl CitationPolicy {
             quote_min: parse_usize(&registry, "grade.quote_min"),
             quote_max: parse_usize(&registry, "grade.quote_max"),
         }
+    }
+
+    pub fn from_conn(conn: &Connection) -> PolarisResult<Self> {
+        Ok(Self {
+            quote_min: meta_usize(conn, "grade.quote_min")?,
+            quote_max: meta_usize(conn, "grade.quote_max")?,
+        })
     }
 }
 

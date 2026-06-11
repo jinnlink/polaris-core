@@ -1,11 +1,11 @@
 # 票队列（单票制）
 
-状态：**P01 待用户确认**。任何时刻只允许 1 张票 In Progress。
+状态：**P01 已完成；P02 未认领**。任何时刻只允许 1 张票 In Progress。
 新增票必须标注它服务主命题（验证真懂→定位模糊→针对性补缺）的哪一环。
 
 ## Phase 1 — Walking Skeleton
 
-- [ ] **P01 最小闭环**（`TICKET_P01_WALKING_SKELETON.md`）← 待用户确认，确认后再 commit；确认前不要认领 P02
+- [x] **P01 最小闭环**（`TICKET_P01_WALKING_SKELETON.md`）← 已实现并完成子 agent 审查补修；进入 P02 前需新开票认领
 
 ## Phase 2 — 图谱 + MCP
 

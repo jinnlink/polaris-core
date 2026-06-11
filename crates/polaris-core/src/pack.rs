@@ -16,6 +16,7 @@ pub struct PackData {
     pub concepts: Vec<ConceptToml>,
     pub edges: Vec<EdgeToml>,
     pub misconceptions: Vec<MisconceptionToml>,
+    pub rubric: String,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -192,12 +193,14 @@ pub fn load_pack(path: impl AsRef<Path>) -> Result<PackData, PackError> {
     let pack: PackToml = read_toml(path, "pack.toml")?;
     let concepts: ConceptsToml = read_toml(path, "concepts.toml")?;
     let misconceptions: MisconceptionsToml = read_toml(path, "misconceptions.toml")?;
+    let rubric = read_text(path, "rubric.md")?;
 
     Ok(PackData {
         id: pack.id,
         concepts: concepts.concept,
         edges: concepts.edge,
         misconceptions: misconceptions.misconception,
+        rubric,
     })
 }
 
@@ -208,6 +211,14 @@ fn read_toml<T: for<'de> Deserialize<'de>>(root: &Path, file_name: &str) -> Resu
         source,
     })?;
     toml::from_str(&source).map_err(|source| PackError::Parse {
+        path: path.display().to_string(),
+        source,
+    })
+}
+
+fn read_text(root: &Path, file_name: &str) -> Result<String, PackError> {
+    let path = root.join(file_name);
+    std::fs::read_to_string(&path).map_err(|source| PackError::Read {
         path: path.display().to_string(),
         source,
     })

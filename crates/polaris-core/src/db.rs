@@ -133,6 +133,64 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             retry_count INTEGER DEFAULT 0,
             last_error TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS theta(
+            id INTEGER PRIMARY KEY CHECK(id=1),
+            vec BLOB,
+            version INTEGER,
+            updated_at TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS theta_history(
+            version INTEGER PRIMARY KEY,
+            vec BLOB,
+            at TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS residual_stats(
+            concept_id TEXT,
+            week TEXT,
+            mean_resid REAL,
+            n INTEGER,
+            PRIMARY KEY(concept_id, week)
+        );
+
+        CREATE TABLE IF NOT EXISTS consolidation_runs(
+            id TEXT PRIMARY KEY,
+            ran_at TEXT,
+            proposals_json TEXT,
+            holdout_delta REAL,
+            status TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS moves_effects(
+            move TEXT,
+            context_hash TEXT,
+            alpha REAL,
+            beta REAL,
+            n INTEGER,
+            PRIMARY KEY(move, context_hash)
+        );
+
+        CREATE TABLE IF NOT EXISTS mrt_log(
+            id TEXT PRIMARY KEY,
+            at TEXT,
+            context_json TEXT,
+            randomized INTEGER,
+            move TEXT,
+            prereg_id TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS param_tuning_runs(
+            id TEXT PRIMARY KEY,
+            ran_at TEXT,
+            param TEXT,
+            old_value TEXT,
+            new_value TEXT,
+            metric TEXT,
+            delta REAL,
+            status TEXT
+        );
         "#,
     )?;
 
@@ -168,6 +226,13 @@ mod tests {
             "sessions",
             "behavior_events",
             "grade_queue",
+            "theta",
+            "theta_history",
+            "residual_stats",
+            "consolidation_runs",
+            "moves_effects",
+            "mrt_log",
+            "param_tuning_runs",
         ] {
             let exists: i64 = conn
                 .query_row(

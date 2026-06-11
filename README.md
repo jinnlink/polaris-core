@@ -7,15 +7,15 @@
 ## 当前状态
 
 - Phase 0（设计与交接包）：**完成** —— 设计冻结于 `docs/MASTER_PLAN.md`，宪法在 `SPEC.md`。
-- Phase 1（walking skeleton）：**P01 已实现，待用户确认后 commit** —— 票在 `docs/tickets/TICKET_P01_WALKING_SKELETON.md`。
+- Phase 1（walking skeleton）：**P01 已实现并完成子 agent 审查补修** —— 票在 `docs/tickets/TICKET_P01_WALKING_SKELETON.md`。
 
 ## 快速开始（P01）
 
 ```powershell
 cargo run -p polaris-cli -- pack validate packs/rust
 cargo run -p polaris-cli -- --db target\p01-quickstart.db init --pack packs/rust
-cargo run -p polaris-cli -- --db target\p01-quickstart.db next
-cargo run -p polaris-cli -- --db target\p01-quickstart.db submit --concept ownership --response "Ownership controls which binding can drop a value." --confidence 4
+cargo run -p polaris-cli -- --db target\p01-quickstart.db next --session quickstart
+cargo run -p polaris-cli -- --db target\p01-quickstart.db submit --concept ownership --response "Ownership controls which binding can drop a value." --confidence 4 --session quickstart
 cargo run -p polaris-cli -- --db target\p01-quickstart.db status
 cargo run -p polaris-cli -- --db target\p01-quickstart.db grade-pending
 ```
@@ -25,7 +25,7 @@ cargo run -p polaris-cli -- --db target\p01-quickstart.db grade-pending
 - `pack validate` 输出：`pack ok: concepts=24 prerequisites=21 misconceptions=11`
 - `next` 首题：`concept: ownership`，`task_type: recall`
 - `submit` 输出：`provisional_score=0.700 degraded=true`
-- `grade-pending` 输出：`pending=1`
+- `grade-pending` 输出：`processed=0 pending=1`
 
 ## 给人类
 

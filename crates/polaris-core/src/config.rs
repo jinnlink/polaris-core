@@ -1,5 +1,9 @@
 use std::collections::BTreeMap;
 
+use rusqlite::{Connection, OptionalExtension};
+
+use crate::error::{PolarisError, Result};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParameterClass {
     A,
@@ -250,10 +254,262 @@ pub fn default_registry() -> BTreeMap<&'static str, ParameterSpec> {
             None,
             TuningRoute::Manual,
         ),
+        spec(
+            "mirt.eta",
+            "0.05",
+            ParameterClass::B,
+            Some("[0.01,0.2]"),
+            TuningRoute::Replay,
+        ),
+        spec(
+            "mirt.step_cap",
+            "0.05",
+            ParameterClass::B,
+            Some("[0.01,0.1]"),
+            TuningRoute::Replay,
+        ),
+        spec(
+            "mirt.shrink",
+            "1e-4",
+            ParameterClass::B,
+            None,
+            TuningRoute::Replay,
+        ),
+        spec(
+            "mirt.fuse_n0",
+            "5",
+            ParameterClass::B,
+            Some("[2,20]"),
+            TuningRoute::Replay,
+        ),
+        spec(
+            "mirt.d.recall",
+            "-0.30",
+            ParameterClass::B,
+            Some("[-1,+1]"),
+            TuningRoute::Replay,
+        ),
+        spec(
+            "mirt.d.choose",
+            "-0.15",
+            ParameterClass::B,
+            Some("[-1,+1]"),
+            TuningRoute::Replay,
+        ),
+        spec(
+            "mirt.d.cloze",
+            "0.00",
+            ParameterClass::B,
+            Some("[-1,+1]"),
+            TuningRoute::Replay,
+        ),
+        spec(
+            "mirt.d.rewrite",
+            "0.15",
+            ParameterClass::B,
+            Some("[-1,+1]"),
+            TuningRoute::Replay,
+        ),
+        spec(
+            "mirt.d.apply",
+            "0.30",
+            ParameterClass::B,
+            Some("[-1,+1]"),
+            TuningRoute::Replay,
+        ),
+        spec(
+            "mirt.d.translate",
+            "0.30",
+            ParameterClass::B,
+            Some("[-1,+1]"),
+            TuningRoute::Replay,
+        ),
+        spec(
+            "mirt.d.transfer",
+            "0.50",
+            ParameterClass::B,
+            Some("[-1,+1]"),
+            TuningRoute::Replay,
+        ),
+        spec(
+            "mirt.d.free_produce",
+            "0.50",
+            ParameterClass::B,
+            Some("[-1,+1]"),
+            TuningRoute::Replay,
+        ),
+        spec(
+            "mirt.a_c",
+            "1.0",
+            ParameterClass::A,
+            None,
+            TuningRoute::Manual,
+        ),
+        spec(
+            "consol.accept_margin",
+            "0.01",
+            ParameterClass::A,
+            None,
+            TuningRoute::Manual,
+        ),
+        spec(
+            "consol.holdout_frac",
+            "0.20",
+            ParameterClass::A,
+            None,
+            TuningRoute::Manual,
+        ),
+        spec(
+            "hmm.em_min_n",
+            "200",
+            ParameterClass::B,
+            Some("[100,500]"),
+            TuningRoute::Manual,
+        ),
+        spec(
+            "hmm.gate_auc_margin",
+            "0.03",
+            ParameterClass::A,
+            None,
+            TuningRoute::Manual,
+        ),
+        spec(
+            "hazard.auc_gate",
+            "0.70",
+            ParameterClass::A,
+            None,
+            TuningRoute::Manual,
+        ),
+        spec(
+            "friction.w1",
+            "0.40",
+            ParameterClass::A,
+            None,
+            TuningRoute::Manual,
+        ),
+        spec(
+            "friction.w2",
+            "0.20",
+            ParameterClass::A,
+            None,
+            TuningRoute::Manual,
+        ),
+        spec(
+            "friction.w3",
+            "0.20",
+            ParameterClass::A,
+            None,
+            TuningRoute::Manual,
+        ),
+        spec(
+            "friction.w4",
+            "0.20",
+            ParameterClass::A,
+            None,
+            TuningRoute::Manual,
+        ),
+        spec(
+            "friction.lambda",
+            "1.0",
+            ParameterClass::B,
+            Some("[0.5,3.0]"),
+            TuningRoute::Mrt,
+        ),
+        spec(
+            "mrt.epsilon",
+            "0.20",
+            ParameterClass::B,
+            Some("[0.05,0.30]"),
+            TuningRoute::Manual,
+        ),
+        spec(
+            "sig.shrink_n0",
+            "10",
+            ParameterClass::B,
+            Some("[5,30]"),
+            TuningRoute::Replay,
+        ),
+        spec(
+            "thompson.prior_n",
+            "10",
+            ParameterClass::B,
+            Some("[5,30]"),
+            TuningRoute::Replay,
+        ),
+        spec(
+            "gu.retire_p",
+            "0.30",
+            ParameterClass::B,
+            None,
+            TuningRoute::Replay,
+        ),
+        spec(
+            "gu.retire_thresh",
+            "0.80",
+            ParameterClass::B,
+            None,
+            TuningRoute::Replay,
+        ),
+        spec(
+            "gu.window_days",
+            "30",
+            ParameterClass::B,
+            None,
+            TuningRoute::Replay,
+        ),
     ]
     .into_iter()
     .map(|entry| (entry.key, entry))
     .collect()
+}
+
+pub fn meta_value(conn: &Connection, key: &str) -> Result<String> {
+    if let Some(value) = conn
+        .query_row("SELECT value FROM meta WHERE key=?1", [key], |row| {
+            row.get(0)
+        })
+        .optional()?
+    {
+        return Ok(value);
+    }
+
+    let registry = default_registry();
+    registry
+        .get(key)
+        .map(|spec| spec.default_value.to_owned())
+        .ok_or_else(|| PolarisError::InvalidParameter {
+            key: key.to_owned(),
+            value: "<missing>".to_owned(),
+        })
+}
+
+pub fn meta_f64(conn: &Connection, key: &str) -> Result<f64> {
+    let value = meta_value(conn, key)?;
+    value.parse().map_err(|_| PolarisError::InvalidParameter {
+        key: key.to_owned(),
+        value,
+    })
+}
+
+pub fn meta_i64(conn: &Connection, key: &str) -> Result<i64> {
+    let value = meta_value(conn, key)?;
+    value.parse().map_err(|_| PolarisError::InvalidParameter {
+        key: key.to_owned(),
+        value,
+    })
+}
+
+pub fn meta_usize(conn: &Connection, key: &str) -> Result<usize> {
+    let value = meta_value(conn, key)?;
+    value.parse().map_err(|_| PolarisError::InvalidParameter {
+        key: key.to_owned(),
+        value,
+    })
+}
+
+pub fn meta_json<T: serde::de::DeserializeOwned>(conn: &Connection, key: &str) -> Result<T> {
+    let value = meta_value(conn, key)?;
+    serde_json::from_str(&value).map_err(Into::into)
 }
 
 fn spec(
@@ -289,5 +545,44 @@ mod tests {
         assert_eq!(quote_min.default_value, "8");
         assert_eq!(quote_min.class, ParameterClass::A);
         assert_eq!(quote_min.tuning_route, TuningRoute::Manual);
+    }
+
+    #[test]
+    fn parameter_registry_contains_all_data_model_section_10_keys() {
+        let registry = default_registry();
+
+        for key in [
+            "mirt.eta",
+            "mirt.step_cap",
+            "mirt.shrink",
+            "mirt.fuse_n0",
+            "mirt.d.recall",
+            "mirt.d.choose",
+            "mirt.d.cloze",
+            "mirt.d.rewrite",
+            "mirt.d.apply",
+            "mirt.d.translate",
+            "mirt.d.transfer",
+            "mirt.d.free_produce",
+            "mirt.a_c",
+            "consol.accept_margin",
+            "consol.holdout_frac",
+            "hmm.em_min_n",
+            "hmm.gate_auc_margin",
+            "hazard.auc_gate",
+            "friction.w1",
+            "friction.w2",
+            "friction.w3",
+            "friction.w4",
+            "friction.lambda",
+            "mrt.epsilon",
+            "sig.shrink_n0",
+            "thompson.prior_n",
+            "gu.retire_p",
+            "gu.retire_thresh",
+            "gu.window_days",
+        ] {
+            assert!(registry.contains_key(key), "missing {key}");
+        }
     }
 }
