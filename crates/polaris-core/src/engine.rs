@@ -3,6 +3,7 @@ use std::path::Path;
 use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
+use crate::diagnosis::{diagnose_concept, GraphDiagnosis};
 use crate::error::{PolarisError, Result};
 use crate::fsrs::{retrievability, FsrsParams, FsrsState, Rating};
 use crate::grader::{
@@ -79,6 +80,10 @@ impl Engine {
         right: &str,
     ) -> Result<Option<StructuralMapping>> {
         upsert_maps_to_candidate(&self.conn, left, right)
+    }
+
+    pub fn diagnose_concept(&self, concept_id: &str) -> Result<GraphDiagnosis> {
+        diagnose_concept(&self.conn, concept_id)
     }
 
     pub fn init_pack(&mut self, path: impl AsRef<Path>) -> Result<()> {

@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OpenFlags};
 
 use crate::config::default_registry;
 use crate::error::Result;
@@ -15,6 +15,10 @@ pub fn open_database(path: impl AsRef<Path>) -> Result<Connection> {
     conn.pragma_update(None, "journal_mode", "WAL")?;
     migrate(&conn)?;
     Ok(conn)
+}
+
+pub fn open_database_read_only(path: impl AsRef<Path>) -> Result<Connection> {
+    Connection::open_with_flags(path.as_ref(), OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(Into::into)
 }
 
 pub fn migrate(conn: &Connection) -> Result<()> {

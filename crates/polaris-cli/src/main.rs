@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 use polaris_core::config::{meta_f64, meta_i64};
-use polaris_core::db::open_database;
+use polaris_core::db::{open_database, open_database_read_only};
 use polaris_core::engine::{Engine, SubmitInput};
 use polaris_core::fsrs::{retrievability, FsrsState};
 use polaris_core::pack::validate_pack_path;
@@ -63,6 +63,10 @@ enum Commands {
     },
     Status,
     GradePending,
+    Diagnose {
+        #[arg(long)]
+        concept: String,
+    },
     Pack {
         #[command(subcommand)]
         command: PackCommands,
@@ -89,6 +93,11 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 "pack ok: concepts={} prerequisites={} misconceptions={}",
                 report.concept_count, report.prerequisite_count, report.misconception_count
             );
+        }
+        Commands::Diagnose { concept } => {
+            let conn = open_database_read_only(cli.db.unwrap_or_else(default_db_path))?;
+            let engine = Engine::new(conn);
+            print_diagnosis(engine.diagnose_concept(&concept)?);
         }
         command => {
             let conn = open_database(cli.db.unwrap_or_else(default_db_path))?;
@@ -246,11 +255,41 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                         summary.processed, summary.pending
                     );
                 }
+                Commands::Diagnose { .. } => unreachable!("handled before writable database open"),
                 Commands::Pack { .. } => unreachable!("handled before database open"),
             }
         }
     }
     Ok(())
+}
+
+fn print_diagnosis(diagnosis: polaris_core::diagnosis::GraphDiagnosis) {
+    println!("concept: {}", diagnosis.concept_id);
+    println!("latest_failed: {}", diagnosis.latest_failed);
+    if let Some(score) = diagnosis.latest_score {
+        println!("latest_score: {score:.3}");
+    }
+    if let Some(focus) = diagnosis.focus {
+        println!(
+            "focus: {} {} reason={}",
+            focus.kind, focus.concept_id, focus.reason
+        );
+    } else {
+        println!("focus: none");
+    }
+    for gap in diagnosis.unmet_prerequisites {
+        println!(
+            "prerequisite_gap: {} p_known={:.3} threshold={:.3}",
+            gap.concept_id, gap.p_known, gap.threshold
+        );
+    }
+    for task in diagnosis.confusion_tasks {
+        println!(
+            "confusion_task: {} vs {} task_type={}",
+            task.concept_id, task.contrast_concept_id, task.task_type
+        );
+        println!("prompt: {}", task.prompt);
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -354,6 +393,7 @@ mod tests {
             vec!["polaris", "abandon", "--concept", "ownership"],
             vec!["polaris", "status"],
             vec!["polaris", "grade-pending"],
+            vec!["polaris", "diagnose", "--concept", "ownership"],
             vec!["polaris", "pack", "validate", "packs/rust"],
         ] {
             Cli::try_parse_from(args).unwrap();
@@ -382,5 +422,30 @@ mod tests {
 
         assert_eq!(observation.latency_ms, 5000);
         assert_eq!(observation.hint_count, 1);
+    }
+
+    #[test]
+    fn diagnose_does_not_create_missing_database() {
+        let path = std::env::temp_dir().join(format!(
+            "polaris-core-diagnose-readonly-{}.db",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let cli = Cli::try_parse_from(vec![
+            "polaris",
+            "--db",
+            path.to_str().unwrap(),
+            "diagnose",
+            "--concept",
+            "ownership",
+        ])
+        .unwrap();
+
+        let result = run(cli);
+
+        assert!(result.is_err());
+        assert!(!path.exists(), "diagnose must not create a missing db");
     }
 }

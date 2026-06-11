@@ -1,6 +1,6 @@
 # 票队列（单票制）
 
-状态：**P02A 已完成待用户确认 commit；P02B 未认领（确认/commit 前不要认领新票）**。任何时刻只允许 1 张票 In Progress。
+状态：**P02B 已完成待用户确认 commit；P02C 未认领（确认/commit 前不要认领新票）**。任何时刻只允许 1 张票 In Progress。
 新增票必须标注它服务主命题（验证真懂→定位模糊→针对性补缺）的哪一环。
 
 ## Phase 1 — Walking Skeleton
@@ -9,8 +9,8 @@
 
 ## Phase 2 — 图谱 + MCP
 
-- [x] **P02A 类型化超图**（`TICKET_P02A_TYPED_HYPERGRAPH.md`）← 已实现并通过验收，待用户确认 commit；服务环节：定位模糊
-- P02B 图谱感知诊断：前置传播（X 失败但前置 Y 未达标→诊断 Y）、confusion 边辨析题接口
+- [x] **P02A 类型化超图**（`TICKET_P02A_TYPED_HYPERGRAPH.md`）← 已实现并提交（`e876de3`）；服务环节：定位模糊
+- [x] **P02B 图谱感知诊断**（`TICKET_P02B_GRAPH_AWARE_DIAGNOSIS.md`）← 已实现并通过验收，待用户确认 commit；服务环节：定位模糊 → 针对性补缺
 - P02C MCP server：读状态/取任务/交证据/教学指令（focus/move/target/do/don't/anchor）下发——Tier 2 门
 
 ## Phase 3 — 潜因子 + 心智动力学
