@@ -1,0 +1,66 @@
+[[misconception]]
+id = "lifetime_extends_storage"
+concept_id = "lifetimes"
+title = "lifetime 标注延长存活时间"
+pattern = "symbol-referent-confusion"
+
+[[misconception]]
+id = "string_str_interchangeable"
+concept_id = "string_str"
+title = "String 和 &str 可互换"
+pattern = "boundary-blindness"
+
+[[misconception]]
+id = "clone_always_bad"
+concept_id = "copy_clone"
+title = "clone 总是性能问题"
+pattern = "overgeneralization"
+
+[[misconception]]
+id = "borrow_checker_runtime"
+concept_id = "borrowing"
+title = "借用检查发生在运行时"
+pattern = "causal-inversion"
+
+[[misconception]]
+id = "mut_means_exclusive_value"
+concept_id = "mutable_borrowing"
+title = "mut 表示值本身永久可变"
+pattern = "symbol-referent-confusion"
+
+[[misconception]]
+id = "option_is_nullable"
+concept_id = "option_result"
+title = "Option 只是 nullable 的换名"
+pattern = "granularity-mismatch"
+
+[[misconception]]
+id = "result_only_for_io"
+concept_id = "error_handling"
+title = "Result 只用于 I/O 错误"
+pattern = "boundary-blindness"
+
+[[misconception]]
+id = "trait_is_inheritance"
+concept_id = "traits"
+title = "trait 等同于继承"
+pattern = "interference-confusion"
+
+[[misconception]]
+id = "generic_is_dedup"
+concept_id = "generics"
+title = "泛型只是为了少写重复代码"
+pattern = "procedural-conceptual-gap"
+
+[[misconception]]
+id = "iterator_collect_required"
+concept_id = "iterators"
+title = "迭代器必须 collect 后才有用"
+pattern = "procedural-conceptual-gap"
+
+[[misconception]]
+id = "arc_makes_inner_thread_safe"
+concept_id = "box_rc_arc"
+title = "Arc 会让内部数据自动线程安全"
+pattern = "causal-inversion"
+

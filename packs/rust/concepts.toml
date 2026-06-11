@@ -1,0 +1,246 @@
+[[concept]]
+id = "ownership"
+name = "Ownership"
+seed_order = 1
+
+[[concept]]
+id = "moves"
+name = "Moves"
+seed_order = 2
+
+[[concept]]
+id = "borrowing"
+name = "Borrowing"
+seed_order = 3
+
+[[concept]]
+id = "mutable_borrowing"
+name = "Mutable borrowing"
+seed_order = 4
+
+[[concept]]
+id = "lifetimes"
+name = "Lifetimes"
+seed_order = 5
+
+[[concept]]
+id = "references"
+name = "References"
+seed_order = 6
+
+[[concept]]
+id = "string_str"
+name = "String and &str"
+seed_order = 7
+
+[[concept]]
+id = "vec_slices"
+name = "Vec and slices"
+seed_order = 8
+
+[[concept]]
+id = "option_result"
+name = "Result and Option"
+seed_order = 9
+
+[[concept]]
+id = "error_handling"
+name = "Error handling"
+seed_order = 10
+
+[[concept]]
+id = "pattern_matching"
+name = "Pattern matching"
+seed_order = 11
+
+[[concept]]
+id = "traits"
+name = "Traits"
+seed_order = 12
+
+[[concept]]
+id = "generics"
+name = "Generics"
+seed_order = 13
+
+[[concept]]
+id = "iterators"
+name = "Iterators"
+seed_order = 14
+
+[[concept]]
+id = "closures"
+name = "Closures"
+seed_order = 15
+
+[[concept]]
+id = "modules"
+name = "Module system"
+seed_order = 16
+
+[[concept]]
+id = "smart_pointers"
+name = "Smart pointers"
+seed_order = 17
+
+[[concept]]
+id = "box_rc_arc"
+name = "Box, Rc, and Arc"
+seed_order = 18
+
+[[concept]]
+id = "interior_mutability"
+name = "Interior mutability"
+seed_order = 19
+
+[[concept]]
+id = "drop"
+name = "Drop"
+seed_order = 20
+
+[[concept]]
+id = "copy_clone"
+name = "Copy and Clone"
+seed_order = 21
+
+[[concept]]
+id = "concurrency"
+name = "Concurrency"
+seed_order = 22
+
+[[concept]]
+id = "send_sync"
+name = "Send and Sync"
+seed_order = 23
+
+[[concept]]
+id = "async_await"
+name = "Async and await"
+seed_order = 24
+
+[[edge]]
+id = "e_ownership_moves"
+src = "ownership"
+dst = "moves"
+type = "prerequisite"
+
+[[edge]]
+id = "e_ownership_borrowing"
+src = "ownership"
+dst = "borrowing"
+type = "prerequisite"
+
+[[edge]]
+id = "e_borrowing_mut"
+src = "borrowing"
+dst = "mutable_borrowing"
+type = "prerequisite"
+
+[[edge]]
+id = "e_borrowing_lifetimes"
+src = "borrowing"
+dst = "lifetimes"
+type = "prerequisite"
+
+[[edge]]
+id = "e_references_lifetimes"
+src = "references"
+dst = "lifetimes"
+type = "prerequisite"
+
+[[edge]]
+id = "e_references_str"
+src = "references"
+dst = "string_str"
+type = "prerequisite"
+
+[[edge]]
+id = "e_ownership_vec"
+src = "ownership"
+dst = "vec_slices"
+type = "prerequisite"
+
+[[edge]]
+id = "e_pattern_option"
+src = "pattern_matching"
+dst = "option_result"
+type = "prerequisite"
+
+[[edge]]
+id = "e_option_errors"
+src = "option_result"
+dst = "error_handling"
+type = "prerequisite"
+
+[[edge]]
+id = "e_traits_generics"
+src = "traits"
+dst = "generics"
+type = "prerequisite"
+
+[[edge]]
+id = "e_closures_iterators"
+src = "closures"
+dst = "iterators"
+type = "prerequisite"
+
+[[edge]]
+id = "e_traits_iterators"
+src = "traits"
+dst = "iterators"
+type = "prerequisite"
+
+[[edge]]
+id = "e_modules_traits"
+src = "modules"
+dst = "traits"
+type = "prerequisite"
+
+[[edge]]
+id = "e_ownership_smart"
+src = "ownership"
+dst = "smart_pointers"
+type = "prerequisite"
+
+[[edge]]
+id = "e_smart_box"
+src = "smart_pointers"
+dst = "box_rc_arc"
+type = "prerequisite"
+
+[[edge]]
+id = "e_smart_interior"
+src = "smart_pointers"
+dst = "interior_mutability"
+type = "prerequisite"
+
+[[edge]]
+id = "e_ownership_drop"
+src = "ownership"
+dst = "drop"
+type = "prerequisite"
+
+[[edge]]
+id = "e_copy_clone_moves"
+src = "moves"
+dst = "copy_clone"
+type = "prerequisite"
+
+[[edge]]
+id = "e_concurrency_send_sync"
+src = "concurrency"
+dst = "send_sync"
+type = "prerequisite"
+
+[[edge]]
+id = "e_traits_send_sync"
+src = "traits"
+dst = "send_sync"
+type = "prerequisite"
+
+[[edge]]
+id = "e_concurrency_async"
+src = "concurrency"
+dst = "async_await"
+type = "prerequisite"
+

@@ -1,0 +1,14 @@
+[[move]]
+id = "recall"
+task_type = "recall"
+template = "用自己的话说明 {concept} 的核心约束。"
+
+[[move]]
+id = "explain"
+task_type = "free_explain"
+template = "解释 {concept} 为什么会限制某些看似可行的写法。"
+
+[[move]]
+id = "apply"
+task_type = "apply"
+template = "给出一个使用 {concept} 的最小 Rust 例子，并说明关键边界。"
