@@ -14,6 +14,8 @@ use crate::graph::{structural_mapping_score, upsert_maps_to_candidate, Structura
 use crate::mastery::{fold_all, AttemptObservation, MasteryParams};
 use crate::pack::load_pack;
 use crate::scheduler::{rank_candidates_with_params, ScheduleCandidate, SchedulerParams};
+use crate::status::{status_snapshot, StatusSnapshot};
+use crate::teaching::{teaching_instruction, TeachingInstruction};
 
 pub struct Engine {
     conn: Connection,
@@ -84,6 +86,14 @@ impl Engine {
 
     pub fn diagnose_concept(&self, concept_id: &str) -> Result<GraphDiagnosis> {
         diagnose_concept(&self.conn, concept_id)
+    }
+
+    pub fn status_snapshot(&self) -> Result<StatusSnapshot> {
+        status_snapshot(&self.conn)
+    }
+
+    pub fn teaching_instruction(&self, concept_id: &str) -> Result<TeachingInstruction> {
+        teaching_instruction(&self.conn, concept_id)
     }
 
     pub fn init_pack(&mut self, path: impl AsRef<Path>) -> Result<()> {

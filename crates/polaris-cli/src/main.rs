@@ -8,6 +8,8 @@ use polaris_core::fsrs::{retrievability, FsrsState};
 use polaris_core::pack::validate_pack_path;
 use rusqlite::OptionalExtension;
 
+mod mcp;
+
 #[derive(Debug, Parser)]
 #[command(name = "polaris")]
 struct Cli {
@@ -67,6 +69,7 @@ enum Commands {
         #[arg(long)]
         concept: String,
     },
+    Mcp,
     Pack {
         #[command(subcommand)]
         command: PackCommands,
@@ -98,6 +101,11 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             let conn = open_database_read_only(cli.db.unwrap_or_else(default_db_path))?;
             let engine = Engine::new(conn);
             print_diagnosis(engine.diagnose_concept(&concept)?);
+        }
+        Commands::Mcp => {
+            let conn = open_database(cli.db.unwrap_or_else(default_db_path))?;
+            let engine = Engine::new(conn);
+            mcp::serve_stdio(engine)?;
         }
         command => {
             let conn = open_database(cli.db.unwrap_or_else(default_db_path))?;
@@ -256,6 +264,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
                 Commands::Diagnose { .. } => unreachable!("handled before writable database open"),
+                Commands::Mcp => unreachable!("handled before command dispatch"),
                 Commands::Pack { .. } => unreachable!("handled before database open"),
             }
         }
@@ -394,6 +403,7 @@ mod tests {
             vec!["polaris", "status"],
             vec!["polaris", "grade-pending"],
             vec!["polaris", "diagnose", "--concept", "ownership"],
+            vec!["polaris", "mcp"],
             vec!["polaris", "pack", "validate", "packs/rust"],
         ] {
             Cli::try_parse_from(args).unwrap();

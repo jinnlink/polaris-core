@@ -1,9 +1,10 @@
 use rusqlite::{Connection, OptionalExtension};
+use serde::Serialize;
 
 use crate::config::meta_f64;
 use crate::error::{PolarisError, Result};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct GraphDiagnosis {
     pub concept_id: String,
     pub latest_score: Option<f64>,
@@ -13,14 +14,14 @@ pub struct GraphDiagnosis {
     pub confusion_tasks: Vec<DiscriminationTask>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DiagnosisFocus {
     pub kind: String,
     pub concept_id: String,
     pub reason: String,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct PrerequisiteGap {
     pub concept_id: String,
     pub name: String,
@@ -29,7 +30,7 @@ pub struct PrerequisiteGap {
     pub edge_weight: f64,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DiscriminationTask {
     pub task_type: String,
     pub concept_id: String,

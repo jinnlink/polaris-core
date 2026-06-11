@@ -10,6 +10,8 @@ pub mod graph;
 pub mod mastery;
 pub mod pack;
 pub mod scheduler;
+pub mod status;
+pub mod teaching;
 
 pub const VERSION: &str = "0.1.0";
 
