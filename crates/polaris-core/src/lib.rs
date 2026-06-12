@@ -10,6 +10,7 @@ pub mod geometry;
 pub mod grader;
 pub mod graph;
 pub mod mastery;
+pub mod mental_state;
 pub mod mirt;
 pub mod pack;
 pub mod scheduler;
