@@ -20,6 +20,10 @@ use crate::grader::{
     heuristic_score_with_conn, GradeRequest, LlmConfig,
 };
 use crate::graph::{structural_mapping_score, upsert_maps_to_candidate, StructuralMapping};
+use crate::gu::{
+    active_gu_rules_for_concept, concept_has_active_gu_rule, run_gu_induction, ActiveGuRule,
+    GuInductionSummary,
+};
 use crate::mastery::{fold_all, fold_attempt, AttemptObservation, MasteryParams, MasteryState};
 use crate::mental_state::{
     estimate_hazard, forward_filter, HazardInputs, HmmObservation, StatePosterior, STATE_COUNT,
@@ -174,6 +178,14 @@ impl Engine {
 
     pub fn run_nightly_consolidation(&self) -> Result<ConsolidationSummary> {
         run_nightly_consolidation(&self.conn)
+    }
+
+    pub fn run_gu_induction(&self) -> Result<GuInductionSummary> {
+        run_gu_induction(&self.conn)
+    }
+
+    pub fn active_gu_rules_for_concept(&self, concept_id: &str) -> Result<Vec<ActiveGuRule>> {
+        active_gu_rules_for_concept(&self.conn, concept_id)
     }
 
     pub fn refresh_missing_embeddings(&self) -> Result<EmbeddingRefreshSummary> {
@@ -759,6 +771,7 @@ impl Engine {
             self.record_final_mental_state_snapshot_for_attempt(&attempt_id, grade.score)?;
             update_theta_for_attempt(&self.conn, &attempt_id)?;
             self.replay_concept_after(&input.concept_id, Some(&attempt_id))?;
+            let _ = self.run_gu_induction()?;
         }
 
         Ok(SubmitReceipt {
@@ -789,7 +802,9 @@ impl Engine {
         let concept_id =
             self.record_final_mental_state_snapshot_for_attempt(attempt_id, final_score)?;
         update_theta_for_attempt(&self.conn, attempt_id)?;
-        self.replay_concept_after(&concept_id, Some(attempt_id))
+        self.replay_concept_after(&concept_id, Some(attempt_id))?;
+        let _ = self.run_gu_induction()?;
+        Ok(())
     }
 
     pub fn grade_pending(&mut self) -> Result<GradePendingSummary> {
@@ -1538,6 +1553,7 @@ impl Engine {
                 self.record_final_mental_state_snapshot_for_attempt(&attempt_id, result.score)?;
             update_theta_for_attempt(&self.conn, &attempt_id)?;
             self.replay_concept_after(&concept_id, Some(&attempt_id))?;
+            let _ = self.run_gu_induction()?;
             processed += 1;
         }
 
@@ -1617,7 +1633,7 @@ impl Engine {
             [concept_id],
             |row| row.get(0),
         )?;
-        Ok(active > 0)
+        Ok(active > 0 || concept_has_active_gu_rule(&self.conn, concept_id)?)
     }
 }
 

@@ -5,6 +5,7 @@ use crate::citation::{validate_citations_with_policy, Citation, CitationPolicy, 
 use crate::config::{default_registry, meta_f64, ParameterSpec};
 use crate::error::{PolarisError, Result};
 use crate::fsrs::{FsrsParams, Rating};
+use crate::gu::active_gu_prompt_for_concept;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LlmConfig {
@@ -46,6 +47,8 @@ struct RawGrade {
     depth: String,
     #[serde(default)]
     misconception_id: Option<String>,
+    #[serde(default)]
+    pattern_tags: Vec<String>,
     #[serde(default)]
     citations: Vec<Citation>,
 }
@@ -209,6 +212,7 @@ fn apply_grade(
         "score": raw.score,
         "depth": raw.depth,
         "misconception_id": raw.misconception_id,
+        "pattern_tags": raw.pattern_tags,
         "citations": raw.citations,
         "raw": response_json,
     })
@@ -306,9 +310,9 @@ fn evidence_prompt_for_attempt(conn: &Connection, attempt_id: &str) -> Result<St
 }
 
 fn rubric_for_attempt(conn: &Connection, attempt_id: &str) -> Result<String> {
-    let (task_type, rubric): (String, String) = conn
+    let (task_type, concept_id, rubric): (String, String, String) = conn
         .query_row(
-            "SELECT COALESCE(a.task_type, 'recall'), COALESCE(
+            "SELECT COALESCE(a.task_type, 'recall'), a.concept_id, COALESCE(
             (SELECT value FROM meta WHERE key='pack.' || c.pack || '.rubric'),
             ''
          )
@@ -316,12 +320,15 @@ fn rubric_for_attempt(conn: &Connection, attempt_id: &str) -> Result<String> {
          LEFT JOIN concepts c ON c.id=a.concept_id
          WHERE a.id=?1",
             [attempt_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()?
         .ok_or_else(|| PolarisError::MissingAttempt(attempt_id.to_owned()))?;
+    let gu_prompt = active_gu_prompt_for_concept(conn, &concept_id)?
+        .map(|prompt| format!("\n\nG_u risk:\n{prompt}"))
+        .unwrap_or_default();
     Ok(format!(
-        "Current task_type: {task_type}\nUse the rubric section for this task_type when the pack provides one; otherwise use the closest Bloom depth section.\n\n{rubric}"
+        "Current task_type: {task_type}\nUse the rubric section for this task_type when the pack provides one; otherwise use the closest Bloom depth section.\nReturn optional pattern_tags using only the documented G_u pattern enum when a behavior pattern is evidenced.\n\n{rubric}{gu_prompt}"
     ))
 }
 

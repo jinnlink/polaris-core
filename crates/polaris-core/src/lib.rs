@@ -9,6 +9,7 @@ pub mod fsrs;
 pub mod geometry;
 pub mod grader;
 pub mod graph;
+pub mod gu;
 pub mod mastery;
 pub mod mental_state;
 pub mod mirt;

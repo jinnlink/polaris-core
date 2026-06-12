@@ -8,6 +8,7 @@ use crate::error::{PolarisError, Result};
 
 pub const CONCEPT_KIND_CONCEPT: &str = "concept";
 pub const CONCEPT_KIND_SCHEMA: &str = "schema";
+pub const CONCEPT_KIND_MISCONCEPTION_INDUCED: &str = "misconception_induced";
 
 pub const EDGE_PREREQUISITE: &str = "prerequisite";
 pub const EDGE_CONFUSION: &str = "confusion";
@@ -16,7 +17,10 @@ pub const EDGE_INSTANTIATES: &str = "instantiates";
 pub const EDGE_MAPS_TO: &str = "maps_to";
 
 pub fn is_valid_concept_kind(kind: &str) -> bool {
-    matches!(kind, CONCEPT_KIND_CONCEPT | CONCEPT_KIND_SCHEMA)
+    matches!(
+        kind,
+        CONCEPT_KIND_CONCEPT | CONCEPT_KIND_SCHEMA | CONCEPT_KIND_MISCONCEPTION_INDUCED
+    )
 }
 
 pub fn is_valid_edge_type(edge_type: &str) -> bool {
@@ -422,6 +426,7 @@ mod tests {
     fn validates_concept_kinds_and_edge_types() {
         assert!(is_valid_concept_kind("concept"));
         assert!(is_valid_concept_kind("schema"));
+        assert!(is_valid_concept_kind("misconception_induced"));
         assert!(!is_valid_concept_kind("ontology"));
 
         assert!(is_valid_edge_type("prerequisite"));

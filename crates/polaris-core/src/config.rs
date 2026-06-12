@@ -520,6 +520,27 @@ pub fn default_registry() -> BTreeMap<&'static str, ParameterSpec> {
             None,
             TuningRoute::Replay,
         ),
+        spec(
+            "gu.min_failures",
+            "3",
+            ParameterClass::B,
+            Some("[3,10]"),
+            TuningRoute::Replay,
+        ),
+        spec(
+            "gu.validate_thresh",
+            "0.50",
+            ParameterClass::B,
+            Some("[0.5,0.95]"),
+            TuningRoute::Replay,
+        ),
+        spec(
+            "gu.resolve_n",
+            "3",
+            ParameterClass::B,
+            Some("[2,10]"),
+            TuningRoute::Replay,
+        ),
     ]
     .into_iter()
     .map(|entry| (entry.key, entry))
@@ -648,6 +669,9 @@ mod tests {
             "gu.retire_p",
             "gu.retire_thresh",
             "gu.window_days",
+            "gu.min_failures",
+            "gu.validate_thresh",
+            "gu.resolve_n",
         ] {
             assert!(registry.contains_key(key), "missing {key}");
         }

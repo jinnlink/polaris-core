@@ -196,6 +196,22 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             delta REAL,
             status TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS gu_rules(
+            id TEXT PRIMARY KEY,
+            pattern TEXT NOT NULL,
+            concept_ids_json TEXT NOT NULL,
+            attempt_ids_json TEXT NOT NULL,
+            first_seen TEXT,
+            last_seen TEXT,
+            count INTEGER DEFAULT 0,
+            status TEXT NOT NULL,
+            alpha REAL DEFAULT 1.0,
+            beta REAL DEFAULT 1.0,
+            consumed_at TEXT,
+            correct_streak INTEGER DEFAULT 0,
+            updated_at TEXT
+        );
         "#,
     )?;
 
@@ -261,6 +277,7 @@ mod tests {
             "moves_effects",
             "mrt_log",
             "param_tuning_runs",
+            "gu_rules",
         ] {
             let exists: i64 = conn
                 .query_row(
