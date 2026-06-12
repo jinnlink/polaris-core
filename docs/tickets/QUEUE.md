@@ -1,6 +1,6 @@
 # 票队列（单票制）
 
-状态：**P03I 已完成，等待用户确认 commit**（P03H 已提交 `f8d05cb`）。任何时刻只允许 1 张票 In Progress。
+状态：**P03J 已完成并提交，下一张按推荐序为 P03K（心智动力学拟合层激活，Backlog 提案待立票）**。任何时刻只允许 1 张票 In Progress。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 新增票必须标注它服务主命题（验证真懂→定位模糊→针对性补缺）的哪一环。
 
@@ -25,7 +25,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 - [x] **P03G 交错调度**（`TICKET_P03G_INTERLEAVED_SCHEDULING.md`）← 已实现并通过验收；服务环节：定位模糊 → 针对性补缺
 - [x] **P03H G_u 自动归纳**（`TICKET_P03H_GU_AUTO_INDUCTION.md`）← 已实现并通过验收；服务环节：定位模糊 → 针对性补缺
 - [x] **P03I 镜像报告 v1**（`TICKET_P03I_MIRROR_REPORT.md`）← 已实现并通过验收；每条断言带证据 id + 置信度，说不出证据不许进报告；服务环节：验证真懂 → 定位模糊
-- P03J 参数自调优 v1（B 类·重放途径：夜间反事实重放调参 + param_tuning_runs 审计，DATA_MODEL §12）
+- [x] **P03J 参数自调优 v1**（`TICKET_P03J_PARAM_TUNING.md`）← 已实现并通过验收；B 类·重放途径：夜间反事实重放调参 + param_tuning_runs 审计（DATA_MODEL §12）；服务环节：定位模糊 → 针对性补缺
 
 ## Phase 4 — UI + MRT
 

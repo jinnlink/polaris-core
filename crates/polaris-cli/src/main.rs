@@ -66,6 +66,7 @@ enum Commands {
     Status,
     GradePending,
     Report,
+    Tune,
     ReportFeedback {
         #[arg(long)]
         assertion: String,
@@ -275,6 +276,30 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 Commands::Report => {
                     let report = engine.run_mirror_report()?;
                     print_mirror_report(&report);
+                }
+                Commands::Tune => {
+                    let summary = engine.run_param_tuning()?;
+                    if summary.outcomes.is_empty() && summary.skipped.is_empty() {
+                        println!("无可评估槽位");
+                    }
+                    for outcome in &summary.outcomes {
+                        println!(
+                            "{} {}: {} -> {} （{} 改善 {:+.4}）",
+                            if outcome.accepted {
+                                "accepted"
+                            } else {
+                                "rejected"
+                            },
+                            outcome.param,
+                            outcome.old_value,
+                            outcome.new_value,
+                            outcome.metric,
+                            outcome.delta,
+                        );
+                    }
+                    for skip in &summary.skipped {
+                        println!("skipped {skip}");
+                    }
                 }
                 Commands::ReportFeedback { assertion, report } => {
                     let report_id = engine.record_report_feedback(report.as_deref(), &assertion)?;

@@ -44,6 +44,7 @@ use crate::report::{
 use crate::scheduler::{rank_candidates_with_params, ScheduleCandidate, SchedulerParams};
 use crate::status::{status_snapshot, StatusSnapshot};
 use crate::teaching::{teaching_instruction, TeachingInstruction};
+use crate::tuning::{run_param_tuning, TuningSummary};
 
 pub struct Engine {
     conn: Connection,
@@ -181,6 +182,10 @@ impl Engine {
 
     pub fn run_nightly_consolidation(&self) -> Result<ConsolidationSummary> {
         run_nightly_consolidation(&self.conn)
+    }
+
+    pub fn run_param_tuning(&self) -> Result<TuningSummary> {
+        run_param_tuning(&self.conn)
     }
 
     pub fn run_mirror_report(&self) -> Result<MirrorReport> {

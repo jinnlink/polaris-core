@@ -20,6 +20,7 @@ pub mod report;
 pub mod scheduler;
 pub mod status;
 pub mod teaching;
+pub mod tuning;
 
 pub const VERSION: &str = "0.1.0";
 

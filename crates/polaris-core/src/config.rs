@@ -583,6 +583,41 @@ pub fn default_registry() -> BTreeMap<&'static str, ParameterSpec> {
             Some("[5,50]"),
             TuningRoute::Manual,
         ),
+        spec(
+            "tuning.accept_margin",
+            "0.005",
+            ParameterClass::A,
+            None,
+            TuningRoute::Manual,
+        ),
+        spec(
+            "tuning.holdout_frac",
+            "0.20",
+            ParameterClass::A,
+            None,
+            TuningRoute::Manual,
+        ),
+        spec(
+            "tuning.min_attempts",
+            "30",
+            ParameterClass::A,
+            None,
+            TuningRoute::Manual,
+        ),
+        spec(
+            "tuning.max_params_per_run",
+            "2",
+            ParameterClass::A,
+            None,
+            TuningRoute::Manual,
+        ),
+        spec(
+            "tuning.rotation_cursor",
+            "0",
+            ParameterClass::C,
+            None,
+            TuningRoute::Fit,
+        ),
     ]
     .into_iter()
     .map(|entry| (entry.key, entry))
@@ -745,6 +780,32 @@ mod tests {
             let spec = registry.get(key).unwrap_or_else(|| panic!("missing {key}"));
             assert_eq!(spec.class, ParameterClass::B, "{key} should be class B");
         }
+    }
+
+    #[test]
+    fn parameter_registry_contains_p03j_tuning_keys() {
+        let registry = default_registry();
+
+        for key in [
+            "tuning.accept_margin",
+            "tuning.holdout_frac",
+            "tuning.min_attempts",
+            "tuning.max_params_per_run",
+        ] {
+            let spec = registry.get(key).unwrap_or_else(|| panic!("missing {key}"));
+            assert_eq!(
+                spec.class,
+                ParameterClass::A,
+                "{key} is a governance gate and must be class A"
+            );
+            assert_eq!(spec.tuning_route, TuningRoute::Manual);
+        }
+
+        let cursor = registry
+            .get("tuning.rotation_cursor")
+            .expect("tuning.rotation_cursor");
+        assert_eq!(cursor.default_value, "0");
+        assert_eq!(cursor.class, ParameterClass::C);
     }
 
     #[test]
