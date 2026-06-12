@@ -25,8 +25,10 @@ use crate::gu::{
     GuInductionSummary,
 };
 use crate::mastery::{fold_all, fold_attempt, AttemptObservation, MasteryParams, MasteryState};
+use crate::mental_fit::{run_mental_dynamics_fit, transitions_from_meta, MentalFitSummary};
 use crate::mental_state::{
-    estimate_hazard, forward_filter, HazardInputs, HmmObservation, StatePosterior, STATE_COUNT,
+    estimate_hazard, forward_filter_with_transitions, prior_transitions, HazardInputs,
+    HmmObservation, StatePosterior, HAZARD_FEATURE_COUNT, STATE_COUNT,
 };
 use crate::mirt::{
     ensure_theta, fused_p_known, initial_track_q_blob, latent_prediction, update_theta_for_attempt,
@@ -186,6 +188,10 @@ impl Engine {
 
     pub fn run_param_tuning(&self) -> Result<TuningSummary> {
         run_param_tuning(&self.conn)
+    }
+
+    pub fn run_mental_dynamics_fit(&self) -> Result<MentalFitSummary> {
+        run_mental_dynamics_fit(&self.conn)
     }
 
     pub fn run_mirror_report(&self) -> Result<MirrorReport> {
@@ -981,13 +987,23 @@ impl Engine {
                 .latest_mental_state_posterior(record.session_id)?
                 .unwrap_or_else(StatePosterior::uniform),
         };
-        let posterior = forward_filter(Some(&prior), observation);
+        let transitions = transitions_from_meta(&self.conn)?.unwrap_or_else(prior_transitions);
+        let posterior = forward_filter_with_transitions(Some(&prior), observation, &transitions);
         let (time_sin, time_cos) = self.time_of_day_features()?;
         let hazard_gate = meta_f64(&self.conn, "hazard.auc_gate")?;
         let hmm_gate_margin = meta_f64(&self.conn, "hmm.gate_auc_margin")?;
         let calib_gap = self.current_calib_gap(record.concept_id)?;
         let hint_rate = observation.hints / observation.session_min.max(1.0);
-        let beta = [0.0; 12];
+        let fitted_model = self.latest_hazard_model()?;
+        let (beta, validation_auc, model_status) = match &fitted_model {
+            Some((beta, auc)) => (*beta, Some(*auc), "fitted"),
+            None => ([0.0; HAZARD_FEATURE_COUNT], None, "unfit"),
+        };
+        let gate_eval = self.latest_state_gate_eval()?;
+        let (observed_auc_margin, strategy_enabled) = match gate_eval {
+            Some((margin, passes)) => (Some(margin), passes),
+            None => (None, false),
+        };
         let hazard_inputs = HazardInputs::new(
             &posterior,
             calib_gap,
@@ -997,7 +1013,7 @@ impl Engine {
             time_cos,
             observation.session_min,
         );
-        let hazard = estimate_hazard(hazard_inputs, &beta, None, hazard_gate);
+        let hazard = estimate_hazard(hazard_inputs, &beta, validation_auc, hazard_gate);
         let payload = serde_json::json!({
             "schema_version": 1,
             "attempt_id": record.attempt_id,
@@ -1015,18 +1031,18 @@ impl Engine {
             "prior_posterior": prior.probabilities,
             "posterior": posterior.probabilities,
             "dominant_state": posterior.dominant_state().as_str(),
-            "strategy_enabled": false,
+            "strategy_enabled": strategy_enabled,
             "state_gate": {
                 "required_auc_margin": hmm_gate_margin,
-                "observed_auc_margin": null,
-                "participates": false
+                "observed_auc_margin": observed_auc_margin,
+                "participates": strategy_enabled
             },
             "hazard": {
                 "probability": hazard.probability,
                 "participates": hazard.participates,
                 "validation_auc": hazard.validation_auc,
                 "auc_gate": hazard.auc_gate,
-                "model_status": "unfit",
+                "model_status": model_status,
                 "inputs": hazard_inputs.features,
                 "calib_gap": calib_gap,
                 "hint_rate": hint_rate,
@@ -1047,6 +1063,43 @@ impl Engine {
             ],
         )?;
         Ok(())
+    }
+
+    fn latest_hazard_model(&self) -> Result<Option<([f64; HAZARD_FEATURE_COUNT], f64)>> {
+        let row: Option<(String, f64)> = self
+            .conn
+            .query_row(
+                "SELECT beta_json, validation_auc FROM hazard_models
+                 ORDER BY julianday(fitted_at) DESC, id DESC
+                 LIMIT 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        let Some((beta_json, auc)) = row else {
+            return Ok(None);
+        };
+        let values: Vec<f64> = serde_json::from_str(&beta_json)?;
+        if values.len() != HAZARD_FEATURE_COUNT {
+            return Ok(None);
+        }
+        let mut beta = [0.0; HAZARD_FEATURE_COUNT];
+        beta.copy_from_slice(&values);
+        Ok(Some((beta, auc)))
+    }
+
+    fn latest_state_gate_eval(&self) -> Result<Option<(f64, bool)>> {
+        let row: Option<(f64, i64)> = self
+            .conn
+            .query_row(
+                "SELECT margin, passes FROM state_gate_evals
+                 ORDER BY julianday(evaluated_at) DESC, id DESC
+                 LIMIT 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        Ok(row.map(|(margin, passes)| (margin, passes != 0)))
     }
 
     fn latest_mental_state_posterior(&self, session_id: &str) -> Result<Option<StatePosterior>> {

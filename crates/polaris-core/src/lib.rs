@@ -11,6 +11,7 @@ pub mod grader;
 pub mod graph;
 pub mod gu;
 pub mod mastery;
+pub mod mental_fit;
 pub mod mental_state;
 pub mod mirt;
 pub mod moves;

@@ -618,6 +618,48 @@ pub fn default_registry() -> BTreeMap<&'static str, ParameterSpec> {
             None,
             TuningRoute::Fit,
         ),
+        spec(
+            "hazard.fit_l2",
+            "0.01",
+            ParameterClass::B,
+            Some("[0.001,0.1]"),
+            TuningRoute::Manual,
+        ),
+        spec(
+            "hazard.fit_iterations",
+            "300",
+            ParameterClass::B,
+            Some("[50,2000]"),
+            TuningRoute::Manual,
+        ),
+        spec(
+            "hazard.fit_lr",
+            "0.5",
+            ParameterClass::B,
+            Some("[0.01,2.0]"),
+            TuningRoute::Manual,
+        ),
+        spec(
+            "hazard.fit_min_n",
+            "50",
+            ParameterClass::A,
+            None,
+            TuningRoute::Manual,
+        ),
+        spec(
+            "hazard.holdout_frac",
+            "0.20",
+            ParameterClass::A,
+            None,
+            TuningRoute::Manual,
+        ),
+        spec(
+            "hmm.transitions",
+            "[]",
+            ParameterClass::C,
+            None,
+            TuningRoute::Fit,
+        ),
     ]
     .into_iter()
     .map(|entry| (entry.key, entry))

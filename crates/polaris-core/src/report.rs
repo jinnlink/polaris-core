@@ -82,6 +82,7 @@ pub fn run_mirror_report(conn: &Connection) -> Result<MirrorReport> {
 
     let mut assertions = Vec::new();
     let mut skipped = Vec::new();
+    let hazard_gate = hazard_gate_status(conn)?;
 
     let mut assertion_candidates = Vec::new();
     assertion_candidates.extend(calibration_phantom_candidates(conn)?);
@@ -92,6 +93,7 @@ pub fn run_mirror_report(conn: &Connection) -> Result<MirrorReport> {
         min_evidence,
     )?);
     assertion_candidates.extend(gu_pattern_candidates(conn)?);
+    assertion_candidates.extend(hazard_risk_candidate(conn, window_days, &hazard_gate)?);
     for candidate in assertion_candidates {
         match admit_assertion(
             conn,
@@ -143,7 +145,7 @@ pub fn run_mirror_report(conn: &Connection) -> Result<MirrorReport> {
         hypotheses,
         suggestions,
         skipped,
-        hazard_gate: hazard_gate_status(conn)?,
+        hazard_gate,
         reflection_prompts: REFLECTION_PROMPTS
             .iter()
             .map(|prompt| (*prompt).to_owned())
@@ -818,6 +820,79 @@ fn param_suggestions(conn: &Connection) -> Result<Vec<Candidate>> {
                 "bias": bias,
                 "n": n,
                 "aligned": aligned,
+            }),
+        },
+    }])
+}
+
+/// hazard 风险摘要——仅当 hazard 模型过 AUC 门才生成（DATA_MODEL §7）。
+fn hazard_risk_candidate(
+    conn: &Connection,
+    window_days: i64,
+    gate: &HazardGateStatus,
+) -> Result<Vec<Candidate>> {
+    if !gate.participates {
+        return Ok(Vec::new());
+    }
+    let Some(validation_auc) = gate.validation_auc else {
+        return Ok(Vec::new());
+    };
+
+    let mut stmt = conn.prepare(
+        "SELECT id, json_extract(payload_json, '$.hazard.probability')
+         FROM behavior_events
+         WHERE type='mental_state'
+           AND json_extract(payload_json, '$.score_source')='provisional'
+           AND json_extract(payload_json, '$.hazard.model_status')='fitted'
+           AND julianday(at) >= julianday('now') - ?1
+         ORDER BY julianday(at) ASC, rowid ASC",
+    )?;
+    let rows = stmt
+        .query_map(params![window_days as f64], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<f64>>(1)?))
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let samples = rows
+        .into_iter()
+        .filter_map(|(id, probability)| probability.map(|value| (id, value)))
+        .filter(|(_, value)| value.is_finite())
+        .collect::<Vec<_>>();
+    if samples.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let n = samples.len();
+    let mean = samples.iter().map(|(_, value)| value).sum::<f64>() / n as f64;
+    let peak = samples
+        .iter()
+        .map(|(_, value)| *value)
+        .fold(0.0_f64, f64::max);
+    let mut evidence_ids = samples
+        .iter()
+        .map(|(id, _)| format!("behavior:{id}"))
+        .collect::<Vec<_>>();
+    evidence_ids.sort();
+    evidence_ids.truncate(EVIDENCE_CAP);
+
+    Ok(vec![Candidate {
+        sample_n: n,
+        item: ReportItem {
+            id: "hazard_risk_summary:window".to_owned(),
+            kind: "hazard_risk_summary".to_owned(),
+            subject: "window".to_owned(),
+            claim: format!(
+                "本窗口 {n} 次作答的即时放弃风险均值 {:.0}%、峰值 {:.0}%（hazard 模型留出 AUC {validation_auc:.2}，已过 {:.2} 门）。",
+                mean * 100.0,
+                peak * 100.0,
+                gate.auc_gate,
+            ),
+            confidence: validation_auc,
+            evidence_ids,
+            stats: serde_json::json!({
+                "mean": mean,
+                "peak": peak,
+                "n": n,
+                "validation_auc": validation_auc,
             }),
         },
     }])

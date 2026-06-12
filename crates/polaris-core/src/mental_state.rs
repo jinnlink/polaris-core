@@ -168,20 +168,33 @@ impl HazardModel {
     }
 }
 
+pub type TransitionMatrix = [[f64; STATE_COUNT]; STATE_COUNT];
+
+pub fn prior_transitions() -> TransitionMatrix {
+    let mut transitions = [[TRANSITION_SWITCH; STATE_COUNT]; STATE_COUNT];
+    for (idx, row) in transitions.iter_mut().enumerate() {
+        row[idx] = TRANSITION_STAY;
+    }
+    transitions
+}
+
 pub fn forward_filter(
     previous: Option<&StatePosterior>,
     observation: HmmObservation,
 ) -> StatePosterior {
+    forward_filter_with_transitions(previous, observation, &prior_transitions())
+}
+
+pub fn forward_filter_with_transitions(
+    previous: Option<&StatePosterior>,
+    observation: HmmObservation,
+    transitions: &TransitionMatrix,
+) -> StatePosterior {
     let previous = previous.cloned().unwrap_or_else(StatePosterior::uniform);
     let mut predicted = [0.0; STATE_COUNT];
-    for from in 0..STATE_COUNT {
-        for (to, value) in predicted.iter_mut().enumerate() {
-            let transition = if from == to {
-                TRANSITION_STAY
-            } else {
-                TRANSITION_SWITCH
-            };
-            *value += previous.probabilities[from] * transition;
+    for (probability, row) in previous.probabilities.iter().zip(transitions.iter()) {
+        for (value, transition) in predicted.iter_mut().zip(row.iter()) {
+            *value += probability * transition;
         }
     }
 
@@ -196,6 +209,136 @@ pub fn forward_filter(
     StatePosterior {
         probabilities: softmax(log_weights),
     }
+}
+
+const TRANSITION_FLOOR: f64 = 0.01;
+
+/// Baum-Welch 仅重估转移矩阵；发射先验冻结（DATA_MODEL §7 表）。
+/// 行下限防吸收态，行归一保持随机矩阵性质。
+pub fn reestimate_transitions(
+    sequences: &[Vec<HmmObservation>],
+    iterations: usize,
+) -> TransitionMatrix {
+    let mut transitions = prior_transitions();
+    let usable = sequences
+        .iter()
+        .filter(|sequence| sequence.len() >= 2)
+        .collect::<Vec<_>>();
+    if usable.is_empty() {
+        return transitions;
+    }
+
+    for _ in 0..iterations.max(1) {
+        let mut xi_sum = [[1e-6; STATE_COUNT]; STATE_COUNT];
+        for sequence in &usable {
+            accumulate_transition_counts(sequence, &transitions, &mut xi_sum);
+        }
+        let shrink = 1.0 - TRANSITION_FLOOR * STATE_COUNT as f64;
+        for row in &mut xi_sum {
+            let total = row.iter().sum::<f64>();
+            if total <= 0.0 || !total.is_finite() {
+                *row = [1.0 / STATE_COUNT as f64; STATE_COUNT];
+                continue;
+            }
+            for value in row.iter_mut() {
+                *value = TRANSITION_FLOOR + shrink * (*value / total);
+            }
+        }
+        transitions = xi_sum;
+    }
+    transitions
+}
+
+fn accumulate_transition_counts(
+    sequence: &[HmmObservation],
+    transitions: &TransitionMatrix,
+    xi_sum: &mut [[f64; STATE_COUNT]; STATE_COUNT],
+) {
+    let emissions = sequence
+        .iter()
+        .map(|observation| {
+            let features = observation.emission_features();
+            let mut row = [0.0; STATE_COUNT];
+            for (idx, value) in row.iter_mut().enumerate() {
+                *value = diagonal_gaussian_log_likelihood(&features, &EMISSION_MEANS[idx]).exp();
+            }
+            row
+        })
+        .collect::<Vec<_>>();
+
+    let len = sequence.len();
+    // 缩放前向
+    let mut alpha = vec![[0.0; STATE_COUNT]; len];
+    let mut scales = vec![0.0; len];
+    for state in 0..STATE_COUNT {
+        alpha[0][state] = emissions[0][state] / STATE_COUNT as f64;
+    }
+    scales[0] = normalize_in_place(&mut alpha[0]);
+    for t in 1..len {
+        let (head, tail) = alpha.split_at_mut(t);
+        let previous = &head[t - 1];
+        let current = &mut tail[0];
+        for (to, value) in current.iter_mut().enumerate() {
+            let mut total = 0.0;
+            for from in 0..STATE_COUNT {
+                total += previous[from] * transitions[from][to];
+            }
+            *value = total * emissions[t][to];
+        }
+        scales[t] = normalize_in_place(current);
+    }
+
+    // 缩放后向
+    let mut beta = vec![[1.0; STATE_COUNT]; len];
+    for t in (0..len - 1).rev() {
+        let (head, tail) = beta.split_at_mut(t + 1);
+        let next = &tail[0];
+        let current = &mut head[t];
+        for (from, value) in current.iter_mut().enumerate() {
+            let mut total = 0.0;
+            for to in 0..STATE_COUNT {
+                total += transitions[from][to] * emissions[t + 1][to] * next[to];
+            }
+            *value = total;
+        }
+        let scale = scales[t + 1].max(f64::MIN_POSITIVE);
+        for value in current.iter_mut() {
+            *value /= scale;
+        }
+    }
+
+    for t in 0..len - 1 {
+        let mut xi = [[0.0; STATE_COUNT]; STATE_COUNT];
+        let mut total = 0.0;
+        for from in 0..STATE_COUNT {
+            for to in 0..STATE_COUNT {
+                let value =
+                    alpha[t][from] * transitions[from][to] * emissions[t + 1][to] * beta[t + 1][to];
+                xi[from][to] = value;
+                total += value;
+            }
+        }
+        if total <= 0.0 || !total.is_finite() {
+            continue;
+        }
+        for from in 0..STATE_COUNT {
+            for to in 0..STATE_COUNT {
+                xi_sum[from][to] += xi[from][to] / total;
+            }
+        }
+    }
+}
+
+fn normalize_in_place(row: &mut [f64; STATE_COUNT]) -> f64 {
+    let total = row.iter().sum::<f64>();
+    if total <= 0.0 || !total.is_finite() {
+        *row = [1.0 / STATE_COUNT as f64; STATE_COUNT];
+        return 1.0;
+    }
+    for value in row.iter_mut() {
+        *value /= total;
+    }
+    total
 }
 
 pub fn estimate_hazard(
@@ -344,5 +487,68 @@ fn finite_or_zero(value: f64) -> f64 {
         value
     } else {
         0.0
+    }
+}
+
+#[cfg(test)]
+mod em_tests {
+    use super::*;
+
+    fn sticky_observation(state: MentalState) -> HmmObservation {
+        let means = EMISSION_MEANS[state.index()];
+        HmmObservation {
+            z_latency: means[0],
+            hints: means[1],
+            residual: means[2],
+            consec_fail: means[3],
+            conf_delta: means[4],
+            interval_bucket: means[5],
+            session_min: means[6] * 40.0,
+        }
+    }
+
+    #[test]
+    fn reestimate_transitions_returns_valid_stochastic_matrix() {
+        let mut sequences = Vec::new();
+        for _ in 0..4 {
+            let mut sequence = Vec::new();
+            for _ in 0..12 {
+                sequence.push(sticky_observation(MentalState::Flow));
+            }
+            for _ in 0..12 {
+                sequence.push(sticky_observation(MentalState::Frustrated));
+            }
+            sequences.push(sequence);
+        }
+
+        let transitions = reestimate_transitions(&sequences, 10);
+
+        for row in &transitions {
+            let total = row.iter().sum::<f64>();
+            assert!((total - 1.0).abs() < 1e-9, "row sums to {total}");
+            for value in row {
+                assert!(*value >= TRANSITION_FLOOR - 1e-12 && value.is_finite());
+            }
+        }
+        let flow = MentalState::Flow.index();
+        assert!(
+            transitions[flow][flow] > 0.5,
+            "sticky data should keep diagonal dominant, got {}",
+            transitions[flow][flow]
+        );
+    }
+
+    #[test]
+    fn forward_filter_with_prior_matches_legacy_constants() {
+        let observation = sticky_observation(MentalState::Bored);
+        let legacy = forward_filter(None, observation);
+        let explicit = forward_filter_with_transitions(None, observation, &prior_transitions());
+        assert_eq!(legacy, explicit);
+    }
+
+    #[test]
+    fn reestimate_with_no_usable_sequences_keeps_prior() {
+        let transitions = reestimate_transitions(&[vec![]], 5);
+        assert_eq!(transitions, prior_transitions());
     }
 }

@@ -67,6 +67,7 @@ enum Commands {
     GradePending,
     Report,
     Tune,
+    MentalFit,
     ReportFeedback {
         #[arg(long)]
         assertion: String,
@@ -276,6 +277,18 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 Commands::Report => {
                     let report = engine.run_mirror_report()?;
                     print_mirror_report(&report);
+                }
+                Commands::MentalFit => {
+                    let summary = engine.run_mental_dynamics_fit()?;
+                    println!(
+                        "hazard: {} {}",
+                        summary.hazard.status, summary.hazard.detail
+                    );
+                    println!(
+                        "state_gate: {} {}",
+                        summary.state_gate.status, summary.state_gate.detail
+                    );
+                    println!("em: {} {}", summary.em.status, summary.em.detail);
                 }
                 Commands::Tune => {
                     let summary = engine.run_param_tuning()?;

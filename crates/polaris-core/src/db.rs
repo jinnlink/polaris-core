@@ -221,6 +221,25 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             assertion_count INTEGER DEFAULT 0,
             skipped_count INTEGER DEFAULT 0
         );
+
+        CREATE TABLE IF NOT EXISTS hazard_models(
+            id TEXT PRIMARY KEY,
+            fitted_at TEXT,
+            beta_json TEXT NOT NULL,
+            validation_auc REAL NOT NULL,
+            n_train INTEGER,
+            n_validation INTEGER
+        );
+
+        CREATE TABLE IF NOT EXISTS state_gate_evals(
+            id TEXT PRIMARY KEY,
+            evaluated_at TEXT,
+            baseline_auc REAL NOT NULL,
+            state_auc REAL NOT NULL,
+            margin REAL NOT NULL,
+            passes INTEGER NOT NULL,
+            n INTEGER
+        );
         "#,
     )?;
 
@@ -288,6 +307,8 @@ mod tests {
             "param_tuning_runs",
             "gu_rules",
             "mirror_reports",
+            "hazard_models",
+            "state_gate_evals",
         ] {
             let exists: i64 = conn
                 .query_row(
