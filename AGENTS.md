@@ -6,9 +6,10 @@
 
 1. `SPEC.md` —— 宪法。任何冲突它赢。
 2. `docs/tickets/QUEUE.md` —— 当前该做哪张票。
-3. 当前票全文 —— 范围、验收、禁区。
-4. `docs/DATA_MODEL.md` —— 表结构与公式，实现的直接依据。
-5. `docs/MASTER_PLAN.md` —— 完整设计蓝图，按需查对应章节（不需要通读后才动手）。
+3. `docs/ENHANCEMENT_ROADMAP.md` —— P03E+ 增强票优先级与依赖；月度对齐见姊妹文档 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`。
+4. 当前票全文 —— 范围、验收、禁区。
+5. `docs/DATA_MODEL.md` —— 表结构与公式，实现的直接依据。
+6. `docs/MASTER_PLAN.md` —— 完整设计蓝图，按需查对应章节（不需要通读后才动手）。
 
 ## 工作纪律
 

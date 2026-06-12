@@ -25,6 +25,7 @@
 - 读 `AGENTS.md` 和本手册。
 - 读 `SPEC.md`，确认铁律、禁区、验收基线。
 - 读 `docs/tickets/QUEUE.md`，确认唯一可推进票。
+- 读 `docs/ENHANCEMENT_ROADMAP.md`，确认 P03E+ 优先级（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 - 读当前票全文，摘出范围、禁区、验收和回滚要求。
 - 读 `docs/DATA_MODEL.md`，只查当前票需要的表、公式和参数。
 - 运行 `git status --short`，分清已有改动与本窗口改动。

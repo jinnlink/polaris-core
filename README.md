@@ -49,6 +49,7 @@ cargo run -p polaris-cli -- --db target\p01-quickstart.db grade-pending
 | `SPEC.md` | 工程宪法：主命题、三支柱、铁律、边界、验收基线（冲突时它赢） |
 | `AGENTS.md` | 执行 AI 的入口：阅读顺序、纪律、移植参考映射 |
 | `docs/AI_RUNBOOK.md` | 新窗口续跑手册：启动提示词、接手清单、交接模板、防错规则 |
+| `docs/ENHANCEMENT_ROADMAP.md` | P03E+ 增强优先级；姊妹文档见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md` |
 | `docs/MASTER_PLAN.md` | 完整设计蓝图（含抽象引擎、心智动力学引擎、五个原创框架、教学法纲要 v3、分阶段与验证门） |
 | `docs/DATA_MODEL.md` | 表结构 DDL 与全部公式（实现的直接依据） |
 | `docs/tickets/QUEUE.md` | 票队列（单票制，P01→P05 对应 Phase 1→5） |
