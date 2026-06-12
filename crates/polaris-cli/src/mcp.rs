@@ -55,6 +55,7 @@ impl McpSession {
             let arguments = params.get("arguments").unwrap_or(&Value::Null);
             match name {
                 "get_next_task" => self.get_next_task(arguments),
+                "get_interleaved_batch" => self.get_interleaved_batch(arguments),
                 "submit_evidence" => self.submit_evidence(arguments),
                 "get_teaching_instruction" => self.get_teaching_instruction(arguments),
                 other => Err(format!("unknown tool: {other}")),
@@ -191,6 +192,16 @@ impl McpSession {
         }))
     }
 
+    fn get_interleaved_batch(&self, arguments: &Value) -> Result<Value, String> {
+        let batch_size = optional_i64(arguments, "batch_size").unwrap_or(3).max(1) as usize;
+        serde_json::to_value(
+            self.engine
+                .get_interleaved_batch(batch_size)
+                .map_err(|error| error.to_string())?,
+        )
+        .map_err(|error| error.to_string())
+    }
+
     fn get_teaching_instruction(&self, arguments: &Value) -> Result<Value, String> {
         let concept = required_str(arguments, "concept")?;
         serde_json::to_value(
@@ -242,6 +253,16 @@ fn tool_definitions() -> Value {
                 "type": "object",
                 "properties": {
                     "session": {"type": "string", "description": "Session id to associate with the next behavior event. Defaults to mcp."}
+                }
+            }
+        },
+        {
+            "name": "get_interleaved_batch",
+            "description": "Return a mini-batch of interleaved learning tasks with move, phase, p_known, and expected_success fields.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "batch_size": {"type": "integer", "minimum": 1, "description": "Mini-batch size. Defaults to 3."}
                 }
             }
         },
@@ -345,6 +366,10 @@ fn required_i64(value: &Value, key: &str) -> Result<i64, String> {
         .ok_or_else(|| format!("missing integer argument: {key}"))
 }
 
+fn optional_i64(value: &Value, key: &str) -> Option<i64> {
+    value.get(key).and_then(Value::as_i64)
+}
+
 fn error_response(id: Value, code: i64, message: &str) -> Value {
     json!({
         "jsonrpc": "2.0",
@@ -421,6 +446,7 @@ mod tests {
             tool_names,
             vec![
                 "get_next_task",
+                "get_interleaved_batch",
                 "submit_evidence",
                 "get_teaching_instruction"
             ]
@@ -568,6 +594,38 @@ mod tests {
             submit_payload["attempt_id"].as_str().is_some(),
             "submit response should accept concept_id and return attempt_id, got {submit_payload}"
         );
+    }
+
+    #[test]
+    fn mcp_interleaved_batch_returns_assignment_fields() {
+        let mut session = test_session();
+
+        let response = session
+            .handle_request(json!({
+                "jsonrpc": "2.0",
+                "id": 32,
+                "method": "tools/call",
+                "params": {"name": "get_interleaved_batch", "arguments": {
+                    "batch_size": 3
+                }}
+            }))
+            .unwrap()
+            .unwrap();
+        let text = response["result"]["content"][0]["text"].as_str().unwrap();
+        let payload: Value = serde_json::from_str(text).unwrap();
+        let batch = payload.as_array().expect("batch array");
+
+        assert_eq!(batch.len(), 3);
+        for item in batch {
+            assert!(item["concept_id"].as_str().is_some());
+            assert!(item["concept_name"].as_str().is_some());
+            assert!(item["move"].as_str().is_some());
+            assert!(item["task_type"].as_str().is_some());
+            assert!(item["template"].as_str().is_some());
+            assert!(item["phase"].as_str().is_some());
+            assert!(item["p_known"].as_f64().is_some());
+            assert!(item["expected_success"].as_f64().is_some());
+        }
     }
 
     #[test]
