@@ -1,0 +1,1114 @@
+use rusqlite::{params, Connection, OptionalExtension};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+use crate::config::{meta_f64, meta_i64, meta_value};
+use crate::consolidation::iso_week_label;
+use crate::error::{PolarisError, Result};
+
+pub const REPORT_SCHEMA_VERSION: i64 = 1;
+
+const TEN_MINUTES_DAYS: f64 = 10.0 / 1440.0;
+const EVIDENCE_CAP: usize = 20;
+const CALIBRATION_EVIDENCE_CAP: usize = 12;
+const CALIBRATION_CONCEPT_CAP: usize = 5;
+const HYPOTHESIS_CAP: usize = 3;
+const SUGGESTION_LOOKBACK_DAYS: f64 = 90.0;
+const SUGGESTION_SAMPLE_CAP: usize = 200;
+
+const REFLECTION_PROMPTS: [&str; 3] = [
+    "本周哪个概念的实际表现最出乎你的意料？为什么？",
+    "上面哪条断言和你的自我感觉不符？标记「不准」——这本身就是校正数据。",
+    "下周你优先补哪个缺口？打算用什么方式验证自己真的补上了？",
+];
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ReportItem {
+    pub id: String,
+    pub kind: String,
+    pub subject: String,
+    pub claim: String,
+    pub confidence: f64,
+    pub evidence_ids: Vec<String>,
+    pub stats: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SkippedCandidate {
+    pub id: String,
+    pub kind: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HazardGateStatus {
+    pub participates: bool,
+    pub reason: String,
+    pub validation_auc: Option<f64>,
+    pub auc_gate: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MirrorReport {
+    pub schema_version: i64,
+    pub id: String,
+    pub week: String,
+    pub generated_at: String,
+    pub window_days: i64,
+    pub assertions: Vec<ReportItem>,
+    pub hypotheses: Vec<ReportItem>,
+    pub suggestions: Vec<ReportItem>,
+    pub skipped: Vec<SkippedCandidate>,
+    pub hazard_gate: HazardGateStatus,
+    pub reflection_prompts: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct Candidate {
+    item: ReportItem,
+    sample_n: usize,
+}
+
+enum Admission {
+    Kept(ReportItem),
+    Skipped(SkippedCandidate),
+}
+
+pub fn run_mirror_report(conn: &Connection) -> Result<MirrorReport> {
+    let window_days = meta_i64(conn, "report.window_days")?.max(1);
+    let min_evidence = meta_i64(conn, "report.min_evidence")?.max(1) as usize;
+    let confidence_floor = meta_f64(conn, "report.confidence_floor")?;
+    let suppress_days = meta_i64(conn, "report.feedback_suppress_days")?.max(0);
+
+    let mut assertions = Vec::new();
+    let mut skipped = Vec::new();
+
+    let mut assertion_candidates = Vec::new();
+    assertion_candidates.extend(calibration_phantom_candidates(conn)?);
+    assertion_candidates.extend(hint_abandon_candidate(conn, window_days)?);
+    assertion_candidates.extend(abandon_time_contrast_candidate(
+        conn,
+        window_days,
+        min_evidence,
+    )?);
+    assertion_candidates.extend(gu_pattern_candidates(conn)?);
+    for candidate in assertion_candidates {
+        match admit_assertion(
+            conn,
+            candidate,
+            min_evidence,
+            confidence_floor,
+            suppress_days,
+        )? {
+            Admission::Kept(item) => assertions.push(item),
+            Admission::Skipped(skip) => skipped.push(skip),
+        }
+    }
+
+    let mut hypotheses = Vec::new();
+    for candidate in consolidation_hypotheses(conn)? {
+        match admit_hypothesis(conn, candidate, suppress_days)? {
+            Admission::Kept(item) => hypotheses.push(item),
+            Admission::Skipped(skip) => skipped.push(skip),
+        }
+    }
+
+    let mut suggestions = Vec::new();
+    for candidate in param_suggestions(conn)? {
+        match admit_assertion(
+            conn,
+            candidate,
+            min_evidence,
+            confidence_floor,
+            suppress_days,
+        )? {
+            Admission::Kept(item) => suggestions.push(item),
+            Admission::Skipped(skip) => skipped.push(skip),
+        }
+    }
+
+    sort_items(&mut assertions);
+    sort_items(&mut hypotheses);
+    sort_items(&mut suggestions);
+    skipped.sort_by(|left, right| left.id.cmp(&right.id));
+
+    let generated_at = now_iso(conn)?;
+    let report = MirrorReport {
+        schema_version: REPORT_SCHEMA_VERSION,
+        id: Uuid::new_v4().to_string(),
+        week: iso_week_label(&generated_at)?,
+        generated_at,
+        window_days,
+        assertions,
+        hypotheses,
+        suggestions,
+        skipped,
+        hazard_gate: hazard_gate_status(conn)?,
+        reflection_prompts: REFLECTION_PROMPTS
+            .iter()
+            .map(|prompt| (*prompt).to_owned())
+            .collect(),
+    };
+    persist_report(conn, &report)?;
+    Ok(report)
+}
+
+pub fn latest_mirror_report(conn: &Connection) -> Result<Option<MirrorReport>> {
+    let json: Option<String> = conn
+        .query_row(
+            "SELECT report_json FROM mirror_reports
+             ORDER BY julianday(generated_at) DESC, id DESC
+             LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    json.as_deref()
+        .map(|payload| serde_json::from_str(payload).map_err(Into::into))
+        .transpose()
+}
+
+pub fn record_report_feedback(
+    conn: &Connection,
+    report_id: Option<&str>,
+    assertion_id: &str,
+    verdict: &str,
+) -> Result<String> {
+    if verdict != "inaccurate" {
+        return Err(PolarisError::InvalidParameter {
+            key: "report.feedback_verdict".to_owned(),
+            value: verdict.to_owned(),
+        });
+    }
+
+    let report = match report_id {
+        Some(id) => load_report(conn, id)?,
+        None => latest_mirror_report(conn)?,
+    }
+    .ok_or_else(|| PolarisError::InvalidParameter {
+        key: "report.feedback_report_id".to_owned(),
+        value: report_id.unwrap_or("<latest missing>").to_owned(),
+    })?;
+
+    let known = report
+        .assertions
+        .iter()
+        .chain(report.hypotheses.iter())
+        .chain(report.suggestions.iter())
+        .any(|item| item.id == assertion_id);
+    if !known {
+        return Err(PolarisError::InvalidParameter {
+            key: "report.feedback_assertion_id".to_owned(),
+            value: assertion_id.to_owned(),
+        });
+    }
+
+    let payload = serde_json::json!({
+        "report_id": report.id,
+        "assertion_id": assertion_id,
+        "verdict": verdict,
+    })
+    .to_string();
+    conn.execute(
+        "INSERT INTO behavior_events(id, session_id, at, type, concept_id, payload_json)
+         VALUES (?1, 'report', strftime('%Y-%m-%dT%H:%M:%SZ','now'), 'report_feedback', NULL, ?2)",
+        params![Uuid::new_v4().to_string(), payload],
+    )?;
+    Ok(report.id)
+}
+
+fn load_report(conn: &Connection, report_id: &str) -> Result<Option<MirrorReport>> {
+    let json: Option<String> = conn
+        .query_row(
+            "SELECT report_json FROM mirror_reports WHERE id=?1",
+            [report_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    json.as_deref()
+        .map(|payload| serde_json::from_str(payload).map_err(Into::into))
+        .transpose()
+}
+
+fn persist_report(conn: &Connection, report: &MirrorReport) -> Result<()> {
+    conn.execute(
+        "INSERT INTO mirror_reports(id, week, generated_at, report_json, assertion_count, skipped_count)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![
+            report.id,
+            report.week,
+            report.generated_at,
+            serde_json::to_string(report)?,
+            report.assertions.len() as i64,
+            report.skipped.len() as i64,
+        ],
+    )?;
+    conn.execute(
+        "INSERT INTO behavior_events(id, session_id, at, type, concept_id, payload_json)
+         VALUES (?1, 'report', ?2, 'mirror_report', NULL, ?3)",
+        params![
+            Uuid::new_v4().to_string(),
+            report.generated_at,
+            serde_json::json!({
+                "report_id": report.id,
+                "week": report.week,
+                "assertions": report.assertions.len(),
+                "hypotheses": report.hypotheses.len(),
+                "suggestions": report.suggestions.len(),
+                "skipped": report.skipped.len(),
+            })
+            .to_string(),
+        ],
+    )?;
+    Ok(())
+}
+
+fn admit_assertion(
+    conn: &Connection,
+    candidate: Candidate,
+    min_evidence: usize,
+    confidence_floor: f64,
+    suppress_days: i64,
+) -> Result<Admission> {
+    let Candidate { item, sample_n } = candidate;
+    if item.evidence_ids.is_empty() {
+        return Ok(Admission::Skipped(skip(&item, "no_evidence")));
+    }
+    if sample_n < min_evidence {
+        return Ok(Admission::Skipped(skip(&item, "insufficient_evidence")));
+    }
+    if item.confidence < confidence_floor {
+        return Ok(Admission::Skipped(skip(&item, "below_confidence_floor")));
+    }
+    if feedback_suppressed(conn, &item.id, suppress_days)? {
+        return Ok(Admission::Skipped(skip(&item, "user_marked_inaccurate")));
+    }
+    Ok(Admission::Kept(item))
+}
+
+fn admit_hypothesis(
+    conn: &Connection,
+    candidate: Candidate,
+    suppress_days: i64,
+) -> Result<Admission> {
+    let Candidate { item, .. } = candidate;
+    if item.evidence_ids.is_empty() {
+        return Ok(Admission::Skipped(skip(&item, "no_evidence")));
+    }
+    if feedback_suppressed(conn, &item.id, suppress_days)? {
+        return Ok(Admission::Skipped(skip(&item, "user_marked_inaccurate")));
+    }
+    Ok(Admission::Kept(item))
+}
+
+fn skip(item: &ReportItem, reason: &str) -> SkippedCandidate {
+    SkippedCandidate {
+        id: item.id.clone(),
+        kind: item.kind.clone(),
+        reason: reason.to_owned(),
+    }
+}
+
+fn feedback_suppressed(conn: &Connection, assertion_id: &str, suppress_days: i64) -> Result<bool> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM behavior_events
+         WHERE type='report_feedback'
+           AND json_extract(payload_json, '$.assertion_id')=?1
+           AND json_extract(payload_json, '$.verdict')='inaccurate'
+           AND julianday(at) >= julianday('now') - ?2",
+        params![assertion_id, suppress_days as f64],
+        |row| row.get(0),
+    )?;
+    Ok(count > 0)
+}
+
+fn sort_items(items: &mut [ReportItem]) {
+    items.sort_by(|left, right| left.id.cmp(&right.id));
+}
+
+fn now_iso(conn: &Connection) -> Result<String> {
+    conn.query_row("SELECT strftime('%Y-%m-%dT%H:%M:%SZ','now')", [], |row| {
+        row.get(0)
+    })
+    .map_err(Into::into)
+}
+
+// ---------------------------------------------------------------------------
+// 断言挖掘
+// ---------------------------------------------------------------------------
+
+fn calibration_phantom_candidates(conn: &Connection) -> Result<Vec<Candidate>> {
+    let phantom_gap = meta_f64(conn, "calib.phantom_gap")?;
+    let phantom_p = meta_f64(conn, "calib.phantom_p")?;
+    let phantom_n = meta_i64(conn, "calib.phantom_n")?;
+
+    let mut stmt = conn.prepare(
+        "SELECT ms.concept_id, COALESCE(c.name, ms.concept_id), ms.calib_gap, ms.p_known
+         FROM mastery_states ms
+         JOIN concepts c ON c.id = ms.concept_id
+         WHERE ms.attempt_count >= ?1 AND ms.calib_gap >= ?2 AND ms.p_known < ?3
+         ORDER BY ms.calib_gap DESC, ms.concept_id ASC
+         LIMIT ?4",
+    )?;
+    let rows = stmt
+        .query_map(
+            params![
+                phantom_n,
+                phantom_gap,
+                phantom_p,
+                CALIBRATION_CONCEPT_CAP as i64
+            ],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, f64>(2)?,
+                    row.get::<_, f64>(3)?,
+                ))
+            },
+        )?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+
+    let mut candidates = Vec::new();
+    for (concept_id, name, calib_gap, p_known) in rows {
+        let mut stmt = conn.prepare(
+            "SELECT id, (self_confidence - 1.0) / 4.0 - COALESCE(final_score, provisional_score)
+             FROM attempts
+             WHERE concept_id=?1 AND self_confidence IS NOT NULL
+               AND COALESCE(final_score, provisional_score) IS NOT NULL
+             ORDER BY julianday(COALESCE(created_at, '1970-01-01T00:00:00Z')) DESC, id DESC
+             LIMIT ?2",
+        )?;
+        let samples = stmt
+            .query_map(
+                params![concept_id, CALIBRATION_EVIDENCE_CAP as i64],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, f64>(1)?)),
+            )?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        if samples.is_empty() {
+            continue;
+        }
+
+        let overestimates = samples.iter().filter(|(_, gap)| *gap > 0.0).count();
+        let n = samples.len();
+        let confidence =
+            prob_beta_greater_half((overestimates + 1) as f64, (n - overestimates + 1) as f64);
+        let mut evidence_ids = samples
+            .iter()
+            .map(|(id, _)| format!("attempt:{id}"))
+            .collect::<Vec<_>>();
+        evidence_ids.sort();
+
+        candidates.push(Candidate {
+            item: ReportItem {
+                id: format!("calibration_phantom:{concept_id}"),
+                kind: "calibration_phantom".to_owned(),
+                subject: concept_id.clone(),
+                claim: format!(
+                    "概念「{name}」：你的自信持续高于实际表现（校准差 EWMA {calib_gap:+.2}，近 {n} 次作答中 {overestimates} 次高估）——幻影掌握风险。"
+                ),
+                confidence,
+                evidence_ids,
+                stats: serde_json::json!({
+                    "calib_gap": calib_gap,
+                    "p_known": p_known,
+                    "overestimates": overestimates,
+                    "n": n,
+                }),
+            },
+            sample_n: n,
+        });
+    }
+    Ok(candidates)
+}
+
+#[derive(Debug, Clone)]
+struct TimedEvent {
+    id: String,
+    session_id: String,
+    at_julian: f64,
+}
+
+fn hint_abandon_candidate(conn: &Connection, window_days: i64) -> Result<Vec<Candidate>> {
+    let hints = timed_events(conn, "hint", window_days)?;
+    let abandons = timed_events(conn, "abandon", window_days)?;
+    let attempts = timed_attempts(conn, window_days)?;
+    if hints.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // 索引事件：同会话内 10 分钟里的第二次 hint；索引事件间隔 ≥ 10 分钟避免重叠计数。
+    let mut episodes = Vec::new();
+    let mut last_hint: std::collections::BTreeMap<&str, f64> = Default::default();
+    let mut last_index: std::collections::BTreeMap<&str, f64> = Default::default();
+    for hint in &hints {
+        let session = hint.session_id.as_str();
+        let is_streak = last_hint
+            .get(session)
+            .map(|previous| hint.at_julian - previous <= TEN_MINUTES_DAYS)
+            .unwrap_or(false);
+        let far_from_last_index = last_index
+            .get(session)
+            .map(|previous| hint.at_julian - previous > TEN_MINUTES_DAYS)
+            .unwrap_or(true);
+        if is_streak && far_from_last_index {
+            episodes.push(hint.clone());
+            last_index.insert(session, hint.at_julian);
+        }
+        last_hint.insert(session, hint.at_julian);
+    }
+    if episodes.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let abandon_after = |session: &str, from: f64| -> Option<String> {
+        abandons
+            .iter()
+            .find(|event| {
+                event.session_id == session
+                    && event.at_julian > from
+                    && event.at_julian - from <= TEN_MINUTES_DAYS
+            })
+            .map(|event| event.id.clone())
+    };
+
+    let mut cond_success = 0usize;
+    let mut evidence_ids = Vec::new();
+    for episode in &episodes {
+        evidence_ids.push(format!("behavior:{}", episode.id));
+        if let Some(abandon_id) = abandon_after(&episode.session_id, episode.at_julian) {
+            cond_success += 1;
+            evidence_ids.push(format!("behavior:{abandon_id}"));
+        }
+    }
+    let cond_n = episodes.len();
+
+    // 基线：不在任何索引事件 10 分钟窗内的 attempt，其后 10 分钟内是否放弃。
+    let in_episode_window = |session: &str, at: f64| -> bool {
+        episodes.iter().any(|episode| {
+            episode.session_id == session
+                && at >= episode.at_julian
+                && at - episode.at_julian <= TEN_MINUTES_DAYS
+        })
+    };
+    let mut base_success = 0usize;
+    let mut base_n = 0usize;
+    for attempt in &attempts {
+        if in_episode_window(&attempt.session_id, attempt.at_julian) {
+            continue;
+        }
+        base_n += 1;
+        if abandon_after(&attempt.session_id, attempt.at_julian).is_some() {
+            base_success += 1;
+        }
+    }
+    if base_n == 0 {
+        return Ok(Vec::new());
+    }
+
+    let cond_rate = cond_success as f64 / cond_n as f64;
+    let base_rate = base_success as f64 / base_n as f64;
+    let confidence = prob_beta_greater(
+        (cond_success + 1) as f64,
+        (cond_n - cond_success + 1) as f64,
+        (base_success + 1) as f64,
+        (base_n - base_success + 1) as f64,
+    );
+    evidence_ids.sort();
+    evidence_ids.truncate(EVIDENCE_CAP);
+
+    Ok(vec![Candidate {
+        item: ReportItem {
+            id: "hint_abandon_conditional:hint_streak_2".to_owned(),
+            kind: "hint_abandon_conditional".to_owned(),
+            subject: "hint_streak_2".to_owned(),
+            claim: format!(
+                "连续两次提示后 10 分钟内，你 {cond_success}/{cond_n} 次放弃了会话（{:.0}%）；其余时刻的基线放弃率为 {:.0}%（{base_success}/{base_n}）。",
+                cond_rate * 100.0,
+                base_rate * 100.0,
+            ),
+            confidence,
+            evidence_ids,
+            stats: serde_json::json!({
+                "cond_success": cond_success,
+                "cond_n": cond_n,
+                "base_success": base_success,
+                "base_n": base_n,
+            }),
+        },
+        sample_n: cond_n,
+    }])
+}
+
+const BUCKET_LABELS: [&str; 4] = [
+    "凌晨（UTC 0-6 点）",
+    "上午（UTC 6-12 点）",
+    "下午（UTC 12-18 点）",
+    "晚上（UTC 18-24 点）",
+];
+
+fn abandon_time_contrast_candidate(
+    conn: &Connection,
+    window_days: i64,
+    min_evidence: usize,
+) -> Result<Vec<Candidate>> {
+    let abandons = bucketed_events(conn, "abandon", window_days)?;
+    let attempts = bucketed_attempts(conn, window_days)?;
+
+    let mut activity = [0usize; 4];
+    let mut abandon_counts = [0usize; 4];
+    let mut abandon_ids: [Vec<String>; 4] = Default::default();
+    for (bucket, id) in abandons {
+        abandon_counts[bucket] += 1;
+        activity[bucket] += 1;
+        abandon_ids[bucket].push(format!("behavior:{id}"));
+    }
+    for bucket in attempts {
+        activity[bucket] += 1;
+    }
+
+    let eligible = (0..4)
+        .filter(|&bucket| activity[bucket] >= min_evidence)
+        .collect::<Vec<_>>();
+    if eligible.len() < 2 {
+        return Ok(Vec::new());
+    }
+    let rate = |bucket: usize| abandon_counts[bucket] as f64 / activity[bucket] as f64;
+    let hi = eligible
+        .iter()
+        .copied()
+        .max_by(|&left, &right| {
+            rate(left)
+                .partial_cmp(&rate(right))
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(right.cmp(&left))
+        })
+        .expect("eligible non-empty");
+    let lo = eligible
+        .iter()
+        .copied()
+        .min_by(|&left, &right| {
+            rate(left)
+                .partial_cmp(&rate(right))
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(left.cmp(&right))
+        })
+        .expect("eligible non-empty");
+    if hi == lo || abandon_counts[hi] == 0 || rate(hi) <= rate(lo) {
+        return Ok(Vec::new());
+    }
+
+    let confidence = prob_beta_greater(
+        (abandon_counts[hi] + 1) as f64,
+        (activity[hi] - abandon_counts[hi] + 1) as f64,
+        (abandon_counts[lo] + 1) as f64,
+        (activity[lo] - abandon_counts[lo] + 1) as f64,
+    );
+    let claim = if abandon_counts[lo] > 0 {
+        format!(
+            "你在{}的放弃频率约为{}的 {:.1} 倍（{}/{} vs {}/{}，按每次活动计）。",
+            BUCKET_LABELS[hi],
+            BUCKET_LABELS[lo],
+            rate(hi) / rate(lo),
+            abandon_counts[hi],
+            activity[hi],
+            abandon_counts[lo],
+            activity[lo],
+        )
+    } else {
+        format!(
+            "你在{}的放弃频率明显高于{}（{}/{} vs 0/{}，按每次活动计）。",
+            BUCKET_LABELS[hi], BUCKET_LABELS[lo], abandon_counts[hi], activity[hi], activity[lo],
+        )
+    };
+    let mut evidence_ids = abandon_ids[hi].clone();
+    evidence_ids.sort();
+    evidence_ids.truncate(EVIDENCE_CAP);
+
+    Ok(vec![Candidate {
+        item: ReportItem {
+            id: format!("abandon_time_contrast:bucket{hi}_vs_bucket{lo}"),
+            kind: "abandon_time_contrast".to_owned(),
+            subject: format!("bucket{hi}_vs_bucket{lo}"),
+            claim,
+            confidence,
+            evidence_ids,
+            stats: serde_json::json!({
+                "hi_bucket": hi,
+                "lo_bucket": lo,
+                "hi_abandons": abandon_counts[hi],
+                "hi_activity": activity[hi],
+                "lo_abandons": abandon_counts[lo],
+                "lo_activity": activity[lo],
+            }),
+        },
+        sample_n: abandon_counts[hi] + abandon_counts[lo],
+    }])
+}
+
+fn gu_pattern_candidates(conn: &Connection) -> Result<Vec<Candidate>> {
+    let retire_p = meta_f64(conn, "gu.retire_p")?;
+    let mut stmt = conn.prepare(
+        "SELECT id, pattern, concept_ids_json, attempt_ids_json, count, alpha, beta, status
+         FROM gu_rules
+         WHERE status IN ('active', 'validated')
+         ORDER BY pattern ASC, id ASC",
+    )?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, i64>(4)?,
+                row.get::<_, f64>(5)?,
+                row.get::<_, f64>(6)?,
+                row.get::<_, String>(7)?,
+            ))
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+
+    let mut candidates = Vec::new();
+    for (rule_id, pattern, concept_ids_json, attempt_ids_json, count, alpha, beta, status) in rows {
+        let concept_ids: Vec<String> = serde_json::from_str(&concept_ids_json)?;
+        let attempt_ids: Vec<String> = serde_json::from_str(&attempt_ids_json)?;
+        let names = concept_names(conn, &concept_ids)?;
+        let confidence = 1.0 - regularized_incomplete_beta(retire_p, alpha, beta);
+        let mut evidence_ids = attempt_ids
+            .iter()
+            .map(|id| format!("attempt:{id}"))
+            .collect::<Vec<_>>();
+        evidence_ids.sort();
+        evidence_ids.truncate(EVIDENCE_CAP);
+
+        candidates.push(Candidate {
+            sample_n: attempt_ids.len(),
+            item: ReportItem {
+                id: format!("gu_pattern:{rule_id}"),
+                kind: "gu_pattern".to_owned(),
+                subject: pattern.clone(),
+                claim: format!(
+                    "你在概念 {} 上反复出现「{pattern}」错误模式（{count} 次失败触发，规则状态 {status}，预测精度后验 P(precision≥{:.0}%)={:.0}%）。这是行为模式标注，不是个人特质。",
+                    names.join("、"),
+                    retire_p * 100.0,
+                    confidence * 100.0,
+                ),
+                confidence,
+                evidence_ids,
+                stats: serde_json::json!({
+                    "rule_id": rule_id,
+                    "pattern": pattern,
+                    "status": status,
+                    "count": count,
+                    "alpha": alpha,
+                    "beta": beta,
+                }),
+            },
+        });
+    }
+    Ok(candidates)
+}
+
+fn consolidation_hypotheses(conn: &Connection) -> Result<Vec<Candidate>> {
+    let row: Option<(String, String, String)> = conn
+        .query_row(
+            "SELECT id, proposals_json, status FROM consolidation_runs
+             ORDER BY julianday(ran_at) DESC, id DESC
+             LIMIT 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?;
+    let Some((run_id, proposals_json, status)) = row else {
+        return Ok(Vec::new());
+    };
+    let proposals: Vec<serde_json::Value> = serde_json::from_str(&proposals_json)?;
+
+    let mut candidates = Vec::new();
+    for (idx, proposal) in proposals.iter().take(HYPOTHESIS_CAP).enumerate() {
+        let concepts = proposal
+            .get("concepts")
+            .and_then(serde_json::Value::as_array)
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(serde_json::Value::as_str)
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        if concepts.is_empty() {
+            continue;
+        }
+        let names = concept_names(conn, &concepts)?;
+        candidates.push(Candidate {
+            sample_n: concepts.len(),
+            item: ReportItem {
+                id: format!("consolidation_hypothesis:{run_id}:{idx}"),
+                kind: "consolidation_hypothesis".to_owned(),
+                subject: format!("{run_id}:{idx}"),
+                claim: format!(
+                    "夜间巩固发现概念 {} 的残差按周同步波动，提示候选潜在维度；当前状态：{status}——未过留出验证门，仅为假设，不影响任何调度或评分。",
+                    names.join("、"),
+                ),
+                confidence: 0.5,
+                evidence_ids: vec![format!("consolidation:{run_id}")],
+                stats: proposal.clone(),
+            },
+        });
+    }
+    Ok(candidates)
+}
+
+fn param_suggestions(conn: &Connection) -> Result<Vec<Candidate>> {
+    let bias_thresh = meta_f64(conn, "report.suggest_bias_thresh")?;
+    let bias_n = meta_i64(conn, "report.suggest_bias_n")?.max(1) as usize;
+
+    let mut stmt = conn.prepare(
+        "SELECT id, provisional_score - final_score
+         FROM attempts
+         WHERE final_score IS NOT NULL AND provisional_score IS NOT NULL
+           AND julianday(COALESCE(created_at, '1970-01-01T00:00:00Z')) >= julianday('now') - ?1
+         ORDER BY julianday(COALESCE(created_at, '1970-01-01T00:00:00Z')) DESC, id DESC
+         LIMIT ?2",
+    )?;
+    let samples = stmt
+        .query_map(
+            params![SUGGESTION_LOOKBACK_DAYS, SUGGESTION_SAMPLE_CAP as i64],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, f64>(1)?)),
+        )?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let n = samples.len();
+    if n < bias_n {
+        return Ok(Vec::new());
+    }
+    let bias = samples.iter().map(|(_, delta)| delta).sum::<f64>() / n as f64;
+    if bias.abs() < bias_thresh {
+        return Ok(Vec::new());
+    }
+
+    let aligned = samples
+        .iter()
+        .filter(|(_, delta)| delta.signum() == bias.signum() && *delta != 0.0)
+        .count();
+    let confidence = prob_beta_greater_half((aligned + 1) as f64, (n - aligned + 1) as f64);
+    let base = meta_value(conn, "grade.provisional_base")?;
+    let slope = meta_value(conn, "grade.provisional_slope")?;
+    let direction = if bias > 0.0 { "高" } else { "低" };
+    let mut evidence_ids = samples
+        .iter()
+        .take(EVIDENCE_CAP)
+        .map(|(id, _)| format!("attempt:{id}"))
+        .collect::<Vec<_>>();
+    evidence_ids.sort();
+
+    Ok(vec![Candidate {
+        sample_n: n,
+        item: ReportItem {
+            id: "param_suggestion:grade.provisional".to_owned(),
+            kind: "param_suggestion".to_owned(),
+            subject: "grade.provisional".to_owned(),
+            claim: format!(
+                "乐观落账启发式系统性偏{direction}：provisional 比 final 平均 {bias:+.2}（n={n}）。建议人工复核 grade.provisional_base（当前 {base}）与 grade.provisional_slope（当前 {slope}）。仅建议，引擎不会自行修改。"
+            ),
+            confidence,
+            evidence_ids,
+            stats: serde_json::json!({
+                "bias": bias,
+                "n": n,
+                "aligned": aligned,
+            }),
+        },
+    }])
+}
+
+fn hazard_gate_status(conn: &Connection) -> Result<HazardGateStatus> {
+    let auc_gate = meta_f64(conn, "hazard.auc_gate")?;
+    let payload: Option<String> = conn
+        .query_row(
+            "SELECT payload_json FROM behavior_events
+             WHERE type='mental_state'
+             ORDER BY julianday(at) DESC, rowid DESC
+             LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let Some(payload) = payload else {
+        return Ok(HazardGateStatus {
+            participates: false,
+            reason: "no_mental_state_data".to_owned(),
+            validation_auc: None,
+            auc_gate,
+        });
+    };
+    let value: serde_json::Value = serde_json::from_str(&payload)?;
+    let validation_auc = value
+        .pointer("/hazard/validation_auc")
+        .and_then(serde_json::Value::as_f64);
+    let (participates, reason) = match validation_auc {
+        None => (false, "model_unfit".to_owned()),
+        Some(auc) if auc < auc_gate => (false, "auc_below_gate".to_owned()),
+        Some(_) => (true, "auc_gate_passed".to_owned()),
+    };
+    Ok(HazardGateStatus {
+        participates,
+        reason,
+        validation_auc,
+        auc_gate,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// 数据装载辅助
+// ---------------------------------------------------------------------------
+
+fn timed_events(conn: &Connection, event_type: &str, window_days: i64) -> Result<Vec<TimedEvent>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, COALESCE(session_id, 'default'), julianday(at)
+         FROM behavior_events
+         WHERE type=?1 AND julianday(at) >= julianday('now') - ?2
+         ORDER BY julianday(at) ASC, id ASC",
+    )?;
+    let rows = stmt
+        .query_map(params![event_type, window_days as f64], |row| {
+            Ok(TimedEvent {
+                id: row.get(0)?,
+                session_id: row.get(1)?,
+                at_julian: row.get(2)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+fn timed_attempts(conn: &Connection, window_days: i64) -> Result<Vec<TimedEvent>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, COALESCE(session_id, 'default'), julianday(created_at)
+         FROM attempts
+         WHERE created_at IS NOT NULL
+           AND julianday(created_at) >= julianday('now') - ?1
+         ORDER BY julianday(created_at) ASC, id ASC",
+    )?;
+    let rows = stmt
+        .query_map(params![window_days as f64], |row| {
+            Ok(TimedEvent {
+                id: row.get(0)?,
+                session_id: row.get(1)?,
+                at_julian: row.get(2)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+fn bucketed_events(
+    conn: &Connection,
+    event_type: &str,
+    window_days: i64,
+) -> Result<Vec<(usize, String)>> {
+    let mut stmt = conn.prepare(
+        "SELECT CAST(strftime('%H', at) AS INTEGER) / 6, id
+         FROM behavior_events
+         WHERE type=?1 AND julianday(at) >= julianday('now') - ?2
+         ORDER BY id ASC",
+    )?;
+    let rows = stmt
+        .query_map(params![event_type, window_days as f64], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(rows
+        .into_iter()
+        .map(|(bucket, id)| (bucket.clamp(0, 3) as usize, id))
+        .collect())
+}
+
+fn bucketed_attempts(conn: &Connection, window_days: i64) -> Result<Vec<usize>> {
+    let mut stmt = conn.prepare(
+        "SELECT CAST(strftime('%H', created_at) AS INTEGER) / 6
+         FROM attempts
+         WHERE created_at IS NOT NULL
+           AND julianday(created_at) >= julianday('now') - ?1",
+    )?;
+    let rows = stmt
+        .query_map(params![window_days as f64], |row| row.get::<_, i64>(0))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(rows
+        .into_iter()
+        .map(|bucket| bucket.clamp(0, 3) as usize)
+        .collect())
+}
+
+fn concept_names(conn: &Connection, concept_ids: &[String]) -> Result<Vec<String>> {
+    let mut names = Vec::new();
+    for concept_id in concept_ids {
+        let name: Option<String> = conn
+            .query_row(
+                "SELECT COALESCE(name, id) FROM concepts WHERE id=?1",
+                [concept_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        names.push(name.unwrap_or_else(|| concept_id.clone()));
+    }
+    Ok(names)
+}
+
+// ---------------------------------------------------------------------------
+// Beta-Binomial 置信度数学（确定性，无外部依赖）
+// ---------------------------------------------------------------------------
+
+/// Lanczos 近似 ln Γ(x)，x > 0。
+pub fn ln_gamma(x: f64) -> f64 {
+    const G: f64 = 7.0;
+    const COEFFS: [f64; 9] = [
+        0.999_999_999_999_809_9,
+        676.520_368_121_885_1,
+        -1_259.139_216_722_402_8,
+        771.323_428_777_653_1,
+        -176.615_029_162_140_6,
+        12.507_343_278_686_905,
+        -0.138_571_095_265_720_12,
+        9.984_369_578_019_572e-6,
+        1.505_632_735_149_311_6e-7,
+    ];
+    if x < 0.5 {
+        let pi = std::f64::consts::PI;
+        return (pi / (pi * x).sin()).ln() - ln_gamma(1.0 - x);
+    }
+    let x = x - 1.0;
+    let mut sum = COEFFS[0];
+    for (idx, coeff) in COEFFS.iter().enumerate().skip(1) {
+        sum += coeff / (x + idx as f64);
+    }
+    let t = x + G + 0.5;
+    0.5 * (2.0 * std::f64::consts::PI).ln() + (x + 0.5) * t.ln() - t + sum.ln()
+}
+
+fn ln_beta(a: f64, b: f64) -> f64 {
+    ln_gamma(a) + ln_gamma(b) - ln_gamma(a + b)
+}
+
+/// 正则不完全 Beta 函数 I_x(a, b)（连分式实现）。
+pub fn regularized_incomplete_beta(x: f64, a: f64, b: f64) -> f64 {
+    if x <= 0.0 {
+        return 0.0;
+    }
+    if x >= 1.0 {
+        return 1.0;
+    }
+    let ln_front = a * x.ln() + b * (1.0 - x).ln() - ln_beta(a, b);
+    if x < (a + 1.0) / (a + b + 2.0) {
+        (ln_front.exp() * beta_continued_fraction(x, a, b) / a).clamp(0.0, 1.0)
+    } else {
+        (1.0 - ln_front.exp() * beta_continued_fraction(1.0 - x, b, a) / b).clamp(0.0, 1.0)
+    }
+}
+
+fn beta_continued_fraction(x: f64, a: f64, b: f64) -> f64 {
+    const MAX_ITERATIONS: usize = 200;
+    const EPSILON: f64 = 1e-12;
+    const TINY: f64 = 1e-300;
+
+    let qab = a + b;
+    let qap = a + 1.0;
+    let qam = a - 1.0;
+    let mut c = 1.0;
+    let mut d = 1.0 - qab * x / qap;
+    if d.abs() < TINY {
+        d = TINY;
+    }
+    d = 1.0 / d;
+    let mut result = d;
+    for m in 1..=MAX_ITERATIONS {
+        let m = m as f64;
+        let m2 = 2.0 * m;
+        let aa = m * (b - m) * x / ((qam + m2) * (a + m2));
+        d = 1.0 + aa * d;
+        if d.abs() < TINY {
+            d = TINY;
+        }
+        c = 1.0 + aa / c;
+        if c.abs() < TINY {
+            c = TINY;
+        }
+        d = 1.0 / d;
+        result *= d * c;
+        let aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2));
+        d = 1.0 + aa * d;
+        if d.abs() < TINY {
+            d = TINY;
+        }
+        c = 1.0 + aa / c;
+        if c.abs() < TINY {
+            c = TINY;
+        }
+        d = 1.0 / d;
+        let delta = d * c;
+        result *= delta;
+        if (delta - 1.0).abs() < EPSILON {
+            break;
+        }
+    }
+    result
+}
+
+/// P(X > 0.5)，X ~ Beta(a, b)。
+pub fn prob_beta_greater_half(a: f64, b: f64) -> f64 {
+    1.0 - regularized_incomplete_beta(0.5, a, b)
+}
+
+/// P(X > Y)，X ~ Beta(a1, b1)，Y ~ Beta(a2, b2)，要求 a1 为正整数（计数 + 1 满足）。
+pub fn prob_beta_greater(a1: f64, b1: f64, a2: f64, b2: f64) -> f64 {
+    let steps = a1.round().max(1.0) as usize;
+    let mut total = 0.0;
+    for i in 0..steps {
+        let i = i as f64;
+        let ln_term =
+            ln_beta(a2 + i, b1 + b2) - (b1 + i).ln() - ln_beta(1.0 + i, b1) - ln_beta(a2, b2);
+        total += ln_term.exp();
+    }
+    total.clamp(0.0, 1.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ln_gamma_matches_factorials() {
+        assert!((ln_gamma(5.0) - 24.0_f64.ln()).abs() < 1e-10);
+        assert!((ln_gamma(1.0)).abs() < 1e-10);
+        assert!((ln_gamma(0.5) - std::f64::consts::PI.sqrt().ln()).abs() < 1e-10);
+    }
+
+    #[test]
+    fn incomplete_beta_known_values() {
+        assert!((regularized_incomplete_beta(0.5, 2.0, 2.0) - 0.5).abs() < 1e-9);
+        assert!((regularized_incomplete_beta(0.5, 1.0, 1.0) - 0.5).abs() < 1e-9);
+        // I_x(1, b) = 1 - (1-x)^b
+        let expected = 1.0 - 0.7_f64.powi(3);
+        assert!((regularized_incomplete_beta(0.3, 1.0, 3.0) - expected).abs() < 1e-9);
+    }
+
+    #[test]
+    fn prob_beta_greater_symmetric_is_half() {
+        let p = prob_beta_greater(3.0, 5.0, 3.0, 5.0);
+        assert!((p - 0.5).abs() < 1e-9, "got {p}");
+    }
+
+    #[test]
+    fn prob_beta_greater_separated_approaches_one() {
+        let p = prob_beta_greater(40.0, 2.0, 2.0, 40.0);
+        assert!(p > 0.999, "got {p}");
+    }
+
+    #[test]
+    fn prob_beta_greater_half_matches_cdf() {
+        let direct = prob_beta_greater_half(8.0, 3.0);
+        assert!((direct - (1.0 - regularized_incomplete_beta(0.5, 8.0, 3.0))).abs() < 1e-12);
+        assert!(direct > 0.9);
+    }
+}

@@ -16,6 +16,7 @@ pub mod mirt;
 pub mod moves;
 pub mod pack;
 pub mod phase;
+pub mod report;
 pub mod scheduler;
 pub mod status;
 pub mod teaching;

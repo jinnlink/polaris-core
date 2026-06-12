@@ -212,6 +212,15 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             correct_streak INTEGER DEFAULT 0,
             updated_at TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS mirror_reports(
+            id TEXT PRIMARY KEY,
+            week TEXT NOT NULL,
+            generated_at TEXT,
+            report_json TEXT NOT NULL,
+            assertion_count INTEGER DEFAULT 0,
+            skipped_count INTEGER DEFAULT 0
+        );
         "#,
     )?;
 
@@ -278,6 +287,7 @@ mod tests {
             "mrt_log",
             "param_tuning_runs",
             "gu_rules",
+            "mirror_reports",
         ] {
             let exists: i64 = conn
                 .query_row(

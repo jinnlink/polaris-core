@@ -84,5 +84,58 @@ P05A0 (课程接入协议)
 - P03F = 深度维度 D 的观测通道扩展（Bloom 对齐）
 - P03G = FSRS R 层 + 超图 + HMM 的调度合成（交错效应锚定）
 - P03H = F4 误解语法的自动发现管线
+- P03I = 心智动力学引擎的透明化出口（断言 evidence-bound + Beta 后验置信度）
 - P04E = 全闭环属性测试（验证组合）
 - P05A1 = 领域无关性实证（第二 pack）
+
+## 强化轴线提案（2026-06-12，P03I 交付时沉淀；候选票，排序待用户裁决）
+
+> 原则：全部用 MASTER_PLAN 既有词汇组装（相、签名、G_u、巩固、hazard、θ/Q、重放、Tier）；
+> 每个理论对象带留出验证门，不过门 = 假设（SPEC §3）；单票制不变，本节只立项不实现。
+
+### 轴 1 能力——让已登记的门"活"起来（优先级最高）
+
+| 候选票 | 内容 | 依赖 | 复杂度 |
+|---|---|---|---|
+| P03J（已排队） | 参数自调优 v1：B 类·重放途径参数的夜间反事实重放 + param_tuning_runs 审计（DATA_MODEL §12） | 事件溯源 fold（已有） | M |
+| P03K 心智动力学拟合层激活 | hazard 周拟合 job（`fit_hazard_model` 已有纯函数，引擎从未拟合/持久化，恒为 unfit）→ 持久化 β + validation_auc；HMM 状态层门控评估（`hmm.gate_auc_margin` 已登记但 `strategy_enabled` 恒 false、observed_auc_margin 恒 null）→ 周评估"下一动作"预测 AUC margin，过门才允许状态调策略；HMM EM 重估（graded ≥ `hmm.em_min_n` 启用，DATA_MODEL §7） | P03D；解锁镜像报告 hazard 类断言与 P03G 状态感知的实证依据 | L |
+| FSRS 个人参数拟合 | `fsrs.w`（C 类，登记"个人复习史拟合，预留未来票"）：FSRS-optimizer 思路按人拟合遗忘曲线，留出对拍门 | 复习史样本量 | M |
+
+### 轴 2 性能
+
+| 候选票 | 内容 | 依赖 | 复杂度 |
+|---|---|---|---|
+| 索引审计 | 当前全库无 CREATE INDEX；热路径：attempts(concept_id, created_at)、behavior_events(type, at)、json_extract 谓词（G_u 归纳/镜像报告/mental_state 查询）改生成列或表达式索引 | 无 | S |
+| 性能预算回归 | DATA_MODEL §11 预算表（U(c)<10ms@10k、fold<50µs、重放<1ms/百条、HMM 一步<1µs）做成 criterion 基准 + 预算断言，防回归 | 无 | S |
+
+### 轴 3 可靠性
+
+| 候选票 | 内容 | 依赖 | 复杂度 |
+|---|---|---|---|
+| 属性测试扩面 | fold/scheduler/phase 已有 proptest；补：G_u 生命周期决定性（任意 attempt 序列）、镜像报告稳定字段决定性、HMM 滤波数值稳定（极端观测不产生 NaN/退化） | 无 | S |
+| 数据主权运维 | `polaris backup`（VACUUM INTO）+ 启动 `PRAGMA integrity_check` + 事件溯源重放自检（mastery_states 与全量重放一致性抽查）——Local-persistent 铁律的运维面 | 无 | S |
+
+### 轴 4 实用性
+
+| 候选票 | 内容 | 依赖 | 复杂度 |
+|---|---|---|---|
+| MCP 工具面补全 | MCP server 停在 P02C 工具集；把 P03E-I 能力暴露为工具：相图快照、交错 batch、G_u 活跃规则、镜像报告（生成/读取/标不准）——Tier 2 门吃到 Phase 3 红利 | P02C | M |
+| 镜像报告 Tier 1 润色 | LLM 把断言列表润色成周报叙事，strict-citation 引断言原文（断言 id 即 evidence id），降级 = 直接呈现断言列表（P03I 已是降级形态） | P03I | S |
+
+### 轴 5 数学/理论深化（五框架内深化，非新概念；全部带验证门）
+
+| 候选 | 数学内容 | 框架归属 | 验证门 |
+|---|---|---|---|
+| 校准后验化 | calib_gap 从 EWMA 点估计升级为分层 Beta-Binomial（per-concept + 全局收缩，复用 P03I 已实现的 ln-gamma/不完全 Beta 数学）；幻影判据从硬阈值变后验概率 P(高估\|数据)>τ | C 分量 / F2 幻影相 | 幻影标记的 30 天前瞻验证率优于现行硬阈值（calib.phantom_* 已登记此调优目标） |
+| 融合不确定度传播 | BKT-MIRT 融合权 λ=n/(n+5) 改逆方差加权：BKT 路与 θ 路各带后验方差，精度加权融合，p̂ 输出带不确定度（镜像报告与探针任务派发可消费） | 抽象引擎 p_known | 留出 logloss 不劣于现行 λ 融合（margin 同 consol.accept_margin） |
+| G_u 层级先验 | 同 pattern 跨概念簇共享 Beta 超先验（超图邻域分层）；新概念装入时 gu_risk 概率化（而非二值标记） | F4 误解语法 | 30 天前瞻 precision ≥ 现行平坦 Beta(1,1)（§9 已定义窗口） |
+| 相变动力学 | 记录 per-user 相变迁计数（7 相马尔可夫转移矩阵），输出"脆弱→活跃的期望证据数"类预测；纯 Tier 0 统计 | F2 相图 | 相轨迹对下次表现的预测增益优于静态相分类（五框架门 F2 的强化形态） |
+| θ 步长自适应 | mirt.eta 固定 0.05 改 AdaGrad 式按维累积二阶矩（仍是在线梯度 + step cap，C 类初始化语义不变） | 潜因子层 | 重放留出 logloss 改善 ≥ margin，否则保持 |
+
+### 建议执行序（待裁决）
+
+1. **P03J**（QUEUE 已排）——重放自调优是"数据接管 B 类"的机制基础。
+2. **P03K**——P03D/P03I 登记的三个门（hazard AUC、HMM gate、EM）目前是死字段，激活后镜像报告与状态调度才有实证含金量。
+3. 轴 2/3 的 4 张 S 票可在大票之间穿插（每张 1-2 天，回报立现）。
+4. 轴 5 数学深化建议放 P03K 之后：校准后验化与 G_u 层级先验依赖更多真实数据量才能过前瞻门。
+5. MCP 工具面补全可在任何时点插入（纯暴露层，无模型风险）。

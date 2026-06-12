@@ -541,6 +541,48 @@ pub fn default_registry() -> BTreeMap<&'static str, ParameterSpec> {
             Some("[2,10]"),
             TuningRoute::Replay,
         ),
+        spec(
+            "report.window_days",
+            "7",
+            ParameterClass::B,
+            Some("[3,30]"),
+            TuningRoute::Manual,
+        ),
+        spec(
+            "report.min_evidence",
+            "3",
+            ParameterClass::A,
+            None,
+            TuningRoute::Manual,
+        ),
+        spec(
+            "report.confidence_floor",
+            "0.6",
+            ParameterClass::A,
+            None,
+            TuningRoute::Manual,
+        ),
+        spec(
+            "report.feedback_suppress_days",
+            "90",
+            ParameterClass::B,
+            Some("[30,365]"),
+            TuningRoute::Manual,
+        ),
+        spec(
+            "report.suggest_bias_thresh",
+            "0.15",
+            ParameterClass::B,
+            Some("[0.05,0.30]"),
+            TuningRoute::Manual,
+        ),
+        spec(
+            "report.suggest_bias_n",
+            "10",
+            ParameterClass::B,
+            Some("[5,50]"),
+            TuningRoute::Manual,
+        ),
     ]
     .into_iter()
     .map(|entry| (entry.key, entry))
@@ -674,6 +716,34 @@ mod tests {
             "gu.resolve_n",
         ] {
             assert!(registry.contains_key(key), "missing {key}");
+        }
+    }
+
+    #[test]
+    fn parameter_registry_contains_p03i_report_keys() {
+        let registry = default_registry();
+
+        let min_evidence = registry
+            .get("report.min_evidence")
+            .expect("report.min_evidence");
+        assert_eq!(min_evidence.default_value, "3");
+        assert_eq!(min_evidence.class, ParameterClass::A);
+        assert_eq!(min_evidence.tuning_route, TuningRoute::Manual);
+
+        let confidence_floor = registry
+            .get("report.confidence_floor")
+            .expect("report.confidence_floor");
+        assert_eq!(confidence_floor.default_value, "0.6");
+        assert_eq!(confidence_floor.class, ParameterClass::A);
+
+        for key in [
+            "report.window_days",
+            "report.feedback_suppress_days",
+            "report.suggest_bias_thresh",
+            "report.suggest_bias_n",
+        ] {
+            let spec = registry.get(key).unwrap_or_else(|| panic!("missing {key}"));
+            assert_eq!(spec.class, ParameterClass::B, "{key} should be class B");
         }
     }
 

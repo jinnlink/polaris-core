@@ -1,6 +1,6 @@
 # 票队列（单票制）
 
-状态：**P03H 已完成，等待用户确认 commit**。任何时刻只允许 1 张票 In Progress。
+状态：**P03I 已完成，等待用户确认 commit**（P03H 已提交 `f8d05cb`）。任何时刻只允许 1 张票 In Progress。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 新增票必须标注它服务主命题（验证真懂→定位模糊→针对性补缺）的哪一环。
 
@@ -24,7 +24,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 - [x] **P03F Moves Bloom 扩展**（`TICKET_P03F_MOVES_BLOOM_EXPANSION.md`）← 已实现并通过验收；服务环节：验证真懂 → 针对性补缺
 - [x] **P03G 交错调度**（`TICKET_P03G_INTERLEAVED_SCHEDULING.md`）← 已实现并通过验收；服务环节：定位模糊 → 针对性补缺
 - [x] **P03H G_u 自动归纳**（`TICKET_P03H_GU_AUTO_INDUCTION.md`）← 已实现并通过验收；服务环节：定位模糊 → 针对性补缺
-- P03I 镜像报告 v1（每条断言带证据 id + 置信度，说不出证据不许进报告）
+- [x] **P03I 镜像报告 v1**（`TICKET_P03I_MIRROR_REPORT.md`）← 已实现并通过验收；每条断言带证据 id + 置信度，说不出证据不许进报告；服务环节：验证真懂 → 定位模糊
 - P03J 参数自调优 v1（B 类·重放途径：夜间反事实重放调参 + param_tuning_runs 审计，DATA_MODEL §12）
 
 ## Phase 4 — UI + MRT
@@ -46,3 +46,11 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 ## Backlog（票外发现的问题记在这里，不顺手做）
 
 - P03A 审查后续：当前 Q 降级初始化在单 Rust pack 下使用 `q[0]=1.0` 作为 deterministic one-hot track 维；多 pack/多 track 前需补 `latent.dims` 或 pack/track→维度映射，避免所有概念共用同一潜因子。
+- 强化轴线候选（详见 `docs/ENHANCEMENT_ROADMAP.md` 2026-06-12 提案，排序待用户裁决）：
+  - P03K 心智动力学拟合层激活：hazard 周拟合 job + HMM 状态门控评估 + EM 重估——P03D/P03I 已登记的门（hazard.auc_gate、hmm.gate_auc_margin、hmm.em_min_n）目前是死字段，引擎从未拟合过 hazard β；服务环节：定位模糊 → 针对性补缺。
+  - 索引审计（全库无 CREATE INDEX；json_extract 热路径）+ DATA_MODEL §11 性能预算回归基准；服务环节：全环节（Tier 0 预算铁律）。
+  - 属性测试扩面（G_u 生命周期决定性、镜像报告决定性、HMM 数值稳定）+ `polaris backup`/完整性自检；服务环节：全环节（Local-persistent 铁律）。
+  - MCP 工具面补全：相图/交错 batch/G_u/镜像报告暴露为 Tier 2 工具；服务环节：验证真懂 → 定位模糊 → 针对性补缺。
+  - 镜像报告 Tier 1 叙事润色（strict-citation 引断言原文，降级=现状断言列表）；服务环节：定位模糊。
+  - 数学深化候选（全部带留出验证门）：校准后验化（分层 Beta-Binomial，复用 P03I 数学）、BKT-MIRT 逆方差加权融合、G_u 层级 Beta 超先验、相变马尔可夫动力学、θ AdaGrad 步长；不过门=假设，不进产品行为。
+  - FSRS 个人参数拟合（`fsrs.w` C 类登记的预留票，FSRS-optimizer 思路 + 留出对拍门）。

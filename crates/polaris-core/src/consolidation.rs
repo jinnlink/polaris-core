@@ -204,7 +204,7 @@ fn sigmoid(logit: f64) -> f64 {
     1.0 / (1.0 + (-x).exp())
 }
 
-fn iso_week_label(created_at: &str) -> Result<String> {
+pub(crate) fn iso_week_label(created_at: &str) -> Result<String> {
     let (year, month, day) =
         parse_ymd(created_at).ok_or_else(|| PolarisError::InvalidParameter {
             key: "created_at".to_owned(),

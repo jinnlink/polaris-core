@@ -65,6 +65,13 @@ enum Commands {
     },
     Status,
     GradePending,
+    Report,
+    ReportFeedback {
+        #[arg(long)]
+        assertion: String,
+        #[arg(long)]
+        report: Option<String>,
+    },
     Diagnose {
         #[arg(long)]
         concept: String,
@@ -265,6 +272,15 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                         summary.processed, summary.pending
                     );
                 }
+                Commands::Report => {
+                    let report = engine.run_mirror_report()?;
+                    print_mirror_report(&report);
+                }
+                Commands::ReportFeedback { assertion, report } => {
+                    let report_id = engine.record_report_feedback(report.as_deref(), &assertion)?;
+                    println!("已记录「不准」反馈：report={report_id} assertion={assertion}");
+                    println!("该断言将在抑制窗口内不再进入报告；这条反馈本身已成为校正数据。");
+                }
                 Commands::Diagnose { .. } => unreachable!("handled before writable database open"),
                 Commands::Mcp => unreachable!("handled before command dispatch"),
                 Commands::Pack { .. } => unreachable!("handled before database open"),
@@ -300,6 +316,52 @@ fn print_diagnosis(diagnosis: polaris_core::diagnosis::GraphDiagnosis) {
             task.concept_id, task.contrast_concept_id, task.task_type
         );
         println!("prompt: {}", task.prompt);
+    }
+}
+
+fn print_mirror_report(report: &polaris_core::report::MirrorReport) {
+    println!("镜像报告 {} （周 {}）", report.id, report.week);
+    println!(
+        "窗口={}天 断言={} 假设={} 建议={} 被过滤={}",
+        report.window_days,
+        report.assertions.len(),
+        report.hypotheses.len(),
+        report.suggestions.len(),
+        report.skipped.len()
+    );
+    println!(
+        "hazard 门：participates={} reason={}",
+        report.hazard_gate.participates, report.hazard_gate.reason
+    );
+    for section in [
+        ("断言", &report.assertions),
+        ("假设（未过验证门）", &report.hypotheses),
+        ("参数建议（只建议不执行）", &report.suggestions),
+    ] {
+        let (label, items) = section;
+        if items.is_empty() {
+            continue;
+        }
+        println!("--- {label} ---");
+        for item in items.iter() {
+            println!(
+                "[{}] 置信度={:.0}% 证据={}条",
+                item.id,
+                item.confidence * 100.0,
+                item.evidence_ids.len()
+            );
+            println!("  {}", item.claim);
+        }
+    }
+    if !report.skipped.is_empty() {
+        println!("--- 被过滤候选 ---");
+        for skip in &report.skipped {
+            println!("[{}] reason={}", skip.id, skip.reason);
+        }
+    }
+    println!("--- 三问反思 ---");
+    for prompt in &report.reflection_prompts {
+        println!("· {prompt}");
     }
 }
 

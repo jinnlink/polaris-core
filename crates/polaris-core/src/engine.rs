@@ -38,6 +38,9 @@ use crate::moves::{
 };
 use crate::pack::load_pack;
 use crate::phase::{determine_phase, Depth, Phase, PhaseInput, PhaseParams};
+use crate::report::{
+    latest_mirror_report, record_report_feedback, run_mirror_report, MirrorReport,
+};
 use crate::scheduler::{rank_candidates_with_params, ScheduleCandidate, SchedulerParams};
 use crate::status::{status_snapshot, StatusSnapshot};
 use crate::teaching::{teaching_instruction, TeachingInstruction};
@@ -178,6 +181,22 @@ impl Engine {
 
     pub fn run_nightly_consolidation(&self) -> Result<ConsolidationSummary> {
         run_nightly_consolidation(&self.conn)
+    }
+
+    pub fn run_mirror_report(&self) -> Result<MirrorReport> {
+        run_mirror_report(&self.conn)
+    }
+
+    pub fn latest_mirror_report(&self) -> Result<Option<MirrorReport>> {
+        latest_mirror_report(&self.conn)
+    }
+
+    pub fn record_report_feedback(
+        &self,
+        report_id: Option<&str>,
+        assertion_id: &str,
+    ) -> Result<String> {
+        record_report_feedback(&self.conn, report_id, assertion_id, "inaccurate")
     }
 
     pub fn run_gu_induction(&self) -> Result<GuInductionSummary> {
