@@ -8,6 +8,9 @@ pub enum Depth {
     Recall,
     Explain,
     Apply,
+    Analyze,
+    Evaluate,
+    Create,
     Transfer,
 }
 
@@ -17,6 +20,9 @@ impl Depth {
             "recall" => Some(Self::Recall),
             "explain" => Some(Self::Explain),
             "apply" => Some(Self::Apply),
+            "analyze" => Some(Self::Analyze),
+            "evaluate" => Some(Self::Evaluate),
+            "create" => Some(Self::Create),
             "transfer" => Some(Self::Transfer),
             _ => None,
         }
@@ -27,7 +33,9 @@ impl Depth {
             Self::Recall => 0,
             Self::Explain => 1,
             Self::Apply => 2,
-            Self::Transfer => 3,
+            Self::Analyze | Self::Evaluate => 3,
+            Self::Create => 4,
+            Self::Transfer => 5,
         }
     }
 

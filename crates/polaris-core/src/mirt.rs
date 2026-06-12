@@ -225,7 +225,7 @@ fn theta(conn: &Connection) -> Result<(Vec<f64>, i64)> {
 
 fn task_difficulty(conn: &Connection, task_type: &str) -> Result<f64> {
     let key = match task_type {
-        "free_explain" | "explain" => "free_produce",
+        "free_explain" | "explain" => "free_explain",
         other => other,
     };
     meta_f64(conn, &format!("mirt.d.{key}"))

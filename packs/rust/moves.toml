@@ -12,3 +12,23 @@ template = "解释 {concept} 为什么会限制某些看似可行的写法。"
 id = "apply"
 task_type = "apply"
 template = "给出一个使用 {concept} 的最小 Rust 例子，并说明关键边界。"
+
+[[move]]
+id = "analyze"
+task_type = "analyze"
+template = "比较两种围绕 {concept} 的设计方案，指出至少一个 trade-off 和适用条件。"
+
+[[move]]
+id = "evaluate"
+task_type = "evaluate"
+template = "审查一段涉及 {concept} 的代码，找出至少一个 bug 或设计缺陷并解释原因。"
+
+[[move]]
+id = "create"
+task_type = "create"
+template = "从零设计一个使用 {concept} 的小 API、数据结构或模块边界，并说明关键决策。"
+
+[[move]]
+id = "transfer"
+task_type = "transfer"
+template = "把 {concept} 应用到不同于当前 Rust 示例的项目或领域情境中，说明结构如何迁移。"

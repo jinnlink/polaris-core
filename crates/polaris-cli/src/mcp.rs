@@ -268,7 +268,7 @@ fn tool_definitions() -> Value {
         },
         {
             "name": "get_teaching_instruction",
-            "description": "Return Tier 2 teaching guidance for a concept with focus, move, target, do, dont, and anchor fields.",
+            "description": "Return Tier 2 teaching guidance for a concept with focus, move, target_depth, do, dont, and anchor fields.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -527,6 +527,11 @@ mod tests {
             .unwrap();
         let next_payload: Value = serde_json::from_str(next_text).unwrap();
         let concept_id = next_payload["task"]["concept_id"].as_str().unwrap();
+        assert_eq!(next_payload["teaching_instruction"]["move"], "recall");
+        assert_eq!(
+            next_payload["teaching_instruction"]["target_depth"],
+            "recall"
+        );
 
         let next_events: i64 = session
             .engine()

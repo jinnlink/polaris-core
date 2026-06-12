@@ -251,7 +251,10 @@ fn depth_rank(depth: Option<&str>) -> Option<(&'static str, u8)> {
         Some("recall") => Some(("recall", 0)),
         Some("explain") => Some(("explain", 1)),
         Some("apply") => Some(("apply", 2)),
-        Some("transfer") => Some(("transfer", 3)),
+        Some("analyze") => Some(("analyze", 3)),
+        Some("evaluate") => Some(("evaluate", 3)),
+        Some("create") => Some(("create", 4)),
+        Some("transfer") => Some(("transfer", 5)),
         _ => None,
     }
 }

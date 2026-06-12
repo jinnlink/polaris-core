@@ -12,6 +12,7 @@ pub mod graph;
 pub mod mastery;
 pub mod mental_state;
 pub mod mirt;
+pub mod moves;
 pub mod pack;
 pub mod phase;
 pub mod scheduler;

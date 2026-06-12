@@ -157,7 +157,7 @@ fn parse_and_validate(
     raw.score = raw.score.clamp(0.0, 1.0);
     if !matches!(
         raw.depth.as_str(),
-        "recall" | "explain" | "apply" | "transfer"
+        "recall" | "explain" | "apply" | "analyze" | "evaluate" | "create" | "transfer"
     ) {
         return Err(format!("invalid depth {}", raw.depth));
     }
@@ -306,19 +306,23 @@ fn evidence_prompt_for_attempt(conn: &Connection, attempt_id: &str) -> Result<St
 }
 
 fn rubric_for_attempt(conn: &Connection, attempt_id: &str) -> Result<String> {
-    conn.query_row(
-        "SELECT COALESCE(
+    let (task_type, rubric): (String, String) = conn
+        .query_row(
+            "SELECT COALESCE(a.task_type, 'recall'), COALESCE(
             (SELECT value FROM meta WHERE key='pack.' || c.pack || '.rubric'),
             ''
          )
-         FROM attempts a
+        FROM attempts a
          LEFT JOIN concepts c ON c.id=a.concept_id
          WHERE a.id=?1",
-        [attempt_id],
-        |row| row.get(0),
-    )
-    .optional()?
-    .ok_or_else(|| PolarisError::MissingAttempt(attempt_id.to_owned()))
+            [attempt_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?
+        .ok_or_else(|| PolarisError::MissingAttempt(attempt_id.to_owned()))?;
+    Ok(format!(
+        "Current task_type: {task_type}\nUse the rubric section for this task_type when the pack provides one; otherwise use the closest Bloom depth section.\n\n{rubric}"
+    ))
 }
 
 fn read_env_config(prefix: &str) -> Option<LlmConfig> {

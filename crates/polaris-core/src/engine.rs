@@ -26,6 +26,10 @@ use crate::mirt::{
     ensure_theta, fused_p_known, initial_track_q_blob, latent_prediction, update_theta_for_attempt,
     FusedPKnown, LatentPrediction,
 };
+use crate::moves::{
+    fallback_template, move_template_for_concept, render_move_prompt, select_next_move_for_concept,
+    task_type_target_depth,
+};
 use crate::pack::load_pack;
 use crate::phase::{determine_phase, Depth, Phase, PhaseInput, PhaseParams};
 use crate::scheduler::{rank_candidates_with_params, ScheduleCandidate, SchedulerParams};
@@ -176,6 +180,13 @@ impl Engine {
             "INSERT OR REPLACE INTO meta(key, value) VALUES (?1, ?2)",
             params![format!("pack.{}.rubric", pack.id), pack.rubric],
         )?;
+        tx.execute(
+            "INSERT OR REPLACE INTO meta(key, value) VALUES (?1, ?2)",
+            params![
+                format!("pack.{}.moves", pack.id),
+                serde_json::to_string(&pack.moves)?
+            ],
+        )?;
 
         for concept in &pack.concepts {
             tx.execute(
@@ -268,13 +279,18 @@ impl Engine {
                 .query_row("SELECT name FROM concepts WHERE id=?1", [&best.id], |row| {
                     row.get(0)
                 })?;
+        let selected_move = select_next_move_for_concept(&self.conn, &best.id)?;
+        let template = move_template_for_concept(&self.conn, &best.id, selected_move.id)?
+            .map(|item| item.template)
+            .unwrap_or_else(|| fallback_template(selected_move.id).to_owned());
+        let prompt_text = render_move_prompt(&template, &concept_name);
         Ok(Some(NextTask {
             concept_id: best.id.clone(),
-            task_type: "recall".to_owned(),
-            prompt_text: format!("用自己的话说明 {concept_name} 的核心约束。"),
+            task_type: selected_move.task_type.to_owned(),
+            prompt_text,
             reason: format!(
-                "选它因为：当前效用最高。\n证据是：U={:.3}，按 FSRS/校准/误解/新概念门槛计算。\n现在做什么：完成一个 recall 任务。",
-                best.utility
+                "选它因为：当前效用最高。\n证据是：U={:.3}，并结合 p_known 与 max_depth 选择 {}。\n现在做什么：完成一个 {} 任务。",
+                best.utility, selected_move.target_depth, selected_move.id
             ),
         }))
     }
@@ -304,10 +320,11 @@ impl Engine {
         let mental_state_observation =
             self.mental_state_observation(&input, provisional_score, pre_attempt_p_hat)?;
         let fsrs_params = FsrsParams::from_conn(&self.conn)?;
+        let target_depth = task_type_target_depth(&input.task_type).unwrap_or("recall");
         self.conn.execute(
             "INSERT INTO attempts(id, session_id, concept_id, task_type, prompt_text, response_evidence_id,
                                   self_confidence, latency_ms, hint_count, provisional_score, depth, rating, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'recall', ?11, strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
             params![
                 attempt_id,
                 input.session_id,
@@ -319,6 +336,7 @@ impl Engine {
                 input.latency_ms,
                 input.hint_count,
                 provisional_score,
+                target_depth,
                 format!("{:?}", Rating::from_score_with_params(provisional_score, &fsrs_params)).to_lowercase()
             ],
         )?;

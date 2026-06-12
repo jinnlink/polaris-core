@@ -4,6 +4,7 @@ use std::path::Path;
 use serde::Deserialize;
 
 use crate::graph::{is_valid_concept_kind, is_valid_edge_type};
+use crate::moves::{normalize_move_template, MoveTemplate};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackValidationReport {
@@ -19,6 +20,7 @@ pub struct PackData {
     pub edges: Vec<EdgeToml>,
     pub misconceptions: Vec<MisconceptionToml>,
     pub rubric: String,
+    pub moves: Vec<MoveTemplate>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -109,6 +111,7 @@ struct MovesToml {
 #[derive(Debug, Deserialize)]
 struct MoveToml {
     id: String,
+    task_type: Option<String>,
     template: String,
 }
 
@@ -134,11 +137,13 @@ pub fn validate_pack_path(path: impl AsRef<Path>) -> Result<PackValidationReport
     let concepts: ConceptsToml = read_toml(path, "concepts.toml")?;
     let misconceptions: MisconceptionsToml = read_toml(path, "misconceptions.toml")?;
     let moves: MovesToml = read_toml(path, "moves.toml")?;
-    if moves.moves.is_empty()
-        || moves
-            .moves
-            .iter()
-            .any(|item| item.id.trim().is_empty() || item.template.trim().is_empty())
+    let moves = normalize_moves(moves);
+    if moves.is_empty()
+        || moves.iter().any(|item| {
+            item.id.trim().is_empty()
+                || item.task_type.trim().is_empty()
+                || item.template.trim().is_empty()
+        })
     {
         return Err(PackError::MissingMove);
     }
@@ -215,6 +220,7 @@ pub fn load_pack(path: impl AsRef<Path>) -> Result<PackData, PackError> {
     let pack: PackToml = read_toml(path, "pack.toml")?;
     let concepts: ConceptsToml = read_toml(path, "concepts.toml")?;
     let misconceptions: MisconceptionsToml = read_toml(path, "misconceptions.toml")?;
+    let moves: MovesToml = read_toml(path, "moves.toml")?;
     let rubric = read_text(path, "rubric.md")?;
 
     Ok(PackData {
@@ -223,7 +229,16 @@ pub fn load_pack(path: impl AsRef<Path>) -> Result<PackData, PackError> {
         edges: concepts.edge,
         misconceptions: misconceptions.misconception,
         rubric,
+        moves: normalize_moves(moves),
     })
+}
+
+fn normalize_moves(moves: MovesToml) -> Vec<MoveTemplate> {
+    moves
+        .moves
+        .into_iter()
+        .map(|item| normalize_move_template(item.id, item.task_type, item.template))
+        .collect()
 }
 
 fn read_toml<T: for<'de> Deserialize<'de>>(root: &Path, file_name: &str) -> Result<T, PackError> {
