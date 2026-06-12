@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
-use polaris_core::config::{meta_f64, meta_i64};
 use polaris_core::db::{open_database, open_database_read_only};
 use polaris_core::engine::{Engine, SubmitInput};
 use polaris_core::fsrs::{retrievability, FsrsState};
 use polaris_core::pack::validate_pack_path;
+use polaris_core::phase::Phase;
 use rusqlite::OptionalExtension;
 
 mod mcp;
@@ -202,16 +202,14 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                         |row| row.get(0),
                     )?;
                     println!("due_today={due_today}");
-                    let phantom_n = meta_i64(engine.conn(), "calib.phantom_n")?;
-                    let phantom_gap = meta_f64(engine.conn(), "calib.phantom_gap")?;
-                    let phantom_p = meta_f64(engine.conn(), "calib.phantom_p")?;
                     let mut stmt = engine.conn().prepare(
                         "SELECT c.id, c.name, COALESCE(ms.p_known, c.p_init, CAST((SELECT value FROM meta WHERE key='bkt.p_init') AS REAL)),
                                 COALESCE(ms.calib_gap, 0.0), COALESCE(ms.attempt_count, 0), ms.fsrs_json,
                                 CASE
                                     WHEN ms.last_review_at IS NULL THEN NULL
                                     ELSE julianday('now') - julianday(ms.last_review_at)
-                                END
+                                END,
+                                COALESCE(ms.phase, 'undetermined')
                          FROM concepts c
                          LEFT JOIN mastery_states ms ON ms.concept_id=c.id
                          ORDER BY c.seed_order ASC, c.id ASC",
@@ -225,11 +223,23 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                             row.get::<_, i64>(4)?,
                             row.get::<_, Option<String>>(5)?,
                             row.get::<_, Option<f64>>(6)?,
+                            row.get::<_, String>(7)?,
                         ))
                     })?;
                     for row in rows {
-                        let (id, name, p_known, calib_gap, attempts, fsrs_json, elapsed_days) =
-                            row?;
+                        let (
+                            id,
+                            name,
+                            p_known,
+                            calib_gap,
+                            _attempts,
+                            fsrs_json,
+                            elapsed_days,
+                            raw_phase,
+                        ) = row?;
+                        let phase = Phase::parse(&raw_phase)
+                            .unwrap_or(Phase::Undetermined)
+                            .as_str();
                         let retrieval = fsrs_json
                             .as_deref()
                             .and_then(|json| serde_json::from_str::<FsrsState>(json).ok())
@@ -243,14 +253,6 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                                 )
                             })
                             .unwrap_or_else(|| "-".to_owned());
-                        let phase = if attempts >= phantom_n
-                            && calib_gap >= phantom_gap
-                            && p_known < phantom_p
-                        {
-                            "幻影!"
-                        } else {
-                            "正常"
-                        };
                         println!(
                             "{id}\t{name}\tR={retrieval}\tp_known={p_known:.3}\tcalib_gap={calib_gap:.3}\tphase={phase}"
                         );

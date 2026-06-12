@@ -110,6 +110,7 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             brier_ewma REAL DEFAULT 0,
             last_depth TEXT,
             max_depth TEXT,
+            phase TEXT DEFAULT 'undetermined',
             attempt_count INTEGER DEFAULT 0,
             lapses INTEGER DEFAULT 0,
             updated_at TEXT
@@ -198,12 +199,35 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         "#,
     )?;
 
+    ensure_column(
+        conn,
+        "mastery_states",
+        "phase",
+        "TEXT DEFAULT 'undetermined'",
+    )?;
+
     let registry = default_registry();
     let mut stmt = conn.prepare("INSERT OR IGNORE INTO meta(key, value) VALUES (?1, ?2)")?;
     for spec in registry.values() {
         stmt.execute((spec.key, spec.default_value))?;
     }
 
+    Ok(())
+}
+
+fn ensure_column(conn: &Connection, table: &str, column: &str, definition: &str) -> Result<()> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let columns = stmt
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    if columns.iter().any(|existing| existing == column) {
+        return Ok(());
+    }
+
+    conn.execute(
+        &format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"),
+        [],
+    )?;
     Ok(())
 }
 

@@ -468,6 +468,7 @@ mod tests {
 
         assert_eq!(payload["due_today"], 0);
         assert_eq!(payload["concepts"][0]["concept_id"], "ownership");
+        assert_eq!(payload["concepts"][0]["phase"], "undetermined");
     }
 
     #[test]

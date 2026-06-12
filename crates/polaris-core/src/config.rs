@@ -136,6 +136,13 @@ pub fn default_registry() -> BTreeMap<&'static str, ParameterSpec> {
             TuningRoute::Mrt,
         ),
         spec(
+            "sched.w_phase",
+            "0.0",
+            ParameterClass::B,
+            Some("[0,1]"),
+            TuningRoute::Mrt,
+        ),
+        spec(
             "sched.mis_window_days",
             "14",
             ParameterClass::B,

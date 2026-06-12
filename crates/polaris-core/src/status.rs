@@ -1,9 +1,9 @@
 use rusqlite::Connection;
 use serde::Serialize;
 
-use crate::config::{meta_f64, meta_i64};
 use crate::error::Result;
 use crate::fsrs::{retrievability, FsrsState};
+use crate::phase::Phase;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct StatusSnapshot {
@@ -28,10 +28,6 @@ pub fn status_snapshot(conn: &Connection) -> Result<StatusSnapshot> {
         [],
         |row| row.get(0),
     )?;
-    let phantom_n = meta_i64(conn, "calib.phantom_n")?;
-    let phantom_gap = meta_f64(conn, "calib.phantom_gap")?;
-    let phantom_p = meta_f64(conn, "calib.phantom_p")?;
-
     let mut stmt = conn.prepare(
         "SELECT c.id, c.name,
                 COALESCE(ms.p_known, c.p_init, CAST((SELECT value FROM meta WHERE key='bkt.p_init') AS REAL)),
@@ -41,7 +37,8 @@ pub fn status_snapshot(conn: &Connection) -> Result<StatusSnapshot> {
                 CASE
                     WHEN ms.last_review_at IS NULL THEN NULL
                     ELSE julianday('now') - julianday(ms.last_review_at)
-                END
+                END,
+                COALESCE(ms.phase, 'undetermined')
          FROM concepts c
          LEFT JOIN mastery_states ms ON ms.concept_id=c.id
          ORDER BY c.seed_order ASC, c.id ASC",
@@ -55,12 +52,10 @@ pub fn status_snapshot(conn: &Connection) -> Result<StatusSnapshot> {
             .map(|state| retrievability(state.stability, elapsed_days.unwrap_or(0.0).max(0.0)));
         let p_known = row.get::<_, f64>(2)?;
         let calib_gap = row.get::<_, f64>(3)?;
-        let attempts = row.get::<_, i64>(4)?;
-        let phase = if attempts >= phantom_n && calib_gap >= phantom_gap && p_known < phantom_p {
-            "幻影!".to_owned()
-        } else {
-            "正常".to_owned()
-        };
+        let phase = Phase::parse(&row.get::<_, String>(7)?)
+            .unwrap_or(Phase::Undetermined)
+            .as_str()
+            .to_owned();
 
         Ok(ConceptStatus {
             concept_id: row.get(0)?,

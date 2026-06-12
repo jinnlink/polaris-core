@@ -33,7 +33,7 @@ fn status_snapshot_lists_concepts_and_due_count() {
     assert_eq!(snapshot.due_today, 1);
     assert_eq!(snapshot.concepts.len(), 2);
     assert_eq!(snapshot.concepts[0].concept_id, "pre");
-    assert_eq!(snapshot.concepts[0].phase, "正常");
+    assert_eq!(snapshot.concepts[0].phase, "undetermined");
 }
 
 fn seed_two_concepts_with_prereq(conn: &Connection) {

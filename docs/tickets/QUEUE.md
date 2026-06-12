@@ -1,6 +1,7 @@
 # 票队列（单票制）
 
-状态：**P03D 已完成，等待认领下一票**。任何时刻只允许 1 张票 In Progress。
+状态：**P03E 已完成，等待认领下一票**。任何时刻只允许 1 张票 In Progress。
+P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 新增票必须标注它服务主命题（验证真懂→定位模糊→针对性补缺）的哪一环。
 
 ## Phase 1 — Walking Skeleton
@@ -19,7 +20,7 @@
 - [x] **P03B 夜间巩固 v1**（`TICKET_P03B_NIGHTLY_CONSOLIDATION.md`）← 已实现并通过验收；服务环节：定位模糊 → 针对性补缺
 - [x] **P03C 几何候选层 v1**（`TICKET_P03C_GEOMETRY_CANDIDATES.md`）← 已实现并通过验收；服务环节：定位模糊 → 针对性补缺
 - [x] **P03D 状态 HMM + 行为发射 + 离散时 hazard 放弃模型**（`TICKET_P03D_MENTAL_STATE_HMM.md`）← 已实现并通过验收；服务环节：定位模糊 → 针对性补缺
-- P03E 知识相图视图 + 误解语法 G_u v1（前瞻预测验证）
+- [x] **P03E 知识相图判定**（`TICKET_P03E_KNOWLEDGE_PHASE_DIAGRAM.md`）← 已实现并通过验收；服务环节：验证真懂 → 定位模糊 → 针对性补缺
 - P03F 镜像报告 v1（每条断言带证据 id + 置信度，说不出证据不许进报告）
 - P03G Bloom 深度评判入 grader（D 分量正式化）
 - P03H 参数自调优 v1（B 类·重放途径：夜间反事实重放调参 + param_tuning_runs 审计，DATA_MODEL §12）

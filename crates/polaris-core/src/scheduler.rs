@@ -2,6 +2,7 @@ use rusqlite::Connection;
 
 use crate::config::{default_registry, meta_f64, ParameterSpec};
 use crate::error::Result;
+use crate::phase::Phase;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScheduleCandidate {
@@ -12,6 +13,7 @@ pub struct ScheduleCandidate {
     pub misconception_active: bool,
     pub has_attempts: bool,
     pub prerequisites_met: bool,
+    pub phase: Phase,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -27,6 +29,7 @@ pub struct SchedulerParams {
     pub w_cal: f64,
     pub w_mis: f64,
     pub w_new: f64,
+    pub w_phase: f64,
 }
 
 impl SchedulerParams {
@@ -37,6 +40,7 @@ impl SchedulerParams {
             w_cal: parse_f64(&registry, "sched.w_cal"),
             w_mis: parse_f64(&registry, "sched.w_mis"),
             w_new: parse_f64(&registry, "sched.w_new"),
+            w_phase: parse_f64(&registry, "sched.w_phase"),
         }
     }
 
@@ -46,6 +50,7 @@ impl SchedulerParams {
             w_cal: meta_f64(conn, "sched.w_cal")?,
             w_mis: meta_f64(conn, "sched.w_mis")?,
             w_new: meta_f64(conn, "sched.w_new")?,
+            w_phase: meta_f64(conn, "sched.w_phase")?,
         })
     }
 }
@@ -96,8 +101,9 @@ pub fn utility(candidate: &ScheduleCandidate, params: &SchedulerParams) -> f64 {
     } else {
         0.0
     };
+    let phase_term = params.w_phase * candidate.phase.schedule_bonus();
 
-    retrieval_term + calibration_term + misconception_term + new_concept_term
+    retrieval_term + calibration_term + misconception_term + new_concept_term + phase_term
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -175,6 +181,7 @@ mod tests {
                 misconception_active: false,
                 has_attempts: true,
                 prerequisites_met: false,
+                phase: Phase::Undetermined,
             },
             ScheduleCandidate {
                 id: "phantom_like".to_owned(),
@@ -184,6 +191,7 @@ mod tests {
                 misconception_active: false,
                 has_attempts: true,
                 prerequisites_met: false,
+                phase: Phase::Undetermined,
             },
         ]);
 
@@ -201,6 +209,7 @@ mod tests {
                 misconception_active: false,
                 has_attempts: false,
                 prerequisites_met: false,
+                phase: Phase::Undetermined,
             },
             ScheduleCandidate {
                 id: "new_open".to_owned(),
@@ -210,6 +219,7 @@ mod tests {
                 misconception_active: false,
                 has_attempts: false,
                 prerequisites_met: true,
+                phase: Phase::Undetermined,
             },
             ScheduleCandidate {
                 id: "misconception".to_owned(),
@@ -219,6 +229,7 @@ mod tests {
                 misconception_active: true,
                 has_attempts: true,
                 prerequisites_met: false,
+                phase: Phase::Undetermined,
             },
         ]);
 
@@ -238,6 +249,7 @@ mod tests {
                 misconception_active: false,
                 has_attempts: true,
                 prerequisites_met: false,
+                phase: Phase::Undetermined,
             },
             ScheduleCandidate {
                 id: "a".to_owned(),
@@ -247,6 +259,7 @@ mod tests {
                 misconception_active: false,
                 has_attempts: true,
                 prerequisites_met: false,
+                phase: Phase::Undetermined,
             },
             ScheduleCandidate {
                 id: "c".to_owned(),
@@ -256,6 +269,7 @@ mod tests {
                 misconception_active: false,
                 has_attempts: true,
                 prerequisites_met: false,
+                phase: Phase::Undetermined,
             },
         ]);
 

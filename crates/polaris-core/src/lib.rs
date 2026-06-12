@@ -13,6 +13,7 @@ pub mod mastery;
 pub mod mental_state;
 pub mod mirt;
 pub mod pack;
+pub mod phase;
 pub mod scheduler;
 pub mod status;
 pub mod teaching;
