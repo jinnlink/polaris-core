@@ -1,6 +1,6 @@
 # 票队列（单票制）
 
-状态：**P03K 已完成并提交**。推荐序中的大票已清（P03J/P03K）；下一步建议从 Backlog 小票（索引审计/性能预算回归/属性测试扩面/备份自检/MCP 工具面）或 P04E 认领。任何时刻只允许 1 张票 In Progress。
+状态：**P03L 已完成并提交**。本轮推荐序已完成 P03I→P03J→P03K→P03L；剩余 Backlog 小票（性能预算回归基准/属性测试扩面/备份自检/MCP 工具面）与数学深化候选待用户裁决后继续。任何时刻只允许 1 张票 In Progress。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 新增票必须标注它服务主命题（验证真懂→定位模糊→针对性补缺）的哪一环。
 
@@ -27,6 +27,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 - [x] **P03I 镜像报告 v1**（`TICKET_P03I_MIRROR_REPORT.md`）← 已实现并通过验收；每条断言带证据 id + 置信度，说不出证据不许进报告；服务环节：验证真懂 → 定位模糊
 - [x] **P03J 参数自调优 v1**（`TICKET_P03J_PARAM_TUNING.md`）← 已实现并通过验收；B 类·重放途径：夜间反事实重放调参 + param_tuning_runs 审计（DATA_MODEL §12）；服务环节：定位模糊 → 针对性补缺
 - [x] **P03K 心智动力学拟合层激活**（`TICKET_P03K_MENTAL_DYNAMICS_FIT.md`）← 已实现并通过验收；hazard 周拟合 + HMM 状态门控评估 + EM 重估，激活 P03D/P03I 登记的三个死门；服务环节：定位模糊 → 针对性补缺
+- [x] **P03L 索引审计**（`TICKET_P03L_INDEX_AUDIT.md`）← 已实现并通过验收；全库首批索引 + 查询计划断言（Tier 0 预算结构保障）；服务环节：全环节
 
 ## Phase 4 — UI + MRT
 

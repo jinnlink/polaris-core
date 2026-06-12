@@ -240,6 +240,23 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             passes INTEGER NOT NULL,
             n INTEGER
         );
+
+        CREATE INDEX IF NOT EXISTS idx_attempts_concept_created
+            ON attempts(concept_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_attempts_created
+            ON attempts(created_at);
+        CREATE INDEX IF NOT EXISTS idx_behavior_type_at
+            ON behavior_events(type, at);
+        CREATE INDEX IF NOT EXISTS idx_behavior_session_type_at
+            ON behavior_events(session_id, type, at);
+        CREATE INDEX IF NOT EXISTS idx_behavior_attempt
+            ON behavior_events(json_extract(payload_json, '$.attempt_id'));
+        CREATE INDEX IF NOT EXISTS idx_gu_rules_status
+            ON gu_rules(status);
+        CREATE INDEX IF NOT EXISTS idx_edges_src
+            ON edges(src);
+        CREATE INDEX IF NOT EXISTS idx_edges_dst
+            ON edges(dst);
         "#,
     )?;
 
@@ -335,6 +352,79 @@ mod tests {
             )
             .unwrap();
         assert_eq!(quote_min, "8");
+    }
+
+    #[test]
+    fn migration_creates_hot_path_indexes() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+
+        for index in [
+            "idx_attempts_concept_created",
+            "idx_attempts_created",
+            "idx_behavior_type_at",
+            "idx_behavior_session_type_at",
+            "idx_behavior_attempt",
+            "idx_gu_rules_status",
+            "idx_edges_src",
+            "idx_edges_dst",
+        ] {
+            let exists: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=?1",
+                    [index],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(exists, 1, "missing index {index}");
+        }
+    }
+
+    #[test]
+    fn hot_queries_use_indexes_not_full_scans() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+
+        for (query, expected_index) in [
+            (
+                "SELECT id FROM behavior_events WHERE type='mental_state' ORDER BY at DESC",
+                "idx_behavior_type_at",
+            ),
+            (
+                "SELECT id FROM attempts WHERE concept_id='c1' ORDER BY created_at",
+                "idx_attempts_concept_created",
+            ),
+            ("SELECT id FROM edges WHERE src='c1'", "idx_edges_src"),
+            (
+                "SELECT id FROM gu_rules WHERE status='active'",
+                "idx_gu_rules_status",
+            ),
+        ] {
+            let plan = query_plan(&conn, query);
+            assert!(
+                plan.contains(expected_index),
+                "query `{query}` plan `{plan}` should use {expected_index}"
+            );
+            assert!(
+                !plan.contains("SCAN behavior_events")
+                    && !plan.contains("SCAN attempts")
+                    && !plan.contains("SCAN edges")
+                    && !plan.contains("SCAN gu_rules"),
+                "query `{query}` plan `{plan}` must not full-scan"
+            );
+        }
+    }
+
+    fn query_plan(conn: &Connection, query: &str) -> String {
+        let mut stmt = conn
+            .prepare(&format!("EXPLAIN QUERY PLAN {query}"))
+            .unwrap();
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(3))
+            .unwrap()
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .unwrap();
+        rows.join(" | ")
     }
 
     #[test]
