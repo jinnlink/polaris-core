@@ -1,6 +1,6 @@
 # 票队列（单票制）
 
-状态：**P05A1 已完成并提交**。实现与测试已完成；用户已确认继续推进，接受隔离 target 同参数 clippy 作为本机 `target/debug` 文件锁的替代验收证据。任何时刻只允许 1 张票 In Progress。
+状态：**P05A0 已完成并提交**。P05A1 已完成并提交；本轮补齐课程接入协议文档。默认 target clippy 仍受 Windows 文件锁阻塞，隔离 target 同参数 clippy 已通过。任何时刻只允许 1 张票 In Progress。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 新增票必须标注它服务主命题（验证真懂→定位模糊→针对性补缺）的哪一环。
 
@@ -39,7 +39,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 
 ## Phase 5 — 第二 pack + 育种
 
-- P05A0 课程接入协议 v1（Domain Pack API / Course Integration Protocol）：把 pack 文件形状、validator 规则、证据映射、评分 rubric、moves、版本兼容和外部课程作者指南文档化；服务环节：验证真懂 → 定位模糊 → 针对性补缺
+- [x] **P05A0 课程接入协议 v1**（`TICKET_P05A0_COURSE_INTEGRATION_PROTOCOL.md`）← 已实现并提交；把 pack 文件形状、validator 规则、证据映射、评分 rubric、moves、版本兼容和外部课程作者指南文档化；服务环节：验证真懂 → 定位模糊 → 针对性补缺
 - [x] **P05A1 算法 Domain Pack**（`TICKET_P05A1_ALGORITHMS_PACK.md`）← 已实现并提交（默认 target clippy 文件锁由隔离 target 同参数通过替代）；服务环节：验证真懂 → 定位模糊 → 针对性补缺（第二域验证领域无关性）
 - P05A 英语 pack（从 Polaris CEFR 表导出）：插拔验收 + 冷启动迁移评估（θ·q 预测地图 vs 实际）
 - P05B 教法育种引擎（F5，预登记准入，τ 后验 >0.8 胜在位者才入库）
