@@ -1,0 +1,34 @@
+[[move]]
+id = "recall"
+task_type = "recall"
+template = "State the core idea of {concept} in your own words, including the main complexity or invariant."
+
+[[move]]
+id = "explain"
+task_type = "free_explain"
+template = "Explain when {concept} is preferable to a nearby alternative, and name the condition that makes it valid."
+
+[[move]]
+id = "apply"
+task_type = "apply"
+template = "Use pseudocode to apply {concept} to a small input, then identify one boundary case."
+
+[[move]]
+id = "analyze"
+task_type = "analyze"
+template = "Compare two implementations or uses of {concept}; identify the time-space trade-off and a failure mode."
+
+[[move]]
+id = "evaluate"
+task_type = "evaluate"
+template = "Evaluate a proposed solution using {concept}; decide whether it is correct and cite the invariant or counterexample."
+
+[[move]]
+id = "create"
+task_type = "create"
+template = "Design a small algorithmic solution that uses {concept}, and justify the data structure or recurrence choice."
+
+[[move]]
+id = "transfer"
+task_type = "transfer"
+template = "Transfer {concept} to a different problem shape, explaining which assumptions still hold and which change."

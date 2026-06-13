@@ -1,0 +1,7 @@
+id = "algorithms"
+title = "Algorithms & Data Structures"
+
+name = "algorithms"
+display_name = "Algorithms & Data Structures"
+version = "0.1.0"
+lang = "en"

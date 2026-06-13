@@ -1,0 +1,211 @@
+[[concept]]
+id = "complexity_basics"
+name = "Big-O, Omega, and Theta notation"
+seed_order = 1
+p_init = 0.18
+
+[[concept]]
+id = "arrays_lists"
+name = "Arrays and linked lists"
+seed_order = 2
+p_init = 0.22
+
+[[concept]]
+id = "stacks_queues"
+name = "Stacks and queues"
+seed_order = 3
+p_init = 0.20
+
+[[concept]]
+id = "hash_tables"
+name = "Hash tables"
+seed_order = 4
+p_init = 0.18
+
+[[concept]]
+id = "trees_basics"
+name = "Binary trees"
+seed_order = 5
+p_init = 0.18
+
+[[concept]]
+id = "bst"
+name = "Binary search trees"
+seed_order = 6
+p_init = 0.16
+
+[[concept]]
+id = "heaps"
+name = "Heaps and priority queues"
+seed_order = 7
+p_init = 0.16
+
+[[concept]]
+id = "graphs_repr"
+name = "Graph representations"
+seed_order = 8
+p_init = 0.16
+
+[[concept]]
+id = "comparison_sorts"
+name = "Comparison sorting lower bound"
+seed_order = 9
+p_init = 0.14
+
+[[concept]]
+id = "merge_sort"
+name = "Merge sort"
+seed_order = 10
+p_init = 0.14
+
+[[concept]]
+id = "quicksort"
+name = "Quicksort"
+seed_order = 11
+p_init = 0.14
+
+[[concept]]
+id = "bfs_dfs"
+name = "BFS and DFS"
+seed_order = 12
+p_init = 0.14
+
+[[concept]]
+id = "shortest_path"
+name = "Shortest path algorithms"
+seed_order = 13
+p_init = 0.12
+
+[[concept]]
+id = "dynamic_programming"
+name = "Dynamic programming"
+seed_order = 14
+p_init = 0.12
+
+[[concept]]
+id = "greedy"
+name = "Greedy algorithms"
+seed_order = 15
+p_init = 0.12
+
+[[concept]]
+id = "divide_conquer"
+name = "Divide and conquer"
+seed_order = 16
+p_init = 0.12
+
+[[concept]]
+id = "backtracking"
+name = "Backtracking"
+seed_order = 17
+p_init = 0.12
+
+[[edge]]
+id = "arrays_lists_to_stacks_queues"
+src = "arrays_lists"
+dst = "stacks_queues"
+type = "prerequisite"
+
+[[edge]]
+id = "arrays_lists_to_hash_tables"
+src = "arrays_lists"
+dst = "hash_tables"
+type = "prerequisite"
+
+[[edge]]
+id = "arrays_lists_to_trees_basics"
+src = "arrays_lists"
+dst = "trees_basics"
+type = "prerequisite"
+
+[[edge]]
+id = "trees_basics_to_bst"
+src = "trees_basics"
+dst = "bst"
+type = "prerequisite"
+
+[[edge]]
+id = "trees_basics_to_heaps"
+src = "trees_basics"
+dst = "heaps"
+type = "prerequisite"
+
+[[edge]]
+id = "arrays_lists_to_graphs_repr"
+src = "arrays_lists"
+dst = "graphs_repr"
+type = "prerequisite"
+
+[[edge]]
+id = "complexity_basics_to_comparison_sorts"
+src = "complexity_basics"
+dst = "comparison_sorts"
+type = "prerequisite"
+
+[[edge]]
+id = "comparison_sorts_to_merge_sort"
+src = "comparison_sorts"
+dst = "merge_sort"
+type = "prerequisite"
+
+[[edge]]
+id = "comparison_sorts_to_quicksort"
+src = "comparison_sorts"
+dst = "quicksort"
+type = "prerequisite"
+
+[[edge]]
+id = "graphs_repr_to_bfs_dfs"
+src = "graphs_repr"
+dst = "bfs_dfs"
+type = "prerequisite"
+
+[[edge]]
+id = "bfs_dfs_to_shortest_path"
+src = "bfs_dfs"
+dst = "shortest_path"
+type = "prerequisite"
+
+[[edge]]
+id = "heaps_to_shortest_path"
+src = "heaps"
+dst = "shortest_path"
+type = "prerequisite"
+
+[[edge]]
+id = "complexity_basics_to_dynamic_programming"
+src = "complexity_basics"
+dst = "dynamic_programming"
+type = "prerequisite"
+
+[[edge]]
+id = "complexity_basics_to_greedy"
+src = "complexity_basics"
+dst = "greedy"
+type = "prerequisite"
+
+[[edge]]
+id = "merge_sort_to_divide_conquer"
+src = "merge_sort"
+dst = "divide_conquer"
+type = "prerequisite"
+
+[[edge]]
+id = "bfs_dfs_to_backtracking"
+src = "bfs_dfs"
+dst = "backtracking"
+type = "prerequisite"
+
+[[edge]]
+id = "merge_sort_quicksort_confusion"
+src = "merge_sort"
+dst = "quicksort"
+type = "confusion"
+weight = 0.6
+
+[[edge]]
+id = "bfs_dfs_shortest_path_confusion"
+src = "bfs_dfs"
+dst = "shortest_path"
+type = "confusion"
+weight = 0.6

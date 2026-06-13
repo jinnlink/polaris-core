@@ -1,6 +1,6 @@
 # P05A1 算法 Domain Pack (Algorithms Pack)
 
-状态：Queued
+状态：Completed（已提交；用户确认继续推进；默认 target clippy 受 Windows 文件锁阻塞，隔离 target 同参数通过）
 
 服务主命题环节：验证真懂 → 定位模糊 → 针对性补缺（第二域验证领域无关性）
 
@@ -122,4 +122,126 @@ git diff --check
 
 ## 交付记录
 
-待填写。
+### 开工记录（2026-06-13）
+
+- 当前范围：创建 `packs/algorithms/` 的 5 个声明式 pack 文件，并新增 `crates/polaris-core/tests/p05a1_algorithms.rs` 覆盖 pack validate、init_pack、next_task、prerequisite 门控、misconception 关联与 algorithms/rust submit 流程一致性。
+- 禁区：不在 core 写算法领域专用逻辑；不实现 algorithms 专用 ingest；不修改 `packs/rust/`；不修改冻结参考库 `C:\MyProject\Polaris` 与 `C:\MyProject\Learned`。
+- 验收命令：
+  - `cargo fmt --check`
+  - `cargo clippy --workspace --all-targets -- -D warnings`
+  - `cargo test --workspace`
+  - `cargo run -p polaris-cli -- pack validate packs/algorithms`
+  - `cargo test -p polaris-core --test p05a1_algorithms`
+  - `git diff --check`
+- 预计修改面：`docs/tickets/QUEUE.md`、本票、`packs/algorithms/*`、`crates/polaris-core/tests/p05a1_algorithms.rs`。
+
+### 交付记录（2026-06-13）
+
+#### 变更清单
+
+- 新增 `packs/algorithms/`：`pack.toml`、`concepts.toml`、`misconceptions.toml`、`moves.toml`、`rubric.md`。
+- `concepts.toml` 声明 17 个算法/数据结构概念、16 条 prerequisite 边、2 条 confusion 边；`misconceptions.toml` 声明 8 条常见误解；`moves.toml` 使用 7-move schema。
+- 新增 `crates/polaris-core/tests/p05a1_algorithms.rs`，覆盖 validator、pack 初始化、next_task、prerequisite 门控、active misconception 调度优先级、algorithms/rust submit+grade+mastery 形状一致性。
+- 更新 `docs/tickets/QUEUE.md` 与本票状态/记录。
+
+#### TDD 红灯
+
+`cargo test -p polaris-core --test p05a1_algorithms`
+
+```text
+running 5 tests
+test algorithms_pack_validates_expected_shape ... FAILED
+test algorithms_and_rust_packs_share_submit_grade_mastery_shape ... FAILED
+test failed_attempt_with_misconception_raises_repair_priority ... FAILED
+test prerequisite_gate_keeps_advanced_concepts_out_until_ready ... FAILED
+test algorithms_pack_initializes_and_schedules_domain_concepts ... FAILED
+
+called `Result::unwrap()` on an `Err` value: MissingFile("pack.toml")
+called `Result::unwrap()` on an `Err` value: Pack(MissingFile("pack.toml"))
+
+test result: FAILED. 0 passed; 5 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+#### 验收输出
+
+`cargo fmt --check`
+
+```text
+第一次：失败，指出 crates\polaris-core\tests\p05a1_algorithms.rs:175 需要换行。
+执行 cargo fmt 后复跑：exit 0，无输出。
+```
+
+`cargo clippy --workspace --all-targets -- -D warnings`
+
+```text
+两次复跑均失败于默认 target 文件锁：
+error: failed to write C:\MyProject\polaris-core\target\debug\deps\libpolaris_core-225b025d05403e51.rmeta: 拒绝访问。 (os error 5)
+error: failed to write C:\MyProject\polaris-core\target\debug\deps\libpolaris_core-25752c227aae4632.rmeta: 拒绝访问。 (os error 5)
+```
+
+排查：
+
+```text
+Get-Process | Where-Object { $_.ProcessName -match 'cargo|rustc|clippy|rls|rust-analyzer' } | Select-Object ProcessName,Id,Path
+输出为空。
+
+Test-Path .git\index.lock
+False
+```
+
+同参数隔离 target 复核：
+
+```text
+$env:CARGO_TARGET_DIR = Join-Path $env:TEMP 'polaris-core-target-p05a1-clippy'; cargo clippy --workspace --all-targets -- -D warnings
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 58.58s
+```
+
+`cargo test --workspace`
+
+```text
+P04E: test result: ok. 3 passed; 0 failed; finished in 5.65s
+P05A1: test result: ok. 5 passed; 0 failed; finished in 0.03s
+Doc-tests polaris_core: test result: ok. 0 passed; 0 failed
+Finished `test` profile [unoptimized + debuginfo] target(s) in 4.01s
+```
+
+`cargo run -p polaris-cli -- pack validate packs/algorithms`
+
+```text
+pack ok: concepts=17 prerequisites=16 misconceptions=8
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 10.39s
+```
+
+`cargo test -p polaris-core --test p05a1_algorithms`
+
+```text
+running 5 tests
+test algorithms_pack_validates_expected_shape ... ok
+test algorithms_pack_initializes_and_schedules_domain_concepts ... ok
+test failed_attempt_with_misconception_raises_repair_priority ... ok
+test prerequisite_gate_keeps_advanced_concepts_out_until_ready ... ok
+test algorithms_and_rust_packs_share_submit_grade_mastery_shape ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+```
+
+`git diff --check`
+
+```text
+warning: in the working copy of '.gitignore', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/tickets/QUEUE.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/tickets/TICKET_P05A1_ALGORITHMS_PACK.md', LF will be replaced by CRLF the next time Git touches it
+```
+
+#### 阻塞点与建议
+
+- 阻塞点：票面原始 `cargo clippy --workspace --all-targets -- -D warnings` 在默认 `target/debug` 下被 Windows `os error 5` 文件写入拒绝挡住；同一问题在 P04E 验收时也出现过。
+- 建议：接受隔离 `CARGO_TARGET_DIR` 的同参数 clippy 作为本机 target 锁的替代证据；若必须原命令 exit 0，再单独处理默认 `target/debug` 锁后复跑。
+- 是否改变设计/验收/数据模型：不改变设计和数据模型；只涉及本机验收执行环境。
+- 用户裁决：用户回复“继续推进”，按接受隔离 target clippy 证据处理。
+
+#### 回滚方式
+
+- 删除 `packs/algorithms/`。
+- 删除 `crates/polaris-core/tests/p05a1_algorithms.rs`。
+- 将 `docs/tickets/QUEUE.md` 与本票状态/交付记录恢复到 P05A1 开工前。

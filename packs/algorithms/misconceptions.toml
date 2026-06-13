@@ -1,0 +1,47 @@
+[[misconception]]
+id = "bigo_equals_theta"
+concept_id = "complexity_basics"
+title = "Treating O(n) as identical to Theta(n)"
+pattern = "symbol-referent-confusion"
+
+[[misconception]]
+id = "recursion_always_slower"
+concept_id = "divide_conquer"
+title = "Assuming recursion is always slower than iteration"
+pattern = "overgeneralization"
+
+[[misconception]]
+id = "greedy_always_optimal"
+concept_id = "greedy"
+title = "Assuming greedy choices always produce an optimum"
+pattern = "overgeneralization"
+
+[[misconception]]
+id = "dp_is_just_memoization"
+concept_id = "dynamic_programming"
+title = "Reducing dynamic programming to memoization only"
+pattern = "procedural-conceptual-gap"
+
+[[misconception]]
+id = "bfs_dfs_interchangeable"
+concept_id = "bfs_dfs"
+title = "Treating BFS and DFS as interchangeable"
+pattern = "boundary-blindness"
+
+[[misconception]]
+id = "sort_always_nlogn"
+concept_id = "comparison_sorts"
+title = "Assuming every sort is O(n log n)"
+pattern = "boundary-blindness"
+
+[[misconception]]
+id = "hash_always_o1"
+concept_id = "hash_tables"
+title = "Assuming hash table lookup is always O(1)"
+pattern = "boundary-blindness"
+
+[[misconception]]
+id = "graph_needs_adjacency_matrix"
+concept_id = "graphs_repr"
+title = "Assuming every graph must use an adjacency matrix"
+pattern = "granularity-mismatch"
