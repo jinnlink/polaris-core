@@ -1,6 +1,6 @@
 # 票队列（单票制）
 
-状态：**P03L 已完成并提交**。本轮推荐序已完成 P03I→P03J→P03K→P03L；剩余 Backlog 小票（性能预算回归基准/属性测试扩面/备份自检/MCP 工具面）与数学深化候选待用户裁决后继续。任何时刻只允许 1 张票 In Progress。
+状态：**P04E 已完成并提交**。本轮推荐序已完成 P03I→P03J→P03K→P03L→P04E；剩余 Backlog 小票（性能预算回归基准/属性测试扩面/备份自检/MCP 工具面）与数学深化候选待用户裁决后继续。任何时刻只允许 1 张票 In Progress。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 新增票必须标注它服务主命题（验证真懂→定位模糊→针对性补缺）的哪一环。
 
@@ -35,7 +35,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 - P04B HTTP API 门
 - P04C MRT 微随机化引擎（预登记审计）+ 教法签名后验（F1）+ 个人摩擦曲线拟合（F3）
 - P04D 目标引擎移植（goals/dimensions/milestones，参考 Polaris schema v9）
-- [ ] **P04E 学习模拟端到端测试**（`TICKET_P04E_LEARNING_SIMULATION_TEST.md`）← Queued；服务环节：验证真懂 → 定位模糊 → 针对性补缺（全闭环验证）
+- [x] **P04E 学习模拟端到端测试**（`TICKET_P04E_LEARNING_SIMULATION_TEST.md`）← 已实现并通过验收；三画像 30 天模拟 + 每日 summary + 无死锁/相变/HMM/θ 跟踪断言；服务环节：验证真懂 → 定位模糊 → 针对性补缺（全闭环验证）
 
 ## Phase 5 — 第二 pack + 育种
 

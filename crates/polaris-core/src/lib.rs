@@ -19,6 +19,7 @@ pub mod pack;
 pub mod phase;
 pub mod report;
 pub mod scheduler;
+pub mod simulation;
 pub mod status;
 pub mod teaching;
 pub mod tuning;

@@ -1,6 +1,6 @@
 # P04E 学习模拟端到端测试 (Learning Simulation Test)
 
-状态：Queued
+状态：Completed
 
 服务主命题环节：验证真懂 → 定位模糊 → 针对性补缺（全闭环验证）
 
@@ -83,4 +83,98 @@ git diff --check
 
 ## 交付记录
 
-待填写。
+## AI 交付记录（2026-06-13）
+
+### 本轮范围
+
+- 按单票制认领 P04E，只实现学习模拟端到端测试与模拟器支撑代码。
+- 不修改调度、掌握度 fold、MIRT、HMM、相图判定等核心引擎规则。
+- 模拟器作为 `Engine` API 消费者：通过 `get_interleaved_batch`/`submit`/`apply_final_score` 跑完整闭环；最终评分由虚拟学习者直接写入 final_score，不依赖 LLM 或网络。
+
+### 变更清单
+
+- 新增 `crates/polaris-core/src/simulation.rs`
+  - `VirtualLearner`：包含 `ability`、`noise`、`confidence_bias`、`fatigue_rate`、`session_pattern`，并提供 `strong`/`weak`/`mixed` 三个预设。
+  - `simulate_learning`：运行 30 天端到端模拟，输出 `SimulationReport` 与每日 summary。
+  - 模拟期间临时屏蔽 `POLARIS_LLM_FAST_*` / `POLARIS_LLM_STRONG_*` 环境变量，避免 `Engine::submit` 触发外部 LLM。
+  - 为当前 pack 概念写入模拟用 K 维 q 面与轻量难度，保证 MIRT θ 跟踪断言有可观测维度。
+- 更新 `crates/polaris-core/src/lib.rs` 导出 `simulation` 模块。
+- 新增 `crates/polaris-core/tests/p04e_simulation.rs`
+  - strong：断言 30 天后 `mean(p_known) >= 0.7`、至少一个概念到 Transfer、θ/ability 余弦 > 0.5、无死锁、HMM 不长期卡死。
+  - weak：断言 `mean(p_known)` 斜率 > 0、校准 gap 绝对值收敛、attempt_count < 5 时不进入 Transfer、无死锁、HMM 不长期卡死。
+  - mixed：断言闭环持续运行、平均掌握度上升、每日 summary 含 active concepts 与 phase distribution。
+- 更新 `docs/tickets/QUEUE.md`：P04E 从 Queued 改为 In Progress。
+
+### 验收输出
+
+```powershell
+> cargo fmt --check
+# exit code: 0
+```
+
+```powershell
+> cargo clippy --workspace --all-targets -- -D warnings
+warning: failed to garbage collect incremental compilation session directory `\\?\C:\MyProject\polaris-core\target\debug\incremental\...`: 拒绝访问。 (os error 5)
+error: failed to write C:\MyProject\polaris-core\target\debug\deps\libpolaris_core-225b025d05403e51.rmeta: 拒绝访问。 (os error 5)
+error: could not compile `polaris-core` (lib) due to 1 previous error
+# exit code: 1
+```
+
+默认 `target/debug` 目录存在 Windows 文件锁/访问拒绝，非代码告警。使用隔离 target 重跑同一 Clippy 检查：
+
+```powershell
+> $env:CARGO_TARGET_DIR = Join-Path $env:TEMP 'polaris-core-target-clippy'; cargo clippy --workspace --all-targets -- -D warnings
+    Checking polaris-core v0.1.0 (C:\MyProject\polaris-core\crates\polaris-core)
+    Checking polaris-cli v0.1.0 (C:\MyProject\polaris-core\crates\polaris-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.49s
+# exit code: 0
+```
+
+```powershell
+> cargo test --workspace
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+test result: ok. 65 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+...
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.75s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 28.26s
+# exit code: 0
+```
+
+```powershell
+> cargo test -p polaris-core --test p04e_simulation -- --nocapture
+running 3 tests
+day 01: mean_p_known=0.272 active_concepts=4 dominant_hmm=fatigued phase_distribution=PhaseCounts { counts: {"fluctuation": 2, "undetermined": 22} }
+...
+day 30: mean_p_known=0.520 active_concepts=23 dominant_hmm=bored phase_distribution=PhaseCounts { counts: {"fluctuation": 1, "transfer": 5, "undetermined": 18} }
+test mixed_virtual_learner_keeps_running_and_reports_daily_summaries ... ok
+...
+day 30: mean_p_known=0.295 active_concepts=24 dominant_hmm=fatigued phase_distribution=PhaseCounts { counts: {"fluctuation": 2, "regression": 5, "transfer": 3, "undetermined": 14} }
+test weak_overconfident_virtual_learner_improves_without_early_transfer ... ok
+...
+day 30: mean_p_known=0.998 active_concepts=24 dominant_hmm=fatigued phase_distribution=PhaseCounts { counts: {"generation": 1, "transfer": 12, "undetermined": 11} }
+test strong_virtual_learner_reaches_transfer_without_deadlock ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.68s
+# exit code: 0
+```
+
+```powershell
+> git diff --check
+warning: in the working copy of '.gitignore', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'crates/polaris-core/src/lib.rs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/tickets/QUEUE.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/tickets/TICKET_P04E_LEARNING_SIMULATION_TEST.md', LF will be replaced by CRLF the next time Git touches it
+# exit code: 0
+```
+
+### 阻塞与裁决记录
+
+- 默认 `target/debug` 上的原始 Clippy 命令仍被 Windows 文件锁挡住，表现为 rmeta 写入 `拒绝访问 (os error 5)`。
+- 已确认没有残留 `cargo`/`rustc`/`clippy`/`rustdoc` 进程；同一 Clippy 检查在 `%TEMP%\polaris-core-target-clippy` 隔离 target 下通过。
+- 未执行 `cargo clean` 或删除 `target/`，避免破坏用户已有构建产物。
+
+### 回滚方式
+
+- 回滚本票代码与测试：删除 `crates/polaris-core/src/simulation.rs`、`crates/polaris-core/tests/p04e_simulation.rs`，并从 `crates/polaris-core/src/lib.rs` 移除 `pub mod simulation;`。
+- 回滚票据状态：将 `docs/tickets/QUEUE.md` 中 P04E 从 `In Progress` 改回 `Queued`，删除本交付记录。
