@@ -1,0 +1,53 @@
+[[misconception]]
+id = "literal_translation"
+concept_id = "b1_expression"
+title = "Translating word-by-word from the first language"
+pattern = "interference-confusion"
+
+[[misconception]]
+id = "tense_as_time_only"
+concept_id = "b2_grammar"
+title = "Treating tense as calendar time only"
+pattern = "boundary-blindness"
+
+[[misconception]]
+id = "article_overgeneralization"
+concept_id = "a2_grammar"
+title = "Applying a/an/the as a simple countability rule"
+pattern = "overgeneralization"
+
+[[misconception]]
+id = "preposition_direct_mapping"
+concept_id = "b1_vocabulary"
+title = "Mapping prepositions directly across languages"
+pattern = "symbol-referent-confusion"
+
+[[misconception]]
+id = "subordinate_clause_word_order"
+concept_id = "b1_grammar"
+title = "Using main-clause word order inside subordinate clauses"
+pattern = "procedural-conceptual-gap"
+
+[[misconception]]
+id = "modal_certainty_only"
+concept_id = "b2_grammar"
+title = "Reading modal verbs only as certainty markers"
+pattern = "granularity-mismatch"
+
+[[misconception]]
+id = "academic_register_equals_harder_words"
+concept_id = "c1_expression"
+title = "Assuming academic register means replacing words with rarer synonyms"
+pattern = "fluency-illusion"
+
+[[misconception]]
+id = "fluency_without_accuracy"
+concept_id = "b2_expression"
+title = "Equating speed and length with accurate expression"
+pattern = "fluency-illusion"
+
+[[misconception]]
+id = "idiom_is_unanalyzable"
+concept_id = "c2_vocabulary"
+title = "Treating idioms as unanalyzable fixed translations"
+pattern = "granularity-mismatch"

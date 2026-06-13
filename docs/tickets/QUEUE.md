@@ -1,6 +1,6 @@
 # 票队列（单票制）
 
-状态：**P05A0 已完成并提交**。P05A1 已完成并提交；本轮补齐课程接入协议文档。默认 target clippy 仍受 Windows 文件锁阻塞，隔离 target 同参数 clippy 已通过。任何时刻只允许 1 张票 In Progress。
+状态：**P05A 英语示例 Domain Pack 已完成并提交**。P05A0、P05A1 已完成并提交；本轮从 Polaris CEFR 数据形状提取课程接入协议示例 pack，不作为 core 内建英语线。默认 target clippy 仍受 Windows 文件锁阻塞，隔离 target 同参数 clippy 已通过。任何时刻只允许 1 张票 In Progress。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 新增票必须标注它服务主命题（验证真懂→定位模糊→针对性补缺）的哪一环。
 
@@ -41,13 +41,14 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 
 - [x] **P05A0 课程接入协议 v1**（`TICKET_P05A0_COURSE_INTEGRATION_PROTOCOL.md`）← 已实现并提交；把 pack 文件形状、validator 规则、证据映射、评分 rubric、moves、版本兼容和外部课程作者指南文档化；服务环节：验证真懂 → 定位模糊 → 针对性补缺
 - [x] **P05A1 算法 Domain Pack**（`TICKET_P05A1_ALGORITHMS_PACK.md`）← 已实现并提交（默认 target clippy 文件锁由隔离 target 同参数通过替代）；服务环节：验证真懂 → 定位模糊 → 针对性补缺（第二域验证领域无关性）
-- P05A 英语 pack（从 Polaris CEFR 表导出）：插拔验收 + 冷启动迁移评估（θ·q 预测地图 vs 实际）
+- [x] **P05A 英语示例 Domain Pack**（`TICKET_P05A_ENGLISH_PACK.md`）← 已实现并提交；从 Polaris CEFR 表形状导出 `examples/packs/english/` 示例 pack，覆盖课程接入协议插拔验收、语言学习 moves 与冷启动评估夹具；服务环节：验证真懂 → 定位模糊 → 针对性补缺（跨域桥首测）
 - P05B 教法育种引擎（F5，预登记准入，τ 后验 >0.8 胜在位者才入库）
 - P05C ingest 适配器插件化（识屏/浏览器等，独立进程，按需）
 
 ## Backlog（票外发现的问题记在这里，不顺手做）
 
 - P03A 审查后续：当前 Q 降级初始化在单 Rust pack 下使用 `q[0]=1.0` 作为 deterministic one-hot track 维；多 pack/多 track 前需补 `latent.dims` 或 pack/track→维度映射，避免所有概念共用同一潜因子。
+- P05A 验收观察：`cargo test --workspace` 首次在 `p03c_geometry::geometry_candidates_use_hnsw_and_combined_scores` 偶发缺少 `schema:raii` 候选，导致同文件后续用例因 `ENV_LOCK` PoisonError 连锁失败；单跑 `cargo test -p polaris-core --test p03c_geometry` 通过，重跑 `cargo test --workspace` 通过。建议后续单独开票把 HNSW 候选测试改成确定性夹具或扩大候选池；服务环节：全环节（验证稳定性）。
 - 强化轴线候选（详见 `docs/ENHANCEMENT_ROADMAP.md` 2026-06-12 提案，排序待用户裁决）：
   - ~~P03K 心智动力学拟合层激活~~ ← 已转正式票（见 Phase 3 列表）。
   - 索引审计（全库无 CREATE INDEX；json_extract 热路径）+ DATA_MODEL §11 性能预算回归基准；服务环节：全环节（Tier 0 预算铁律）。

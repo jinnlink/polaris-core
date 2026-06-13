@@ -1,0 +1,14 @@
+id = "english"
+title = "English CEFR Example Pack"
+
+name = "english"
+display_name = "English CEFR Example Pack"
+version = "0.1.0"
+lang = "en"
+source = "Polaris CEFR table shape"
+source_script = "C:\\MyProject\\Polaris\\apps\\web\\scripts\\import-cefr-data.mjs"
+source_urls = [
+  "CEFR-J Vocabulary Profile: https://raw.githubusercontent.com/openlanguageprofiles/olp-en-cefrj/master/cefrj-vocabulary-profile-1.5.csv",
+  "Octanove C1/C2 Vocabulary Profile: https://raw.githubusercontent.com/openlanguageprofiles/olp-en-cefrj/master/octanove-vocabulary-profile-c1c2-1.0.csv",
+  "CEFR-J Grammar Profile: https://raw.githubusercontent.com/openlanguageprofiles/olp-en-cefrj/master/cefrj-grammar-profile-20180315.csv",
+]

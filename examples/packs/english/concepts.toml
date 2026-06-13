@@ -1,0 +1,470 @@
+[[concept]]
+id = "cefr_a1"
+name = "CEFR A1 survival English"
+kind = "schema"
+seed_order = 1
+p_init = 0.24
+
+[[concept]]
+id = "a1_vocabulary"
+name = "A1 concrete everyday vocabulary"
+seed_order = 2
+p_init = 0.24
+
+[[concept]]
+id = "a1_grammar"
+name = "A1 basic clause patterns"
+seed_order = 3
+p_init = 0.22
+
+[[concept]]
+id = "a1_expression"
+name = "A1 formulaic personal expression"
+seed_order = 4
+p_init = 0.22
+
+[[concept]]
+id = "cefr_a2"
+name = "CEFR A2 routine interaction English"
+kind = "schema"
+seed_order = 5
+p_init = 0.20
+
+[[concept]]
+id = "a2_vocabulary"
+name = "A2 routine-topic vocabulary"
+seed_order = 6
+p_init = 0.20
+
+[[concept]]
+id = "a2_grammar"
+name = "A2 tense and comparison patterns"
+seed_order = 7
+p_init = 0.20
+
+[[concept]]
+id = "a2_expression"
+name = "A2 short connected expression"
+seed_order = 8
+p_init = 0.18
+
+[[concept]]
+id = "cefr_b1"
+name = "CEFR B1 independent English"
+kind = "schema"
+seed_order = 9
+p_init = 0.18
+
+[[concept]]
+id = "b1_vocabulary"
+name = "B1 abstract everyday vocabulary"
+seed_order = 10
+p_init = 0.18
+
+[[concept]]
+id = "b1_grammar"
+name = "B1 connected tense and clause control"
+seed_order = 11
+p_init = 0.18
+
+[[concept]]
+id = "b1_expression"
+name = "B1 narrative and opinion expression"
+seed_order = 12
+p_init = 0.16
+
+[[concept]]
+id = "cefr_b2"
+name = "CEFR B2 fluent operational English"
+kind = "schema"
+seed_order = 13
+p_init = 0.16
+
+[[concept]]
+id = "b2_vocabulary"
+name = "B2 precise topic vocabulary and collocation"
+seed_order = 14
+p_init = 0.16
+
+[[concept]]
+id = "b2_grammar"
+name = "B2 complex sentence control"
+seed_order = 15
+p_init = 0.14
+
+[[concept]]
+id = "b2_expression"
+name = "B2 argument and register control"
+seed_order = 16
+p_init = 0.14
+
+[[concept]]
+id = "cefr_c1"
+name = "CEFR C1 advanced academic English"
+kind = "schema"
+seed_order = 17
+p_init = 0.12
+
+[[concept]]
+id = "c1_vocabulary"
+name = "C1 nuanced academic and professional vocabulary"
+seed_order = 18
+p_init = 0.12
+
+[[concept]]
+id = "c1_grammar"
+name = "C1 flexible discourse grammar"
+seed_order = 19
+p_init = 0.12
+
+[[concept]]
+id = "c1_expression"
+name = "C1 sustained precise expression"
+seed_order = 20
+p_init = 0.10
+
+[[concept]]
+id = "cefr_c2"
+name = "CEFR C2 near-native precision English"
+kind = "schema"
+seed_order = 21
+p_init = 0.10
+
+[[concept]]
+id = "c2_vocabulary"
+name = "C2 idiomatic and specialized vocabulary"
+seed_order = 22
+p_init = 0.10
+
+[[concept]]
+id = "c2_grammar"
+name = "C2 controlled stylistic variation"
+seed_order = 23
+p_init = 0.10
+
+[[concept]]
+id = "c2_expression"
+name = "C2 rhetorically adaptive expression"
+seed_order = 24
+p_init = 0.10
+
+[[edge]]
+id = "cefr_a1_to_cefr_a2"
+src = "cefr_a1"
+dst = "cefr_a2"
+type = "prerequisite"
+
+[[edge]]
+id = "cefr_a2_to_cefr_b1"
+src = "cefr_a2"
+dst = "cefr_b1"
+type = "prerequisite"
+
+[[edge]]
+id = "cefr_b1_to_cefr_b2"
+src = "cefr_b1"
+dst = "cefr_b2"
+type = "prerequisite"
+
+[[edge]]
+id = "cefr_b2_to_cefr_c1"
+src = "cefr_b2"
+dst = "cefr_c1"
+type = "prerequisite"
+
+[[edge]]
+id = "cefr_c1_to_cefr_c2"
+src = "cefr_c1"
+dst = "cefr_c2"
+type = "prerequisite"
+
+[[edge]]
+id = "a1_vocabulary_to_a2_vocabulary"
+src = "a1_vocabulary"
+dst = "a2_vocabulary"
+type = "prerequisite"
+
+[[edge]]
+id = "a2_vocabulary_to_b1_vocabulary"
+src = "a2_vocabulary"
+dst = "b1_vocabulary"
+type = "prerequisite"
+
+[[edge]]
+id = "b1_vocabulary_to_b2_vocabulary"
+src = "b1_vocabulary"
+dst = "b2_vocabulary"
+type = "prerequisite"
+
+[[edge]]
+id = "b2_vocabulary_to_c1_vocabulary"
+src = "b2_vocabulary"
+dst = "c1_vocabulary"
+type = "prerequisite"
+
+[[edge]]
+id = "c1_vocabulary_to_c2_vocabulary"
+src = "c1_vocabulary"
+dst = "c2_vocabulary"
+type = "prerequisite"
+
+[[edge]]
+id = "a1_grammar_to_a2_grammar"
+src = "a1_grammar"
+dst = "a2_grammar"
+type = "prerequisite"
+
+[[edge]]
+id = "a2_grammar_to_b1_grammar"
+src = "a2_grammar"
+dst = "b1_grammar"
+type = "prerequisite"
+
+[[edge]]
+id = "b1_grammar_to_b2_grammar"
+src = "b1_grammar"
+dst = "b2_grammar"
+type = "prerequisite"
+
+[[edge]]
+id = "b2_grammar_to_c1_grammar"
+src = "b2_grammar"
+dst = "c1_grammar"
+type = "prerequisite"
+
+[[edge]]
+id = "c1_grammar_to_c2_grammar"
+src = "c1_grammar"
+dst = "c2_grammar"
+type = "prerequisite"
+
+[[edge]]
+id = "a1_expression_to_a2_expression"
+src = "a1_expression"
+dst = "a2_expression"
+type = "prerequisite"
+
+[[edge]]
+id = "a2_expression_to_b1_expression"
+src = "a2_expression"
+dst = "b1_expression"
+type = "prerequisite"
+
+[[edge]]
+id = "b1_expression_to_b2_expression"
+src = "b1_expression"
+dst = "b2_expression"
+type = "prerequisite"
+
+[[edge]]
+id = "b2_expression_to_c1_expression"
+src = "b2_expression"
+dst = "c1_expression"
+type = "prerequisite"
+
+[[edge]]
+id = "c1_expression_to_c2_expression"
+src = "c1_expression"
+dst = "c2_expression"
+type = "prerequisite"
+
+[[edge]]
+id = "a1_vocabulary_to_a1_expression"
+src = "a1_vocabulary"
+dst = "a1_expression"
+type = "prerequisite"
+
+[[edge]]
+id = "a1_grammar_to_a1_expression"
+src = "a1_grammar"
+dst = "a1_expression"
+type = "prerequisite"
+
+[[edge]]
+id = "a2_vocabulary_to_a2_expression"
+src = "a2_vocabulary"
+dst = "a2_expression"
+type = "prerequisite"
+
+[[edge]]
+id = "a2_grammar_to_a2_expression"
+src = "a2_grammar"
+dst = "a2_expression"
+type = "prerequisite"
+
+[[edge]]
+id = "b1_vocabulary_to_b1_expression"
+src = "b1_vocabulary"
+dst = "b1_expression"
+type = "prerequisite"
+
+[[edge]]
+id = "b1_grammar_to_b1_expression"
+src = "b1_grammar"
+dst = "b1_expression"
+type = "prerequisite"
+
+[[edge]]
+id = "b2_vocabulary_to_b2_expression"
+src = "b2_vocabulary"
+dst = "b2_expression"
+type = "prerequisite"
+
+[[edge]]
+id = "b2_grammar_to_b2_expression"
+src = "b2_grammar"
+dst = "b2_expression"
+type = "prerequisite"
+
+[[edge]]
+id = "c1_vocabulary_to_c1_expression"
+src = "c1_vocabulary"
+dst = "c1_expression"
+type = "prerequisite"
+
+[[edge]]
+id = "c1_grammar_to_c1_expression"
+src = "c1_grammar"
+dst = "c1_expression"
+type = "prerequisite"
+
+[[edge]]
+id = "c2_vocabulary_to_c2_expression"
+src = "c2_vocabulary"
+dst = "c2_expression"
+type = "prerequisite"
+
+[[edge]]
+id = "c2_grammar_to_c2_expression"
+src = "c2_grammar"
+dst = "c2_expression"
+type = "prerequisite"
+
+[[edge]]
+id = "a1_vocabulary_component_of_cefr_a1"
+src = "a1_vocabulary"
+dst = "cefr_a1"
+type = "component_of"
+
+[[edge]]
+id = "a1_grammar_component_of_cefr_a1"
+src = "a1_grammar"
+dst = "cefr_a1"
+type = "component_of"
+
+[[edge]]
+id = "a1_expression_component_of_cefr_a1"
+src = "a1_expression"
+dst = "cefr_a1"
+type = "component_of"
+
+[[edge]]
+id = "a2_vocabulary_component_of_cefr_a2"
+src = "a2_vocabulary"
+dst = "cefr_a2"
+type = "component_of"
+
+[[edge]]
+id = "a2_grammar_component_of_cefr_a2"
+src = "a2_grammar"
+dst = "cefr_a2"
+type = "component_of"
+
+[[edge]]
+id = "a2_expression_component_of_cefr_a2"
+src = "a2_expression"
+dst = "cefr_a2"
+type = "component_of"
+
+[[edge]]
+id = "b1_vocabulary_component_of_cefr_b1"
+src = "b1_vocabulary"
+dst = "cefr_b1"
+type = "component_of"
+
+[[edge]]
+id = "b1_grammar_component_of_cefr_b1"
+src = "b1_grammar"
+dst = "cefr_b1"
+type = "component_of"
+
+[[edge]]
+id = "b1_expression_component_of_cefr_b1"
+src = "b1_expression"
+dst = "cefr_b1"
+type = "component_of"
+
+[[edge]]
+id = "b2_vocabulary_component_of_cefr_b2"
+src = "b2_vocabulary"
+dst = "cefr_b2"
+type = "component_of"
+
+[[edge]]
+id = "b2_grammar_component_of_cefr_b2"
+src = "b2_grammar"
+dst = "cefr_b2"
+type = "component_of"
+
+[[edge]]
+id = "b2_expression_component_of_cefr_b2"
+src = "b2_expression"
+dst = "cefr_b2"
+type = "component_of"
+
+[[edge]]
+id = "c1_vocabulary_component_of_cefr_c1"
+src = "c1_vocabulary"
+dst = "cefr_c1"
+type = "component_of"
+
+[[edge]]
+id = "c1_grammar_component_of_cefr_c1"
+src = "c1_grammar"
+dst = "cefr_c1"
+type = "component_of"
+
+[[edge]]
+id = "c1_expression_component_of_cefr_c1"
+src = "c1_expression"
+dst = "cefr_c1"
+type = "component_of"
+
+[[edge]]
+id = "c2_vocabulary_component_of_cefr_c2"
+src = "c2_vocabulary"
+dst = "cefr_c2"
+type = "component_of"
+
+[[edge]]
+id = "c2_grammar_component_of_cefr_c2"
+src = "c2_grammar"
+dst = "cefr_c2"
+type = "component_of"
+
+[[edge]]
+id = "c2_expression_component_of_cefr_c2"
+src = "c2_expression"
+dst = "cefr_c2"
+type = "component_of"
+
+[[edge]]
+id = "b1_b2_tense_confusion"
+src = "b1_grammar"
+dst = "b2_grammar"
+type = "confusion"
+weight = 0.6
+
+[[edge]]
+id = "b2_c1_register_confusion"
+src = "b2_expression"
+dst = "c1_expression"
+type = "confusion"
+weight = 0.6
+
+[[edge]]
+id = "c1_c2_idiom_confusion"
+src = "c1_vocabulary"
+dst = "c2_vocabulary"
+type = "confusion"
+weight = 0.6
