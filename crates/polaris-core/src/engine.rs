@@ -745,7 +745,49 @@ impl Engine {
         Ok(seen)
     }
 
+    pub fn submit_provisional(&mut self, input: SubmitInput) -> Result<SubmitReceipt> {
+        let receipt = self.record_provisional_submission(&input)?;
+        let grade = grade_with_config(
+            &self.conn,
+            GradeRequest {
+                attempt_id: receipt.attempt_id.clone(),
+                self_confidence: input.self_confidence,
+                response_text: input.response_text,
+            },
+            LlmConfig::Unavailable,
+        )?;
+
+        Ok(SubmitReceipt {
+            degraded: grade.degraded,
+            ..receipt
+        })
+    }
+
     pub fn submit(&mut self, input: SubmitInput) -> Result<SubmitReceipt> {
+        let receipt = self.record_provisional_submission(&input)?;
+        let grade = grade_with_config(
+            &self.conn,
+            GradeRequest {
+                attempt_id: receipt.attempt_id.clone(),
+                self_confidence: input.self_confidence,
+                response_text: input.response_text,
+            },
+            LlmConfig::from_env(),
+        )?;
+        if !grade.degraded {
+            self.record_final_mental_state_snapshot_for_attempt(&receipt.attempt_id, grade.score)?;
+            update_theta_for_attempt(&self.conn, &receipt.attempt_id)?;
+            self.replay_concept_after(&input.concept_id, Some(&receipt.attempt_id))?;
+            let _ = self.run_gu_induction()?;
+        }
+
+        Ok(SubmitReceipt {
+            degraded: grade.degraded,
+            ..receipt
+        })
+    }
+
+    fn record_provisional_submission(&mut self, input: &SubmitInput) -> Result<SubmitReceipt> {
         self.conn.execute(
             "INSERT OR IGNORE INTO sessions(id, started_at, context_json)
              VALUES (?1, strftime('%Y-%m-%dT%H:%M:%SZ','now'), '{}')",
@@ -758,8 +800,8 @@ impl Engine {
              VALUES (?1, ?2, 'cli-submit', 'text/plain', ?3, ?4, strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
             params![
                 evidence_id,
-                input.session_id,
-                input.response_text,
+                input.session_id.as_str(),
+                input.response_text.as_str(),
                 serde_json::to_string(&vec![input.concept_id.clone()])?
             ],
         )?;
@@ -768,7 +810,7 @@ impl Engine {
         let provisional_score = heuristic_score_with_conn(&self.conn, input.self_confidence)?;
         let pre_attempt_p_hat = self.pre_attempt_p_hat(&input.concept_id, &input.task_type)?;
         let mental_state_observation =
-            self.mental_state_observation(&input, provisional_score, pre_attempt_p_hat)?;
+            self.mental_state_observation(input, provisional_score, pre_attempt_p_hat)?;
         let fsrs_params = FsrsParams::from_conn(&self.conn)?;
         let target_depth = task_type_target_depth(&input.task_type).unwrap_or("recall");
         self.conn.execute(
@@ -777,10 +819,10 @@ impl Engine {
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
             params![
                 attempt_id,
-                input.session_id,
-                input.concept_id,
-                input.task_type,
-                input.prompt_text,
+                input.session_id.as_str(),
+                input.concept_id.as_str(),
+                input.task_type.as_str(),
+                input.prompt_text.as_str(),
                 evidence_id,
                 input.self_confidence,
                 input.latency_ms,
@@ -796,8 +838,8 @@ impl Engine {
              VALUES (?1, ?2, strftime('%Y-%m-%dT%H:%M:%SZ','now'), 'latency', ?3, ?4)",
             params![
                 Uuid::new_v4().to_string(),
-                input.session_id,
-                input.concept_id,
+                input.session_id.as_str(),
+                input.concept_id.as_str(),
                 serde_json::json!({"latency_ms": input.latency_ms, "hint_count": input.hint_count})
                     .to_string()
             ],
@@ -813,26 +855,10 @@ impl Engine {
             prior_posterior: None,
         })?;
         self.replay_concept_after(&input.concept_id, Some(&attempt_id))?;
-        let grade = grade_with_config(
-            &self.conn,
-            GradeRequest {
-                attempt_id: attempt_id.clone(),
-                self_confidence: input.self_confidence,
-                response_text: input.response_text,
-            },
-            LlmConfig::from_env(),
-        )?;
-        if !grade.degraded {
-            self.record_final_mental_state_snapshot_for_attempt(&attempt_id, grade.score)?;
-            update_theta_for_attempt(&self.conn, &attempt_id)?;
-            self.replay_concept_after(&input.concept_id, Some(&attempt_id))?;
-            let _ = self.run_gu_induction()?;
-        }
-
         Ok(SubmitReceipt {
             attempt_id,
             provisional_score,
-            degraded: grade.degraded,
+            degraded: true,
         })
     }
 
@@ -1968,6 +1994,42 @@ mod tests {
             )
             .unwrap();
         assert_eq!(queued, 1);
+    }
+
+    #[test]
+    fn submit_provisional_records_mastery_and_queues_retry() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let mut engine = Engine::new(conn);
+        engine.init_pack(workspace_pack_path("packs/rust")).unwrap();
+
+        let receipt = engine
+            .submit_provisional(SubmitInput {
+                session_id: "s1".to_owned(),
+                concept_id: "ownership".to_owned(),
+                task_type: "recall".to_owned(),
+                prompt_text: "Explain ownership.".to_owned(),
+                response_text: "Ownership controls which binding can drop a value.".to_owned(),
+                self_confidence: 4,
+                latency_ms: 1200,
+                hint_count: 0,
+            })
+            .unwrap();
+
+        assert!((receipt.provisional_score - 0.70).abs() < 1e-9);
+        assert!(receipt.degraded);
+        let state = engine.mastery_state("ownership").unwrap().expect("mastery");
+        assert_eq!(state.attempt_count, 1);
+        let stored: (Option<f64>, i64) = engine
+            .conn()
+            .query_row(
+                "SELECT final_score, (SELECT COUNT(*) FROM grade_queue WHERE attempt_id=?1)
+                 FROM attempts WHERE id=?1",
+                [&receipt.attempt_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(stored, (None, 1));
     }
 
     #[test]

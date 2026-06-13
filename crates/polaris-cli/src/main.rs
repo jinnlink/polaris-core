@@ -9,6 +9,7 @@ use polaris_core::status::StatusSnapshot;
 use rusqlite::OptionalExtension;
 use serde_json::Value;
 
+mod http;
 mod mcp;
 
 #[derive(Debug, Parser)]
@@ -71,6 +72,12 @@ enum Commands {
     Status {
         #[arg(long)]
         json: bool,
+    },
+    ServeHttp {
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+        #[arg(long, default_value_t = 8765)]
+        port: u16,
     },
     GradePending,
     Report,
@@ -234,6 +241,9 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         print_status_snapshot(&snapshot);
                     }
+                }
+                Commands::ServeHttp { host, port } => {
+                    http::serve_http(engine, &host, port)?;
                 }
                 Commands::GradePending => {
                     let summary = engine.grade_pending()?;
@@ -763,6 +773,14 @@ mod tests {
             vec!["polaris", "abandon", "--concept", "ownership"],
             vec!["polaris", "status"],
             vec!["polaris", "status", "--json"],
+            vec![
+                "polaris",
+                "serve-http",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "0",
+            ],
             vec!["polaris", "grade-pending"],
             vec!["polaris", "diagnose", "--concept", "ownership"],
             vec!["polaris", "mcp"],
