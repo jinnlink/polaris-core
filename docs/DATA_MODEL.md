@@ -75,6 +75,7 @@ grade_queue(attempt_id TEXT PRIMARY KEY, enqueued_at TEXT, retry_count INTEGER D
 - `consolidation_runs(id TEXT PRIMARY KEY, ran_at TEXT, proposals_json TEXT, holdout_delta REAL, status TEXT)`（accepted|rolled_back）。
 - `moves_effects(move TEXT, context_hash TEXT, alpha REAL, beta REAL, n INTEGER, PRIMARY KEY(move, context_hash))`（P04）。
 - `mrt_log(id TEXT PRIMARY KEY, at TEXT, context_json TEXT, randomized INTEGER, move TEXT, prereg_id TEXT)`（P04）。
+- `bred_moves(id TEXT PRIMARY KEY, candidate_move TEXT, incumbent_move TEXT, context_hash TEXT, task_type TEXT, template TEXT, mechanisms_json TEXT, main_effect_hypothesis TEXT, prereg_json TEXT, status TEXT, posterior_win_prob REAL, candidate_alpha REAL, candidate_beta REAL, incumbent_alpha REAL, incumbent_beta REAL, n_candidate INTEGER, n_incumbent INTEGER, created_at TEXT, updated_at TEXT, admitted_at TEXT, retired_at TEXT)`（P05B，status=preregistered|admitted|retired）。
 - `param_tuning_runs(id TEXT PRIMARY KEY, ran_at TEXT, param TEXT, old_value TEXT, new_value TEXT, metric TEXT, delta REAL, status TEXT)`（P03H，accepted|rejected）。
 
 ## 3. P01 公式（全部钉死）
@@ -161,6 +162,7 @@ Brier 用二值结果（≥0.75→1，≤0.40→0，死区跳过）：`brier_ewm
 - **MRT**：决策点 = `next` 选 move 时；以 ε=0.2 概率从"U 前 3 的合法备选"均匀替换；mrt_log 落 prereg_id（预登记 JSON：窗口/ε/候选集/主效应假设/最小 n）。
 - **签名收缩估计**：上下文桶 = 状态(6) × 相(7 含未判)。每分量效应 = 桶内随机化样本均值 − 同桶基线均值；收缩：`post = (n·x̄ + 10·μ_lit)/(n + 10)`，μ_lit 来自 moves 库每 move 的文献先验向量。
 - **Thompson**：结果 = 7 天内同概念 final ≥ 0.75（1/0）；先验 `m_lit = clamp(0.5 + 0.1·d_lit, 0.2, 0.8)`，`Beta(10·m_lit, 10·(1−m_lit))` 起步。
+- **F5 育种准入**：候选 move 必须先写 `bred_moves.prereg_json` 与 `mrt_log.prereg_id`；候选/在位者样本写入同一 `context_hash` 下的 `moves_effects`；`P(τ_candidate > τ_incumbent) > breeding.admit_p` 且双方 `n >= breeding.min_n` 才能从 `preregistered` 进入 `admitted`；准入后持续评估，若胜出概率低于 `breeding.retire_p` 则转 `retired`。
 
 ## 9. P03E — 相图判据与误解语法
 
@@ -212,6 +214,7 @@ Brier 用二值结果（≥0.75→1，≤0.40→0，死区跳过）：`brier_ewm
 | friction.lambda | 1.0 | B | [0.5,3.0] | MRT/手动（个人风险厌恶度） | φ\* 取舍 |
 | mrt.epsilon | 0.20 | B | [0.05,0.30] | 手动/按计划随签名收窄而衰减 | 探索率 |
 | sig.shrink_n0 / thompson.prior_n | 10/10 | B | [5,30] | 重放(P03H) | 收缩强度 |
+| breeding.admit_p / retire_p / min_n | .80/.50/6 | **A** | [0.5,0.99]/[0.01,0.80]/[2,1000] | 不调（F5 验证门） | 育种准入、退役与样本量门 |
 | gu.retire_p / retire_thresh / window_days | .30/.80/30 | B | — | 重放(P03H，目标=前瞻 precision) | 误解语法 |
 | consol.accept_margin / holdout_frac | 0.01/0.20 | **A** | — | 不调（验收标准） | 巩固门 |
 

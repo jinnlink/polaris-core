@@ -5,6 +5,10 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use uuid::Uuid;
 
+use crate::breeding::{
+    admitted_bred_moves, evaluate_bred_moves, preregister_bred_move, record_bred_move_outcome,
+    BredMove, BredMoveInput, BreedingEvaluationSummary,
+};
 use crate::config::meta_f64;
 use crate::consolidation::{run_nightly_consolidation, ConsolidationSummary};
 use crate::diagnosis::{diagnose_concept, GraphDiagnosis};
@@ -216,6 +220,27 @@ impl Engine {
 
     pub fn active_gu_rules_for_concept(&self, concept_id: &str) -> Result<Vec<ActiveGuRule>> {
         active_gu_rules_for_concept(&self.conn, concept_id)
+    }
+
+    pub fn preregister_bred_move(&self, input: BredMoveInput) -> Result<BredMove> {
+        preregister_bred_move(&self.conn, input)
+    }
+
+    pub fn record_bred_move_outcome(
+        &self,
+        prereg_id: &str,
+        move_id: &str,
+        success: bool,
+    ) -> Result<()> {
+        record_bred_move_outcome(&self.conn, prereg_id, move_id, success)
+    }
+
+    pub fn evaluate_bred_moves(&self) -> Result<BreedingEvaluationSummary> {
+        evaluate_bred_moves(&self.conn)
+    }
+
+    pub fn admitted_bred_moves(&self, context_hash: &str) -> Result<Vec<BredMove>> {
+        admitted_bred_moves(&self.conn, context_hash)
     }
 
     pub fn refresh_missing_embeddings(&self) -> Result<EmbeddingRefreshSummary> {

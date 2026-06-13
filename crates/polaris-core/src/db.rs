@@ -186,6 +186,30 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             prereg_id TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS bred_moves(
+            id TEXT PRIMARY KEY,
+            candidate_move TEXT NOT NULL,
+            incumbent_move TEXT NOT NULL,
+            context_hash TEXT NOT NULL,
+            task_type TEXT NOT NULL,
+            template TEXT NOT NULL,
+            mechanisms_json TEXT NOT NULL,
+            main_effect_hypothesis TEXT NOT NULL,
+            prereg_json TEXT NOT NULL,
+            status TEXT NOT NULL,
+            posterior_win_prob REAL DEFAULT 0.0,
+            candidate_alpha REAL DEFAULT 0.0,
+            candidate_beta REAL DEFAULT 0.0,
+            incumbent_alpha REAL DEFAULT 0.0,
+            incumbent_beta REAL DEFAULT 0.0,
+            n_candidate INTEGER DEFAULT 0,
+            n_incumbent INTEGER DEFAULT 0,
+            created_at TEXT,
+            updated_at TEXT,
+            admitted_at TEXT,
+            retired_at TEXT
+        );
+
         CREATE TABLE IF NOT EXISTS param_tuning_runs(
             id TEXT PRIMARY KEY,
             ran_at TEXT,
@@ -257,6 +281,8 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             ON edges(src);
         CREATE INDEX IF NOT EXISTS idx_edges_dst
             ON edges(dst);
+        CREATE INDEX IF NOT EXISTS idx_bred_moves_status_context
+            ON bred_moves(status, context_hash);
         "#,
     )?;
 
@@ -321,6 +347,7 @@ mod tests {
             "consolidation_runs",
             "moves_effects",
             "mrt_log",
+            "bred_moves",
             "param_tuning_runs",
             "gu_rules",
             "mirror_reports",
@@ -368,6 +395,7 @@ mod tests {
             "idx_gu_rules_status",
             "idx_edges_src",
             "idx_edges_dst",
+            "idx_bred_moves_status_context",
         ] {
             let exists: i64 = conn
                 .query_row(

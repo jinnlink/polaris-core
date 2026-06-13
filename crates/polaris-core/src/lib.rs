@@ -1,3 +1,4 @@
+pub mod breeding;
 pub mod citation;
 pub mod config;
 pub mod consolidation;
