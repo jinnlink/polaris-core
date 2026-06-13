@@ -175,7 +175,7 @@ template = "给出一个使用 {concept} 的最小例子，并说明边界条件
 
 ## `ingest.toml`（预留）
 
-`ingest.toml` 用于描述外部课程材料如何进入事件源。v1 只定义协议语义，当前 `pack validate` 不强制该文件，core 也不直接消费它。
+`ingest.toml` 用于描述外部课程材料如何进入事件源。v1 不强制 pack 提供该文件；P05C 起，独立适配器可以读取它并向 stdout 输出标准 JSON Lines，再由 `polaris ingest --adapter-command <cmd>` 导入。core crate 仍不直接消费域特定 ingest 逻辑。
 
 建议把映射分为 3 类：
 
@@ -198,6 +198,28 @@ self_confidence_field = "confidence"
 ```
 
 领域适配器可以读取 `ingest.toml`，但必须通过公开入口提交 evidence 或 attempt，不得直接写 `mastery_states`。
+
+### P05C 适配器输出（JSON Lines）
+
+适配器是独立进程。Polaris 只读取其 stdout，每行一个 JSON 事件；stderr 仅用于诊断。导入命令：
+
+```powershell
+polaris ingest --adapter-command path\to\adapter.exe --adapter-arg --jsonl
+```
+
+支持事件：
+
+```json
+{"type":"evidence","session":"s1","source":"browser","content_type":"text/plain","text":"...","concept_ids":["ownership"]}
+{"type":"attempt","session":"s1","concept_id":"ownership","task_type":"recall","prompt":"Explain ownership.","response":"Ownership moves values.","confidence":4,"latency_ms":1200,"hint_count":1}
+```
+
+约束：
+
+- `evidence` 只写 `evidence_items`。
+- `attempt` 必须走 `Engine::submit`，由内核统一 provisional/final grading、mastery fold、HMM 与 G_u 管线。
+- 外部字段如 `final_score`、`external_score`、`mastery` 只能作为普通 JSON 字段被忽略；不得直接改 `attempts.final_score`、`mastery_states`、`theta` 或调度参数。
+- 未知 `type` 直接拒绝整次导入，提醒适配器作者修正输出。
 
 ## 证据映射
 

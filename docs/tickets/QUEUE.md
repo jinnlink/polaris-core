@@ -1,6 +1,6 @@
 # 票队列（单票制）
 
-状态：**P05B 教法育种引擎已实现并提交**。P05A0、P05A1、P05A 英语示例 pack 已完成并提交；P05B 默认 target clippy 仍受 Windows 文件锁阻塞，隔离 target 同参数 clippy 已通过。任何时刻只允许 1 张票 In Progress。
+状态：**P05C ingest 适配器插件化已实现并提交**。P05A0、P05A1、P05A 英语示例 pack、P05B 已完成并提交；任何时刻只允许 1 张票 In Progress。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 新增票必须标注它服务主命题（验证真懂→定位模糊→针对性补缺）的哪一环。
 
@@ -43,7 +43,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 - [x] **P05A1 算法 Domain Pack**（`TICKET_P05A1_ALGORITHMS_PACK.md`）← 已实现并提交（默认 target clippy 文件锁由隔离 target 同参数通过替代）；服务环节：验证真懂 → 定位模糊 → 针对性补缺（第二域验证领域无关性）
 - [x] **P05A 英语示例 Domain Pack**（`TICKET_P05A_ENGLISH_PACK.md`）← 已实现并提交；从 Polaris CEFR 表形状导出 `examples/packs/english/` 示例 pack，覆盖课程接入协议插拔验收、语言学习 moves 与冷启动评估夹具；服务环节：验证真懂 → 定位模糊 → 针对性补缺（跨域桥首测）
 - [x] **P05B 教法育种引擎**（`TICKET_P05B_PEDAGOGY_BREEDING.md`）← 已实现并提交；F5 预登记准入，τ 后验 >0.8 胜在位者才入库，效应衰减自动退役；服务环节：针对性补缺（方法库扩展必须先验证真懂）
-- P05C ingest 适配器插件化（识屏/浏览器等，独立进程，按需）
+- [x] **P05C ingest 适配器插件化**（`TICKET_P05C_INGEST_ADAPTERS.md`）← 已实现并提交；识屏/浏览器等只能做独立进程适配器，经标准事件导入，不进 core；服务环节：验证真懂（外部证据进入统一评分口径）
 
 ## Backlog（票外发现的问题记在这里，不顺手做）
 

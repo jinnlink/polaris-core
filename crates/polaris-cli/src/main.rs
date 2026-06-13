@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::process::Command;
 
 use clap::{Parser, Subcommand};
 use polaris_core::db::{open_database, open_database_read_only};
@@ -7,6 +8,7 @@ use polaris_core::fsrs::{retrievability, FsrsState};
 use polaris_core::pack::validate_pack_path;
 use polaris_core::phase::Phase;
 use rusqlite::OptionalExtension;
+use serde_json::Value;
 
 mod mcp;
 
@@ -27,11 +29,15 @@ enum Commands {
     },
     Ingest {
         #[arg(long)]
-        text: String,
+        text: Option<String>,
         #[arg(long, default_value = "cli")]
         session: String,
         #[arg(long, default_value = "cli")]
         source: String,
+        #[arg(long)]
+        adapter_command: Option<String>,
+        #[arg(long = "adapter-arg", allow_hyphen_values = true)]
+        adapter_args: Vec<String>,
     },
     Next {
         #[arg(long, default_value = "cli")]
@@ -128,14 +134,29 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     text,
                     session,
                     source,
-                } => {
-                    engine.conn().execute(
-                        "INSERT INTO evidence_items(id, session_id, source, content_type, text, concept_ids_json, created_at)
-                         VALUES (lower(hex(randomblob(16))), ?1, ?2, 'text/plain', ?3, '[]', strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
-                        (&session, &source, &text),
-                    )?;
-                    println!("ingested");
-                }
+                    adapter_command,
+                    adapter_args,
+                } => match (text, adapter_command) {
+                    (Some(text), None) => {
+                        ingest_text(&engine, &session, &source, &text)?;
+                        println!("ingested");
+                    }
+                    (None, Some(command)) => {
+                        let summary = ingest_adapter_command(&mut engine, &command, &adapter_args)?;
+                        println!(
+                            "ingested evidence={} attempts={}",
+                            summary.evidence, summary.attempts
+                        );
+                    }
+                    (Some(_), Some(_)) => {
+                        return Err(adapter_error(
+                            "ingest accepts either --text or --adapter-command, not both",
+                        ));
+                    }
+                    (None, None) => {
+                        return Err(adapter_error("ingest requires --text or --adapter-command"));
+                    }
+                },
                 Commands::Next { session } => {
                     if let Some(task) = engine.next_task()? {
                         engine.conn().execute(
@@ -328,6 +349,260 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct AdapterIngestSummary {
+    evidence: usize,
+    attempts: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum AdapterEvent {
+    Evidence {
+        session: String,
+        source: String,
+        content_type: String,
+        text: String,
+        concept_ids: Vec<String>,
+    },
+    Attempt {
+        input: SubmitInput,
+    },
+}
+
+fn ingest_text(
+    engine: &Engine,
+    session: &str,
+    source: &str,
+    text: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    engine.conn().execute(
+        "INSERT INTO evidence_items(id, session_id, source, content_type, text, concept_ids_json, created_at)
+         VALUES (lower(hex(randomblob(16))), ?1, ?2, 'text/plain', ?3, '[]', strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
+        (session, source, text),
+    )?;
+    Ok(())
+}
+
+fn ingest_adapter_command(
+    engine: &mut Engine,
+    command: &str,
+    args: &[String],
+) -> Result<AdapterIngestSummary, Box<dyn std::error::Error>> {
+    let output = Command::new(command).args(args).output()?;
+    if !output.status.success() {
+        return Err(adapter_error(format!(
+            "adapter command exited with status {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        )));
+    }
+    let stdout = String::from_utf8(output.stdout)?;
+    ingest_adapter_jsonl(engine, &stdout)
+}
+
+fn ingest_adapter_jsonl(
+    engine: &mut Engine,
+    jsonl: &str,
+) -> Result<AdapterIngestSummary, Box<dyn std::error::Error>> {
+    let events = parse_adapter_jsonl(jsonl)?;
+    let mut summary = AdapterIngestSummary::default();
+    for event in events {
+        match event {
+            AdapterEvent::Evidence {
+                session,
+                source,
+                content_type,
+                text,
+                concept_ids,
+            } => {
+                ingest_adapter_evidence(
+                    engine,
+                    &session,
+                    &source,
+                    &content_type,
+                    &text,
+                    &concept_ids,
+                )?;
+                summary.evidence += 1;
+            }
+            AdapterEvent::Attempt { input } => {
+                let _ = engine.submit(input)?;
+                summary.attempts += 1;
+            }
+        }
+    }
+    Ok(summary)
+}
+
+fn parse_adapter_jsonl(jsonl: &str) -> Result<Vec<AdapterEvent>, Box<dyn std::error::Error>> {
+    let mut events = Vec::new();
+    for (line_index, line) in jsonl.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let event: Value = serde_json::from_str(line).map_err(|error| {
+            adapter_error(format!("adapter JSONL line {}: {error}", line_index + 1))
+        })?;
+        let event_type = required_event_str(&event, "type", line_index)?;
+        match event_type {
+            "evidence" => {
+                events.push(parse_adapter_evidence(&event, line_index)?);
+            }
+            "attempt" => {
+                events.push(parse_adapter_attempt(&event, line_index)?);
+            }
+            other => {
+                return Err(adapter_error(format!(
+                    "adapter JSONL line {}: unsupported adapter event type `{other}`",
+                    line_index + 1
+                )));
+            }
+        }
+    }
+    Ok(events)
+}
+
+fn ingest_adapter_evidence(
+    engine: &Engine,
+    session: &str,
+    source: &str,
+    content_type: &str,
+    text: &str,
+    concept_ids: &[String],
+) -> Result<(), Box<dyn std::error::Error>> {
+    engine.conn().execute(
+        "INSERT INTO evidence_items(id, session_id, source, content_type, text, concept_ids_json, created_at)
+         VALUES (lower(hex(randomblob(16))), ?1, ?2, ?3, ?4, ?5, strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
+        (
+            session,
+            source,
+            content_type,
+            text,
+            serde_json::to_string(&concept_ids)?,
+        ),
+    )?;
+    Ok(())
+}
+
+fn parse_adapter_evidence(
+    event: &Value,
+    line_index: usize,
+) -> Result<AdapterEvent, Box<dyn std::error::Error>> {
+    Ok(AdapterEvent::Evidence {
+        session: optional_event_str(event, "session")
+            .unwrap_or("adapter")
+            .to_owned(),
+        source: optional_event_str(event, "source")
+            .unwrap_or("adapter")
+            .to_owned(),
+        content_type: optional_event_str(event, "content_type")
+            .unwrap_or("text/plain")
+            .to_owned(),
+        text: required_event_str(event, "text", line_index)?.to_owned(),
+        concept_ids: optional_event_string_array(event, "concept_ids", line_index)?,
+    })
+}
+
+fn parse_adapter_attempt(
+    event: &Value,
+    line_index: usize,
+) -> Result<AdapterEvent, Box<dyn std::error::Error>> {
+    let confidence = required_event_i64(event, "confidence", line_index)?;
+    if !(1..=5).contains(&confidence) {
+        return Err(adapter_error(format!(
+            "adapter JSONL line {}: confidence must be in 1..=5",
+            line_index + 1
+        )));
+    }
+    let concept_id = required_event_str(event, "concept_id", line_index)?;
+    let response = required_event_str(event, "response", line_index)?;
+    Ok(AdapterEvent::Attempt {
+        input: SubmitInput {
+            session_id: optional_event_str(event, "session")
+                .unwrap_or("adapter")
+                .to_owned(),
+            concept_id: concept_id.to_owned(),
+            task_type: optional_event_str(event, "task_type")
+                .unwrap_or("recall")
+                .to_owned(),
+            prompt_text: optional_event_str(event, "prompt").unwrap_or("").to_owned(),
+            response_text: response.to_owned(),
+            self_confidence: confidence as i32,
+            latency_ms: optional_event_i64(event, "latency_ms").unwrap_or(0).max(0),
+            hint_count: optional_event_i64(event, "hint_count").unwrap_or(0).max(0),
+        },
+    })
+}
+
+fn required_event_str<'a>(
+    event: &'a Value,
+    key: &str,
+    line_index: usize,
+) -> Result<&'a str, Box<dyn std::error::Error>> {
+    optional_event_str(event, key).ok_or_else(|| {
+        adapter_error(format!(
+            "adapter JSONL line {}: missing string field `{key}`",
+            line_index + 1
+        ))
+    })
+}
+
+fn optional_event_str<'a>(event: &'a Value, key: &str) -> Option<&'a str> {
+    event.get(key).and_then(Value::as_str)
+}
+
+fn required_event_i64(
+    event: &Value,
+    key: &str,
+    line_index: usize,
+) -> Result<i64, Box<dyn std::error::Error>> {
+    optional_event_i64(event, key).ok_or_else(|| {
+        adapter_error(format!(
+            "adapter JSONL line {}: missing integer field `{key}`",
+            line_index + 1
+        ))
+    })
+}
+
+fn optional_event_i64(event: &Value, key: &str) -> Option<i64> {
+    event.get(key).and_then(Value::as_i64)
+}
+
+fn optional_event_string_array(
+    event: &Value,
+    key: &str,
+    line_index: usize,
+) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    let Some(value) = event.get(key) else {
+        return Ok(Vec::new());
+    };
+    let Some(items) = value.as_array() else {
+        return Err(adapter_error(format!(
+            "adapter JSONL line {}: `{key}` must be an array of strings",
+            line_index + 1
+        )));
+    };
+    let mut strings = Vec::with_capacity(items.len());
+    for item in items {
+        let Some(text) = item.as_str() else {
+            return Err(adapter_error(format!(
+                "adapter JSONL line {}: `{key}` must be an array of strings",
+                line_index + 1
+            )));
+        };
+        strings.push(text.to_owned());
+    }
+    Ok(strings)
+}
+
+fn adapter_error(message: impl Into<String>) -> Box<dyn std::error::Error> {
+    Box::new(std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        message.into(),
+    ))
+}
+
 fn print_diagnosis(diagnosis: polaris_core::diagnosis::GraphDiagnosis) {
     println!("concept: {}", diagnosis.concept_id);
     println!("latest_failed: {}", diagnosis.latest_failed);
@@ -489,6 +764,14 @@ mod tests {
         for args in [
             vec!["polaris", "init", "--pack", "packs/rust"],
             vec!["polaris", "ingest", "--text", "hello"],
+            vec![
+                "polaris",
+                "ingest",
+                "--adapter-command",
+                "adapter.exe",
+                "--adapter-arg",
+                "--jsonl",
+            ],
             vec!["polaris", "next", "--session", "cli"],
             vec![
                 "polaris",
@@ -537,6 +820,70 @@ mod tests {
     }
 
     #[test]
+    fn adapter_jsonl_ingests_evidence_and_attempt_without_trusting_external_score() {
+        let _guard = EnvGuard::remove(llm_env_keys());
+        let mut engine = in_memory_engine_with_rust_pack();
+        let jsonl = r#"
+{"type":"evidence","session":"s-adapter","source":"browser-fixture","content_type":"text/plain","text":"Ownership moves values unless borrowed.","concept_ids":["ownership"],"external_score":1.0}
+{"type":"attempt","session":"s-adapter","concept_id":"ownership","task_type":"recall","prompt":"Explain ownership.","response":"Ownership moves values.","confidence":4,"latency_ms":1200,"hint_count":1,"final_score":1.0,"external_score":1.0}
+"#;
+
+        let summary = ingest_adapter_jsonl(&mut engine, jsonl).unwrap();
+
+        assert_eq!(summary.evidence, 1);
+        assert_eq!(summary.attempts, 1);
+        let evidence_count: i64 = engine
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM evidence_items WHERE source='browser-fixture'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(evidence_count, 1);
+        let (attempts, final_score): (i64, Option<f64>) = engine
+            .conn()
+            .query_row(
+                "SELECT COUNT(*), MAX(final_score) FROM attempts WHERE concept_id='ownership'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(attempts, 1);
+        assert_eq!(final_score, None);
+    }
+
+    #[test]
+    fn adapter_jsonl_rejects_unknown_event_types() {
+        let mut engine = in_memory_engine_with_rust_pack();
+        let error = ingest_adapter_jsonl(
+            &mut engine,
+            r#"
+{"type":"evidence","session":"s-adapter","source":"browser-fixture","content_type":"text/plain","text":"This line must roll back."}
+{"type":"mastery","concept_id":"ownership","p_known":1.0}
+"#,
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(error.contains("unsupported adapter event type"));
+        let evidence_count: i64 = engine
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM evidence_items WHERE source='browser-fixture'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(evidence_count, 0);
+        let mastery_count: i64 = engine
+            .conn()
+            .query_row("SELECT COUNT(*) FROM mastery_states", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(mastery_count, 0);
+    }
+
+    #[test]
     fn diagnose_does_not_create_missing_database() {
         let path = std::env::temp_dir().join(format!(
             "polaris-core-diagnose-readonly-{}.db",
@@ -559,5 +906,60 @@ mod tests {
 
         assert!(result.is_err());
         assert!(!path.exists(), "diagnose must not create a missing db");
+    }
+
+    fn in_memory_engine_with_rust_pack() -> Engine {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        polaris_core::db::migrate(&conn).unwrap();
+        let mut engine = Engine::new(conn);
+        engine.init_pack(workspace_pack_path("packs/rust")).unwrap();
+        engine
+    }
+
+    fn workspace_pack_path(path: &str) -> std::path::PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join(path)
+    }
+
+    struct EnvGuard {
+        values: Vec<(&'static str, Option<String>)>,
+    }
+
+    impl EnvGuard {
+        fn remove(keys: &[&'static str]) -> Self {
+            let values = keys
+                .iter()
+                .map(|key| {
+                    let value = std::env::var(key).ok();
+                    std::env::remove_var(key);
+                    (*key, value)
+                })
+                .collect();
+            Self { values }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            for (key, value) in &self.values {
+                match value {
+                    Some(value) => std::env::set_var(key, value),
+                    None => std::env::remove_var(key),
+                }
+            }
+        }
+    }
+
+    fn llm_env_keys() -> &'static [&'static str] {
+        &[
+            "POLARIS_LLM_FAST_BASE_URL",
+            "POLARIS_LLM_FAST_MODEL",
+            "POLARIS_LLM_FAST_API_KEY",
+            "POLARIS_LLM_STRONG_BASE_URL",
+            "POLARIS_LLM_STRONG_MODEL",
+            "POLARIS_LLM_STRONG_API_KEY",
+        ]
     }
 }
