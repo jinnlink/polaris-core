@@ -31,7 +31,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 
 ## Phase 4 — UI + MRT
 
-- P04A Tauri 常驻小窗（100% Tier 0 秒开）+ 可展开工作区（状态镜子=相图）
+- [x] **P04A Tauri 常驻小窗（100% Tier 0 秒开）+ 可展开工作区（状态镜子=相图）**（`TICKET_P04A_DESKTOP_STATUS_MIRROR.md`）← 已实现并通过验收；先交付 Tauri/HTTP 共用的 Tier 0 状态镜子契约与 CLI JSON 出口，不引入未验证桌面依赖；服务环节：定位模糊 → 针对性补缺
 - P04B HTTP API 门
 - P04C MRT 微随机化引擎（预登记审计）+ 教法签名后验（F1）+ 个人摩擦曲线拟合（F3）
 - P04D 目标引擎移植（goals/dimensions/milestones，参考 Polaris schema v9）

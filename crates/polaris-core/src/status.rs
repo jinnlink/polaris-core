@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use rusqlite::Connection;
 use serde::Serialize;
 
@@ -7,8 +9,16 @@ use crate::phase::Phase;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct StatusSnapshot {
+    pub generated_at: String,
     pub due_today: i64,
+    pub phase_counts: Vec<PhaseCount>,
     pub concepts: Vec<ConceptStatus>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PhaseCount {
+    pub phase: String,
+    pub count: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -22,6 +32,10 @@ pub struct ConceptStatus {
 }
 
 pub fn status_snapshot(conn: &Connection) -> Result<StatusSnapshot> {
+    let generated_at: String =
+        conn.query_row("SELECT strftime('%Y-%m-%dT%H:%M:%SZ','now')", [], |row| {
+            row.get(0)
+        })?;
     let due_today: i64 = conn.query_row(
         "SELECT COUNT(*) FROM mastery_states
          WHERE next_due_at IS NOT NULL AND julianday(next_due_at) <= julianday('now')",
@@ -69,7 +83,39 @@ pub fn status_snapshot(conn: &Connection) -> Result<StatusSnapshot> {
     let concepts = rows.collect::<std::result::Result<Vec<_>, _>>()?;
 
     Ok(StatusSnapshot {
+        generated_at,
         due_today,
+        phase_counts: phase_counts(conn)?,
         concepts,
     })
+}
+
+fn phase_counts(conn: &Connection) -> Result<Vec<PhaseCount>> {
+    let mut counts = BTreeMap::<String, i64>::new();
+    let mut stmt = conn.prepare(
+        "SELECT COALESCE(ms.phase, 'undetermined'), COUNT(*)
+         FROM concepts c
+         LEFT JOIN mastery_states ms ON ms.concept_id=c.id
+         GROUP BY COALESCE(ms.phase, 'undetermined')",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+    })?;
+    for row in rows {
+        let (raw_phase, count) = row?;
+        let phase = Phase::parse(&raw_phase)
+            .unwrap_or(Phase::Undetermined)
+            .as_str()
+            .to_owned();
+        *counts.entry(phase).or_insert(0) += count.max(0);
+    }
+
+    Ok(Phase::ALL
+        .iter()
+        .map(|phase| {
+            let phase = phase.as_str().to_owned();
+            let count = counts.get(&phase).copied().unwrap_or(0);
+            PhaseCount { phase, count }
+        })
+        .collect())
 }

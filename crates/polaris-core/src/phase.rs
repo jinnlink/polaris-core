@@ -61,6 +61,17 @@ pub enum Phase {
 }
 
 impl Phase {
+    pub const ALL: [Phase; 8] = [
+        Phase::Undetermined,
+        Phase::Phantom,
+        Phase::Fluctuation,
+        Phase::Settling,
+        Phase::Solidification,
+        Phase::Transfer,
+        Phase::Generation,
+        Phase::Regression,
+    ];
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Undetermined => "undetermined",

@@ -4,9 +4,8 @@ use std::process::Command;
 use clap::{Parser, Subcommand};
 use polaris_core::db::{open_database, open_database_read_only};
 use polaris_core::engine::{Engine, SubmitInput};
-use polaris_core::fsrs::{retrievability, FsrsState};
 use polaris_core::pack::validate_pack_path;
-use polaris_core::phase::Phase;
+use polaris_core::status::StatusSnapshot;
 use rusqlite::OptionalExtension;
 use serde_json::Value;
 
@@ -69,7 +68,10 @@ enum Commands {
         #[arg(long, default_value = "cli")]
         session: String,
     },
-    Status,
+    Status {
+        #[arg(long)]
+        json: bool,
+    },
     GradePending,
     Report,
     Tune,
@@ -225,67 +227,12 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     )?;
                     println!("abandoned");
                 }
-                Commands::Status => {
-                    let due_today: i64 = engine.conn().query_row(
-                        "SELECT COUNT(*) FROM mastery_states WHERE next_due_at IS NOT NULL AND julianday(next_due_at) <= julianday('now')",
-                        [],
-                        |row| row.get(0),
-                    )?;
-                    println!("due_today={due_today}");
-                    let mut stmt = engine.conn().prepare(
-                        "SELECT c.id, c.name, COALESCE(ms.p_known, c.p_init, CAST((SELECT value FROM meta WHERE key='bkt.p_init') AS REAL)),
-                                COALESCE(ms.calib_gap, 0.0), COALESCE(ms.attempt_count, 0), ms.fsrs_json,
-                                CASE
-                                    WHEN ms.last_review_at IS NULL THEN NULL
-                                    ELSE julianday('now') - julianday(ms.last_review_at)
-                                END,
-                                COALESCE(ms.phase, 'undetermined')
-                         FROM concepts c
-                         LEFT JOIN mastery_states ms ON ms.concept_id=c.id
-                         ORDER BY c.seed_order ASC, c.id ASC",
-                    )?;
-                    let rows = stmt.query_map([], |row| {
-                        Ok((
-                            row.get::<_, String>(0)?,
-                            row.get::<_, String>(1)?,
-                            row.get::<_, f64>(2)?,
-                            row.get::<_, f64>(3)?,
-                            row.get::<_, i64>(4)?,
-                            row.get::<_, Option<String>>(5)?,
-                            row.get::<_, Option<f64>>(6)?,
-                            row.get::<_, String>(7)?,
-                        ))
-                    })?;
-                    for row in rows {
-                        let (
-                            id,
-                            name,
-                            p_known,
-                            calib_gap,
-                            _attempts,
-                            fsrs_json,
-                            elapsed_days,
-                            raw_phase,
-                        ) = row?;
-                        let phase = Phase::parse(&raw_phase)
-                            .unwrap_or(Phase::Undetermined)
-                            .as_str();
-                        let retrieval = fsrs_json
-                            .as_deref()
-                            .and_then(|json| serde_json::from_str::<FsrsState>(json).ok())
-                            .map(|state| {
-                                format!(
-                                    "{:.3}",
-                                    retrievability(
-                                        state.stability,
-                                        elapsed_days.unwrap_or(0.0).max(0.0)
-                                    )
-                                )
-                            })
-                            .unwrap_or_else(|| "-".to_owned());
-                        println!(
-                            "{id}\t{name}\tR={retrieval}\tp_known={p_known:.3}\tcalib_gap={calib_gap:.3}\tphase={phase}"
-                        );
+                Commands::Status { json } => {
+                    let snapshot = engine.status_snapshot()?;
+                    if json {
+                        println!("{}", status_snapshot_json(&snapshot)?);
+                    } else {
+                        print_status_snapshot(&snapshot);
                     }
                 }
                 Commands::GradePending => {
@@ -603,6 +550,35 @@ fn adapter_error(message: impl Into<String>) -> Box<dyn std::error::Error> {
     ))
 }
 
+fn status_snapshot_json(snapshot: &StatusSnapshot) -> serde_json::Result<String> {
+    serde_json::to_string_pretty(snapshot)
+}
+
+fn print_status_snapshot(snapshot: &StatusSnapshot) {
+    print!("{}", status_snapshot_text(snapshot));
+}
+
+fn status_snapshot_text(snapshot: &StatusSnapshot) -> String {
+    let mut text = format!("due_today={}\n", snapshot.due_today);
+    for concept in &snapshot.concepts {
+        let retrieval = concept
+            .retrieval
+            .map(|value| format!("{value:.3}"))
+            .unwrap_or_else(|| "-".to_owned());
+        text.push_str(&format!(
+            "{}\t{}\tR={}\tp_known={:.3}\tcalib_gap={:.3}\tphase={}",
+            concept.concept_id,
+            concept.name,
+            retrieval,
+            concept.p_known,
+            concept.calib_gap,
+            concept.phase
+        ));
+        text.push('\n');
+    }
+    text
+}
+
 fn print_diagnosis(diagnosis: polaris_core::diagnosis::GraphDiagnosis) {
     println!("concept: {}", diagnosis.concept_id);
     println!("latest_failed: {}", diagnosis.latest_failed);
@@ -786,6 +762,7 @@ mod tests {
             vec!["polaris", "hint", "--concept", "ownership"],
             vec!["polaris", "abandon", "--concept", "ownership"],
             vec!["polaris", "status"],
+            vec!["polaris", "status", "--json"],
             vec!["polaris", "grade-pending"],
             vec!["polaris", "diagnose", "--concept", "ownership"],
             vec!["polaris", "mcp"],
@@ -817,6 +794,60 @@ mod tests {
 
         assert_eq!(observation.latency_ms, 5000);
         assert_eq!(observation.hint_count, 1);
+    }
+
+    #[test]
+    fn status_json_serializes_desktop_mirror_fields() {
+        let snapshot = polaris_core::status::StatusSnapshot {
+            generated_at: "2026-06-13T00:00:00Z".to_owned(),
+            due_today: 2,
+            phase_counts: vec![polaris_core::status::PhaseCount {
+                phase: "phantom".to_owned(),
+                count: 1,
+            }],
+            concepts: vec![polaris_core::status::ConceptStatus {
+                concept_id: "ownership".to_owned(),
+                name: "Ownership".to_owned(),
+                retrieval: Some(0.87),
+                p_known: 0.42,
+                calib_gap: 0.31,
+                phase: "phantom".to_owned(),
+            }],
+        };
+
+        let text = status_snapshot_json(&snapshot).unwrap();
+        let payload: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+        assert_eq!(payload["generated_at"], "2026-06-13T00:00:00Z");
+        assert_eq!(payload["due_today"], 2);
+        assert_eq!(payload["phase_counts"][0]["phase"], "phantom");
+        assert_eq!(payload["phase_counts"][0]["count"], 1);
+        assert_eq!(payload["concepts"][0]["concept_id"], "ownership");
+        assert_eq!(payload["concepts"][0]["phase"], "phantom");
+    }
+
+    #[test]
+    fn status_text_keeps_existing_cli_shape() {
+        let snapshot = polaris_core::status::StatusSnapshot {
+            generated_at: "2026-06-13T00:00:00Z".to_owned(),
+            due_today: 2,
+            phase_counts: Vec::new(),
+            concepts: vec![polaris_core::status::ConceptStatus {
+                concept_id: "ownership".to_owned(),
+                name: "Ownership".to_owned(),
+                retrieval: None,
+                p_known: 0.42,
+                calib_gap: 0.31,
+                phase: "phantom".to_owned(),
+            }],
+        };
+
+        let text = status_snapshot_text(&snapshot);
+
+        assert_eq!(
+            text,
+            "due_today=2\nownership\tOwnership\tR=-\tp_known=0.420\tcalib_gap=0.310\tphase=phantom\n"
+        );
     }
 
     #[test]
