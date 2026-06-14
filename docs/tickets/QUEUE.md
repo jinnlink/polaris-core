@@ -1,6 +1,6 @@
 # 票队列（单票制）
 
-状态：**P06D 镜像报告 Tier 1 叙事润色已实现并通过验收**。任何时刻只允许 1 张票 In Progress。
+状态：**P06E 性能预算回归已实现并通过验收**。任何时刻只允许 1 张票 In Progress。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 新增票必须标注它服务主命题（验证真懂→定位模糊→针对性补缺）的哪一环。
 
@@ -54,6 +54,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 - [x] **P06B 数据主权运维**（`TICKET_P06B_DATA_SOVEREIGNTY_OPS.md`）← 已实现并通过验收；补 `polaris backup` 与 `polaris doctor`，覆盖 SQLite 完整性检查和 mastery_states 事件溯源重放自检；服务环节：全环节（Local-persistent 铁律）
 - [x] **P06C 属性测试扩面**（`TICKET_P06C_PROPERTY_TEST_EXPANSION.md`）← 已实现并通过验收；补 G_u 生命周期、镜像报告稳定字段、HMM 滤波数值稳定的属性测试；服务环节：全环节（验证稳定性）
 - [x] **P06D 镜像报告 Tier 1 叙事润色**（`TICKET_P06D_MIRROR_REPORT_NARRATIVE.md`）← 已实现并通过验收；显式请求时用 Tier 1 将断言列表润色为周报叙事，strict-citation 引断言原文，失败降级为现状断言列表；服务环节：定位模糊
+- [x] **P06E 性能预算回归**（`TICKET_P06E_PERFORMANCE_BUDGET_REGRESSION.md`）← 已实现并通过验收；把 DATA_MODEL §11 的 Tier 0 热路径预算做成可重复回归门；服务环节：全环节（Tier 0 预算铁律）
 
 ## Backlog（票外发现的问题记在这里，不顺手做）
 
@@ -61,7 +62,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 - P05A 验收观察：`cargo test --workspace` 首次在 `p03c_geometry::geometry_candidates_use_hnsw_and_combined_scores` 偶发缺少 `schema:raii` 候选，导致同文件后续用例因 `ENV_LOCK` PoisonError 连锁失败；单跑 `cargo test -p polaris-core --test p03c_geometry` 通过，重跑 `cargo test --workspace` 通过。建议后续单独开票把 HNSW 候选测试改成确定性夹具或扩大候选池；服务环节：全环节（验证稳定性）。→ 已转正式票 P03N。
 - 强化轴线候选（详见 `docs/ENHANCEMENT_ROADMAP.md` 2026-06-12 提案，排序待用户裁决）：
   - ~~P03K 心智动力学拟合层激活~~ ← 已转正式票（见 Phase 3 列表）。
-  - 索引审计（全库无 CREATE INDEX；json_extract 热路径）+ DATA_MODEL §11 性能预算回归基准；服务环节：全环节（Tier 0 预算铁律）。
+  - 索引审计（全库无 CREATE INDEX；json_extract 热路径）+ DATA_MODEL §11 性能预算回归基准；服务环节：全环节（Tier 0 预算铁律）。→ 索引审计已转 P03L 并完成；性能预算已转正式票 P06E。
   - 属性测试扩面（G_u 生命周期决定性、镜像报告决定性、HMM 数值稳定）；服务环节：全环节（验证稳定性）。→ 已转正式票 P06C。
   - `polaris backup`/完整性自检；服务环节：全环节（Local-persistent 铁律）。→ 已转正式票 P06B。
   - ~~MCP 工具面补全：相图/交错 batch/G_u/镜像报告暴露为 Tier 2 工具；服务环节：验证真懂 → 定位模糊 → 针对性补缺。~~ → 已转正式票 P06A 并完成。
