@@ -1,6 +1,6 @@
 # 票队列（单票制）
 
-状态：**P06C 属性测试扩面已实现并通过验收**。任何时刻只允许 1 张票 In Progress。
+状态：**P06D 镜像报告 Tier 1 叙事润色已实现并通过验收**。任何时刻只允许 1 张票 In Progress。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 新增票必须标注它服务主命题（验证真懂→定位模糊→针对性补缺）的哪一环。
 
@@ -53,6 +53,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 - [x] **P06A MCP 工具面补全**（`TICKET_P06A_MCP_TOOL_SURFACE.md`）← 已实现并通过验收；把相图快照、G_u 活跃规则、镜像报告生成/读取/标不准暴露给 Tier 2 MCP，不改内核公式与数据模型；服务环节：验证真懂 → 定位模糊
 - [x] **P06B 数据主权运维**（`TICKET_P06B_DATA_SOVEREIGNTY_OPS.md`）← 已实现并通过验收；补 `polaris backup` 与 `polaris doctor`，覆盖 SQLite 完整性检查和 mastery_states 事件溯源重放自检；服务环节：全环节（Local-persistent 铁律）
 - [x] **P06C 属性测试扩面**（`TICKET_P06C_PROPERTY_TEST_EXPANSION.md`）← 已实现并通过验收；补 G_u 生命周期、镜像报告稳定字段、HMM 滤波数值稳定的属性测试；服务环节：全环节（验证稳定性）
+- [x] **P06D 镜像报告 Tier 1 叙事润色**（`TICKET_P06D_MIRROR_REPORT_NARRATIVE.md`）← 已实现并通过验收；显式请求时用 Tier 1 将断言列表润色为周报叙事，strict-citation 引断言原文，失败降级为现状断言列表；服务环节：定位模糊
 
 ## Backlog（票外发现的问题记在这里，不顺手做）
 
@@ -64,6 +65,6 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
   - 属性测试扩面（G_u 生命周期决定性、镜像报告决定性、HMM 数值稳定）；服务环节：全环节（验证稳定性）。→ 已转正式票 P06C。
   - `polaris backup`/完整性自检；服务环节：全环节（Local-persistent 铁律）。→ 已转正式票 P06B。
   - ~~MCP 工具面补全：相图/交错 batch/G_u/镜像报告暴露为 Tier 2 工具；服务环节：验证真懂 → 定位模糊 → 针对性补缺。~~ → 已转正式票 P06A 并完成。
-  - 镜像报告 Tier 1 叙事润色（strict-citation 引断言原文，降级=现状断言列表）；服务环节：定位模糊。
+  - 镜像报告 Tier 1 叙事润色（strict-citation 引断言原文，降级=现状断言列表）；服务环节：定位模糊。→ 已转正式票 P06D。
   - 数学深化候选（全部带留出验证门）：校准后验化（分层 Beta-Binomial，复用 P03I 数学）、BKT-MIRT 逆方差加权融合、G_u 层级 Beta 超先验、相变马尔可夫动力学、θ AdaGrad 步长；不过门=假设，不进产品行为。
   - FSRS 个人参数拟合（`fsrs.w` C 类登记的预留票，FSRS-optimizer 思路 + 留出对拍门）。

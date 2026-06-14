@@ -58,7 +58,7 @@ impl McpSession {
                 "get_interleaved_batch" => self.get_interleaved_batch(arguments),
                 "get_phase_snapshot" => self.get_phase_snapshot(),
                 "get_active_gu_rules" => self.get_active_gu_rules(arguments),
-                "run_mirror_report" => self.run_mirror_report(),
+                "run_mirror_report" => self.run_mirror_report(arguments),
                 "get_latest_mirror_report" => self.get_latest_mirror_report(),
                 "mark_report_assertion_inaccurate" => {
                     self.mark_report_assertion_inaccurate(arguments)
@@ -208,13 +208,18 @@ impl McpSession {
         .map_err(|error| error.to_string())
     }
 
-    fn run_mirror_report(&self) -> Result<Value, String> {
-        serde_json::to_value(
+    fn run_mirror_report(&self, arguments: &Value) -> Result<Value, String> {
+        let narrative = optional_bool(arguments, "narrative").unwrap_or(false);
+        let report = if narrative {
+            self.engine
+                .run_mirror_report_with_narrative()
+                .map_err(|error| error.to_string())?
+        } else {
             self.engine
                 .run_mirror_report()
-                .map_err(|error| error.to_string())?,
-        )
-        .map_err(|error| error.to_string())
+                .map_err(|error| error.to_string())?
+        };
+        serde_json::to_value(report).map_err(|error| error.to_string())
     }
 
     fn get_latest_mirror_report(&self) -> Result<Value, String> {
@@ -326,10 +331,12 @@ fn tool_definitions() -> Value {
         },
         {
             "name": "run_mirror_report",
-            "description": "Generate and persist an evidence-bound mirror report using existing engine rules. Does not perform Tier 1 prose polishing.",
+            "description": "Generate and persist an evidence-bound mirror report using existing engine rules. Set narrative=true to request optional Tier 1 prose polishing; failure degrades to the raw assertion list.",
             "inputSchema": {
                 "type": "object",
-                "properties": {}
+                "properties": {
+                    "narrative": {"type": "boolean", "description": "When true, request Tier 1 narrative polish with strict citations to report item claims. Defaults to false."}
+                }
             }
         },
         {
@@ -454,6 +461,10 @@ fn required_i64(value: &Value, key: &str) -> Result<i64, String> {
 
 fn optional_i64(value: &Value, key: &str) -> Option<i64> {
     value.get(key).and_then(Value::as_i64)
+}
+
+fn optional_bool(value: &Value, key: &str) -> Option<bool> {
+    value.get(key).and_then(Value::as_bool)
 }
 
 fn error_response(id: Value, code: i64, message: &str) -> Value {
@@ -930,6 +941,30 @@ mod tests {
     }
 
     #[test]
+    fn mcp_report_narrative_argument_degrades_without_llm_config() {
+        let _guard = EnvGuard::remove(llm_env_keys());
+        let mut session = test_session();
+        seed_phantom_concept(session.engine().conn(), "ownership", 4);
+
+        let response = session
+            .handle_request(json!({
+                "jsonrpc": "2.0",
+                "id": 450,
+                "method": "tools/call",
+                "params": {"name": "run_mirror_report", "arguments": {
+                    "narrative": true
+                }}
+            }))
+            .unwrap()
+            .unwrap();
+        let text = response["result"]["content"][0]["text"].as_str().unwrap();
+        let payload: Value = serde_json::from_str(text).unwrap();
+
+        assert!(!payload["assertions"].as_array().unwrap().is_empty());
+        assert!(payload["narrative"].is_null());
+    }
+
+    #[test]
     fn mcp_teaching_instruction_contains_tier2_guardrails() {
         let mut session = test_session();
 
@@ -973,6 +1008,66 @@ mod tests {
         let mut engine = Engine::new(conn);
         engine.init_pack(workspace_pack_path("packs/rust")).unwrap();
         McpSession::new(engine)
+    }
+
+    fn seed_phantom_concept(conn: &Connection, concept_id: &str, attempt_count: usize) {
+        for idx in 0..attempt_count {
+            conn.execute(
+                "INSERT INTO attempts(id, session_id, concept_id, task_type, self_confidence,
+                                      final_score, created_at, graded_at)
+                 VALUES (?1, 's1', ?2, 'recall', 5, 0.2,
+                         strftime('%Y-%m-%dT%H:%M:%SZ','now','-2 hours'),
+                         strftime('%Y-%m-%dT%H:%M:%SZ','now','-2 hours'))",
+                (format!("{concept_id}-mcp-narrative-{idx}"), concept_id),
+            )
+            .unwrap();
+        }
+        conn.execute(
+            "INSERT OR REPLACE INTO mastery_states(concept_id, p_known, calib_gap, attempt_count, updated_at)
+             VALUES (?1, 0.30, 0.40, ?2, strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
+            (concept_id, attempt_count as i64),
+        )
+        .unwrap();
+    }
+
+    struct EnvGuard {
+        values: Vec<(&'static str, Option<String>)>,
+    }
+
+    impl EnvGuard {
+        fn remove(keys: &[&'static str]) -> Self {
+            let values = keys
+                .iter()
+                .map(|key| {
+                    let value = std::env::var(key).ok();
+                    std::env::remove_var(key);
+                    (*key, value)
+                })
+                .collect();
+            Self { values }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            for (key, value) in &self.values {
+                match value {
+                    Some(value) => std::env::set_var(key, value),
+                    None => std::env::remove_var(key),
+                }
+            }
+        }
+    }
+
+    fn llm_env_keys() -> &'static [&'static str] {
+        &[
+            "POLARIS_LLM_FAST_BASE_URL",
+            "POLARIS_LLM_FAST_MODEL",
+            "POLARIS_LLM_FAST_API_KEY",
+            "POLARIS_LLM_STRONG_BASE_URL",
+            "POLARIS_LLM_STRONG_MODEL",
+            "POLARIS_LLM_STRONG_API_KEY",
+        ]
     }
 
     fn workspace_pack_path(path: &str) -> std::path::PathBuf {

@@ -89,7 +89,10 @@ enum Commands {
         port: u16,
     },
     GradePending,
-    Report,
+    Report {
+        #[arg(long)]
+        narrative: bool,
+    },
     Tune,
     MentalFit,
     ReportFeedback {
@@ -263,8 +266,12 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                         summary.processed, summary.pending
                     );
                 }
-                Commands::Report => {
-                    let report = engine.run_mirror_report()?;
+                Commands::Report { narrative } => {
+                    let report = if narrative {
+                        engine.run_mirror_report_with_narrative()?
+                    } else {
+                        engine.run_mirror_report()?
+                    };
                     print_mirror_report(&report);
                 }
                 Commands::MentalFit => {
@@ -697,6 +704,19 @@ fn print_mirror_report(report: &polaris_core::report::MirrorReport) {
         "hazard 门：participates={} reason={}",
         report.hazard_gate.participates, report.hazard_gate.reason
     );
+    if let Some(narrative) = &report.narrative {
+        println!("--- Tier 1 叙事 ---");
+        println!("{}", narrative.text);
+        if !narrative.citations.is_empty() {
+            let cited = narrative
+                .citations
+                .iter()
+                .map(|citation| citation.evidence_id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            println!("引用断言：{cited}");
+        }
+    }
     for section in [
         ("断言", &report.assertions),
         ("假设（未过验证门）", &report.hypotheses),
@@ -856,6 +876,13 @@ mod tests {
         ] {
             Cli::try_parse_from(args).unwrap();
         }
+    }
+
+    #[test]
+    fn report_narrative_flag_parses_explicit_tier1_request() {
+        let cli = Cli::try_parse_from(vec!["polaris", "report", "--narrative"]).unwrap();
+
+        assert!(matches!(cli.command, Commands::Report { narrative: true }));
     }
 
     #[test]

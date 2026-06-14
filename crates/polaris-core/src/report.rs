@@ -2,9 +2,11 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::citation::{validate_citations_with_policy, Citation, CitationPolicy, EvidenceText};
 use crate::config::{meta_f64, meta_i64, meta_value};
 use crate::consolidation::iso_week_label;
 use crate::error::{PolarisError, Result};
+use crate::grader::LlmConfig;
 
 pub const REPORT_SCHEMA_VERSION: i64 = 1;
 
@@ -49,6 +51,13 @@ pub struct HazardGateStatus {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MirrorReportNarrative {
+    pub text: String,
+    pub citations: Vec<Citation>,
+    pub degraded: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MirrorReport {
     pub schema_version: i64,
     pub id: String,
@@ -61,6 +70,8 @@ pub struct MirrorReport {
     pub skipped: Vec<SkippedCandidate>,
     pub hazard_gate: HazardGateStatus,
     pub reflection_prompts: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub narrative: Option<MirrorReportNarrative>,
 }
 
 #[derive(Debug, Clone)]
@@ -69,12 +80,43 @@ struct Candidate {
     sample_n: usize,
 }
 
+#[derive(Debug, Deserialize)]
+struct RawNarrative {
+    text: String,
+    #[serde(default)]
+    citations: Vec<Citation>,
+}
+
 enum Admission {
     Kept(ReportItem),
     Skipped(SkippedCandidate),
 }
 
 pub fn run_mirror_report(conn: &Connection) -> Result<MirrorReport> {
+    run_mirror_report_inner(conn, NarrativeSource::None)
+}
+
+pub fn run_mirror_report_with_config(conn: &Connection, config: LlmConfig) -> Result<MirrorReport> {
+    run_mirror_report_inner(conn, NarrativeSource::Config(config))
+}
+
+pub fn run_mirror_report_with_static_narrative(
+    conn: &Connection,
+    response_json: &str,
+) -> Result<MirrorReport> {
+    run_mirror_report_inner(conn, NarrativeSource::Static(response_json))
+}
+
+enum NarrativeSource<'a> {
+    None,
+    Config(LlmConfig),
+    Static(&'a str),
+}
+
+fn run_mirror_report_inner(
+    conn: &Connection,
+    narrative: NarrativeSource<'_>,
+) -> Result<MirrorReport> {
     let window_days = meta_i64(conn, "report.window_days")?.max(1);
     let min_evidence = meta_i64(conn, "report.min_evidence")?.max(1) as usize;
     let confidence_floor = meta_f64(conn, "report.confidence_floor")?;
@@ -150,6 +192,15 @@ pub fn run_mirror_report(conn: &Connection) -> Result<MirrorReport> {
             .iter()
             .map(|prompt| (*prompt).to_owned())
             .collect(),
+        narrative: None,
+    };
+    let mut report = report;
+    report.narrative = match narrative {
+        NarrativeSource::None => None,
+        NarrativeSource::Static(response_json) => {
+            parse_narrative_response(conn, &report, response_json).ok()
+        }
+        NarrativeSource::Config(config) => generate_narrative_with_config(conn, &report, config)?,
     };
     persist_report(conn, &report)?;
     Ok(report)
@@ -168,6 +219,145 @@ pub fn latest_mirror_report(conn: &Connection) -> Result<Option<MirrorReport>> {
     json.as_deref()
         .map(|payload| serde_json::from_str(payload).map_err(Into::into))
         .transpose()
+}
+
+fn generate_narrative_with_config(
+    conn: &Connection,
+    report: &MirrorReport,
+    config: LlmConfig,
+) -> Result<Option<MirrorReportNarrative>> {
+    let evidence = narrative_evidence(report);
+    if evidence.is_empty() {
+        return Ok(None);
+    }
+    let LlmConfig::OpenAiCompatible {
+        base_url,
+        model,
+        api_key,
+    } = config
+    else {
+        return Ok(None);
+    };
+
+    for _ in 0..2 {
+        let response = call_openai_compatible_for_narrative(report, &base_url, &model, &api_key);
+        if let Ok(response_json) = response {
+            if let Ok(narrative) = parse_narrative_response(conn, report, &response_json) {
+                return Ok(Some(narrative));
+            }
+        }
+    }
+    Ok(None)
+}
+
+fn parse_narrative_response(
+    conn: &Connection,
+    report: &MirrorReport,
+    response_json: &str,
+) -> std::result::Result<MirrorReportNarrative, String> {
+    let raw: RawNarrative =
+        serde_json::from_str(response_json).map_err(|error| error.to_string())?;
+    let text = raw.text.trim();
+    if text.is_empty() {
+        return Err("empty narrative text".to_owned());
+    }
+    if raw.citations.is_empty() {
+        return Err("missing narrative citation".to_owned());
+    }
+    let evidence = narrative_evidence(report);
+    let policy = CitationPolicy::from_conn(conn).map_err(|error| error.to_string())?;
+    validate_citations_with_policy(&raw.citations, &evidence, policy)
+        .map_err(|error| error.to_string())?;
+    Ok(MirrorReportNarrative {
+        text: text.to_owned(),
+        citations: raw.citations,
+        degraded: false,
+    })
+}
+
+fn narrative_evidence(report: &MirrorReport) -> Vec<EvidenceText> {
+    report
+        .assertions
+        .iter()
+        .chain(report.hypotheses.iter())
+        .chain(report.suggestions.iter())
+        .map(|item| EvidenceText {
+            id: item.id.clone(),
+            text: item.claim.clone(),
+        })
+        .collect()
+}
+
+fn call_openai_compatible_for_narrative(
+    report: &MirrorReport,
+    base_url: &str,
+    model: &str,
+    api_key: &str,
+) -> Result<String> {
+    #[derive(Deserialize)]
+    struct ChatResponse {
+        choices: Vec<Choice>,
+    }
+    #[derive(Deserialize)]
+    struct Choice {
+        message: Message,
+    }
+    #[derive(Deserialize)]
+    struct Message {
+        content: String,
+    }
+
+    let endpoint = format!("{}/v1/chat/completions", base_url.trim_end_matches('/'));
+    let body = serde_json::json!({
+        "model": model,
+        "temperature": 0,
+        "response_format": {"type": "json_object"},
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are Polaris Tier 1 report polisher. Return only JSON with text and citations. Every citation evidence_id must be one report item id, and every quote must be an exact substring of that item's claim. Do not add new facts."
+            },
+            {
+                "role": "user",
+                "content": narrative_prompt(report)
+            }
+        ]
+    });
+
+    let response: ChatResponse = reqwest::blocking::Client::new()
+        .post(endpoint)
+        .bearer_auth(api_key)
+        .json(&body)
+        .send()?
+        .error_for_status()?
+        .json()?;
+
+    response
+        .choices
+        .into_iter()
+        .next()
+        .map(|choice| choice.message.content)
+        .ok_or_else(|| PolarisError::InvalidGraderResponse("empty choices".to_owned()))
+}
+
+fn narrative_prompt(report: &MirrorReport) -> String {
+    let items = report
+        .assertions
+        .iter()
+        .chain(report.hypotheses.iter())
+        .chain(report.suggestions.iter())
+        .map(|item| {
+            format!(
+                "id: {}\nkind: {}\nconfidence: {:.3}\nclaim: {}",
+                item.id, item.kind, item.confidence, item.claim
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    format!(
+        "Week: {}\nWindow days: {}\nAllowed report items:\n{}\n\nReturn JSON: {{\"text\":\"中文周报叙事，不新增事实\", \"citations\":[{{\"evidence_id\":\"item id\", \"quote\":\"claim 原文子串\"}}]}}",
+        report.week, report.window_days, items
+    )
 }
 
 pub fn record_report_feedback(

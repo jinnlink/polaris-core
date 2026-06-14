@@ -50,7 +50,8 @@ use crate::pack::load_pack;
 use crate::pedagogy::{record_move_effect_for_attempt, select_move_for_concept};
 use crate::phase::{determine_phase, Depth, Phase, PhaseInput, PhaseParams};
 use crate::report::{
-    latest_mirror_report, record_report_feedback, run_mirror_report, MirrorReport,
+    latest_mirror_report, record_report_feedback, run_mirror_report, run_mirror_report_with_config,
+    run_mirror_report_with_static_narrative, MirrorReport,
 };
 use crate::scheduler::{rank_candidates_with_params, ScheduleCandidate, SchedulerParams};
 use crate::status::{status_snapshot, StatusSnapshot};
@@ -234,6 +235,17 @@ impl Engine {
 
     pub fn run_mirror_report(&self) -> Result<MirrorReport> {
         run_mirror_report(&self.conn)
+    }
+
+    pub fn run_mirror_report_with_narrative(&self) -> Result<MirrorReport> {
+        run_mirror_report_with_config(&self.conn, crate::grader::LlmConfig::from_env())
+    }
+
+    pub fn run_mirror_report_with_static_narrative(
+        &self,
+        response_json: &str,
+    ) -> Result<MirrorReport> {
+        run_mirror_report_with_static_narrative(&self.conn, response_json)
     }
 
     pub fn latest_mirror_report(&self) -> Result<Option<MirrorReport>> {
