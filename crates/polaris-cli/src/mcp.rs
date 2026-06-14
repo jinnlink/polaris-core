@@ -56,6 +56,13 @@ impl McpSession {
             match name {
                 "get_next_task" => self.get_next_task(arguments),
                 "get_interleaved_batch" => self.get_interleaved_batch(arguments),
+                "get_phase_snapshot" => self.get_phase_snapshot(),
+                "get_active_gu_rules" => self.get_active_gu_rules(arguments),
+                "run_mirror_report" => self.run_mirror_report(),
+                "get_latest_mirror_report" => self.get_latest_mirror_report(),
+                "mark_report_assertion_inaccurate" => {
+                    self.mark_report_assertion_inaccurate(arguments)
+                }
                 "submit_evidence" => self.submit_evidence(arguments),
                 "get_teaching_instruction" => self.get_teaching_instruction(arguments),
                 other => Err(format!("unknown tool: {other}")),
@@ -182,6 +189,54 @@ impl McpSession {
         .map_err(|error| error.to_string())
     }
 
+    fn get_phase_snapshot(&self) -> Result<Value, String> {
+        serde_json::to_value(
+            self.engine
+                .status_snapshot()
+                .map_err(|error| error.to_string())?,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    fn get_active_gu_rules(&self, arguments: &Value) -> Result<Value, String> {
+        let concept = concept_id_argument(arguments)?;
+        serde_json::to_value(
+            self.engine
+                .active_gu_rules_for_concept(concept)
+                .map_err(|error| error.to_string())?,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    fn run_mirror_report(&self) -> Result<Value, String> {
+        serde_json::to_value(
+            self.engine
+                .run_mirror_report()
+                .map_err(|error| error.to_string())?,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    fn get_latest_mirror_report(&self) -> Result<Value, String> {
+        Ok(json!({
+            "report": self.engine.latest_mirror_report().map_err(|error| error.to_string())?
+        }))
+    }
+
+    fn mark_report_assertion_inaccurate(&self, arguments: &Value) -> Result<Value, String> {
+        let assertion_id = required_str(arguments, "assertion_id")?;
+        let report_id = optional_str(arguments, "report_id");
+        let marked_report_id = self
+            .engine
+            .record_report_feedback(report_id, assertion_id)
+            .map_err(|error| error.to_string())?;
+        Ok(json!({
+            "report_id": marked_report_id,
+            "assertion_id": assertion_id,
+            "verdict": "inaccurate",
+        }))
+    }
+
     fn get_teaching_instruction(&self, arguments: &Value) -> Result<Value, String> {
         let concept = required_str(arguments, "concept")?;
         serde_json::to_value(
@@ -244,6 +299,57 @@ fn tool_definitions() -> Value {
                 "properties": {
                     "batch_size": {"type": "integer", "minimum": 1, "description": "Mini-batch size. Defaults to 3."}
                 }
+            }
+        },
+        {
+            "name": "get_phase_snapshot",
+            "description": "Return the current knowledge phase snapshot with phase_counts and concept phase states for Tier 2 diagnosis.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {}
+            }
+        },
+        {
+            "name": "get_active_gu_rules",
+            "description": "Return validated or active G_u rules for a concept so the external tutor can check recurring error patterns without inventing traits.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "concept_id": {"type": "string", "description": "Target concept id."},
+                    "concept": {"type": "string", "description": "Deprecated alias for concept_id."}
+                },
+                "anyOf": [
+                    {"required": ["concept_id"]},
+                    {"required": ["concept"]}
+                ]
+            }
+        },
+        {
+            "name": "run_mirror_report",
+            "description": "Generate and persist an evidence-bound mirror report using existing engine rules. Does not perform Tier 1 prose polishing.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {}
+            }
+        },
+        {
+            "name": "get_latest_mirror_report",
+            "description": "Return the latest persisted mirror report, or null when no report has been generated.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {}
+            }
+        },
+        {
+            "name": "mark_report_assertion_inaccurate",
+            "description": "Record learner feedback that a mirror report assertion is inaccurate. The feedback becomes calibration data; it does not rewrite mastery state.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "report_id": {"type": "string", "description": "Optional report id. Defaults to the latest report."},
+                    "assertion_id": {"type": "string", "description": "Assertion, hypothesis, or suggestion id to mark inaccurate."}
+                },
+                "required": ["assertion_id"]
             }
         },
         {
@@ -402,7 +508,7 @@ fn write_message<W: Write>(
 mod tests {
     use polaris_core::db::migrate;
     use polaris_core::engine::Engine;
-    use rusqlite::Connection;
+    use rusqlite::{params, Connection};
     use serde_json::{json, Value};
     use std::io::Cursor;
 
@@ -427,6 +533,11 @@ mod tests {
             vec![
                 "get_next_task",
                 "get_interleaved_batch",
+                "get_phase_snapshot",
+                "get_active_gu_rules",
+                "run_mirror_report",
+                "get_latest_mirror_report",
+                "mark_report_assertion_inaccurate",
                 "submit_evidence",
                 "get_teaching_instruction"
             ]
@@ -606,6 +717,216 @@ mod tests {
             assert!(item["p_known"].as_f64().is_some());
             assert!(item["expected_success"].as_f64().is_some());
         }
+    }
+
+    #[test]
+    fn mcp_phase_gu_and_mirror_report_tools() {
+        let mut session = test_session();
+
+        let phase_response = session
+            .handle_request(json!({
+                "jsonrpc": "2.0",
+                "id": 40,
+                "method": "tools/call",
+                "params": {"name": "get_phase_snapshot", "arguments": {}}
+            }))
+            .unwrap()
+            .unwrap();
+        let phase_text = phase_response["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap();
+        let phase_payload: Value = serde_json::from_str(phase_text).unwrap();
+        assert!(phase_payload["phase_counts"].as_array().unwrap().len() >= 7);
+        assert_eq!(phase_payload["concepts"][0]["concept_id"], "ownership");
+        assert_eq!(phase_payload["concepts"][0]["phase"], "undetermined");
+
+        let concept_ids_json = serde_json::to_string(&vec!["ownership"]).unwrap();
+        session
+            .engine()
+            .conn()
+            .execute(
+                "INSERT INTO gu_rules(id, pattern, concept_ids_json, attempt_ids_json,
+                                      first_seen, last_seen, count, status, alpha, beta, updated_at)
+                 VALUES ('gu-mcp-test', 'fluency-illusion', ?1, '[]',
+                         '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z',
+                         3, 'validated', 4.0, 1.0, '2026-01-02T00:00:00Z')",
+                [concept_ids_json],
+            )
+            .unwrap();
+
+        let gu_response = session
+            .handle_request(json!({
+                "jsonrpc": "2.0",
+                "id": 41,
+                "method": "tools/call",
+                "params": {"name": "get_active_gu_rules", "arguments": {
+                    "concept": "ownership"
+                }}
+            }))
+            .unwrap()
+            .unwrap();
+        let gu_text = gu_response["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap();
+        let gu_payload: Value = serde_json::from_str(gu_text).unwrap();
+        assert_eq!(gu_payload[0]["id"], "gu-mcp-test");
+        assert_eq!(gu_payload[0]["pattern"], "fluency-illusion");
+
+        let latest_empty = session
+            .handle_request(json!({
+                "jsonrpc": "2.0",
+                "id": 42,
+                "method": "tools/call",
+                "params": {"name": "get_latest_mirror_report", "arguments": {}}
+            }))
+            .unwrap()
+            .unwrap();
+        let latest_empty_text = latest_empty["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap();
+        let latest_empty_payload: Value = serde_json::from_str(latest_empty_text).unwrap();
+        assert!(latest_empty_payload["report"].is_null());
+
+        let missing_gu_concept = session
+            .handle_request(json!({
+                "jsonrpc": "2.0",
+                "id": 421,
+                "method": "tools/call",
+                "params": {"name": "get_active_gu_rules", "arguments": {}}
+            }))
+            .unwrap()
+            .unwrap();
+        assert_eq!(missing_gu_concept["result"]["isError"], true);
+        assert!(missing_gu_concept["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("missing string argument: concept_id"));
+
+        let missing_report_feedback = session
+            .handle_request(json!({
+                "jsonrpc": "2.0",
+                "id": 422,
+                "method": "tools/call",
+                "params": {"name": "mark_report_assertion_inaccurate", "arguments": {
+                    "report_id": "missing-report",
+                    "assertion_id": "assertion:missing"
+                }}
+            }))
+            .unwrap()
+            .unwrap();
+        assert_eq!(missing_report_feedback["result"]["isError"], true);
+        assert!(missing_report_feedback["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("report.feedback_report_id"));
+        let feedback_events_before_success: i64 = session
+            .engine()
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM behavior_events WHERE type='report_feedback'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(feedback_events_before_success, 0);
+
+        let report_response = session
+            .handle_request(json!({
+                "jsonrpc": "2.0",
+                "id": 43,
+                "method": "tools/call",
+                "params": {"name": "run_mirror_report", "arguments": {}}
+            }))
+            .unwrap()
+            .unwrap();
+        let report_text = report_response["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap();
+        let report_payload: Value = serde_json::from_str(report_text).unwrap();
+        let generated_report_id = report_payload["id"].as_str().unwrap();
+        assert_eq!(report_payload["schema_version"], 1);
+
+        let latest_response = session
+            .handle_request(json!({
+                "jsonrpc": "2.0",
+                "id": 44,
+                "method": "tools/call",
+                "params": {"name": "get_latest_mirror_report", "arguments": {}}
+            }))
+            .unwrap()
+            .unwrap();
+        let latest_text = latest_response["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap();
+        let latest_payload: Value = serde_json::from_str(latest_text).unwrap();
+        assert_eq!(latest_payload["report"]["id"], generated_report_id);
+
+        let feedback_report = json!({
+            "schema_version": 1,
+            "id": "mcp-feedback-report",
+            "week": "2026-W01",
+            "generated_at": "2026-01-02T00:00:00Z",
+            "window_days": 7,
+            "assertions": [{
+                "id": "assertion:calibration",
+                "kind": "calibration",
+                "subject": "ownership",
+                "claim": "校准断言",
+                "confidence": 0.8,
+                "evidence_ids": ["evidence-1"],
+                "stats": {}
+            }],
+            "hypotheses": [],
+            "suggestions": [],
+            "skipped": [],
+            "hazard_gate": {
+                "participates": false,
+                "reason": "unfit",
+                "validation_auc": null,
+                "auc_gate": 0.70
+            },
+            "reflection_prompts": []
+        });
+        session
+            .engine()
+            .conn()
+            .execute(
+                "INSERT INTO mirror_reports(id, week, generated_at, report_json, assertion_count, skipped_count)
+                 VALUES ('mcp-feedback-report', '2026-W01', '2026-01-02T00:00:00Z', ?1, 1, 0)",
+                params![feedback_report.to_string()],
+            )
+            .unwrap();
+
+        let feedback_response = session
+            .handle_request(json!({
+                "jsonrpc": "2.0",
+                "id": 45,
+                "method": "tools/call",
+                "params": {"name": "mark_report_assertion_inaccurate", "arguments": {
+                    "report_id": "mcp-feedback-report",
+                    "assertion_id": "assertion:calibration"
+                }}
+            }))
+            .unwrap()
+            .unwrap();
+        let feedback_text = feedback_response["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap();
+        let feedback_payload: Value = serde_json::from_str(feedback_text).unwrap();
+        assert_eq!(feedback_payload["report_id"], "mcp-feedback-report");
+        assert_eq!(feedback_payload["assertion_id"], "assertion:calibration");
+        assert_eq!(feedback_payload["verdict"], "inaccurate");
+
+        let feedback_events: i64 = session
+            .engine()
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM behavior_events WHERE type='report_feedback'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(feedback_events, 1);
     }
 
     #[test]
