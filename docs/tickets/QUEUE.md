@@ -34,7 +34,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 - [x] **P04A Tauri 常驻小窗（100% Tier 0 秒开）+ 可展开工作区（状态镜子=相图）**（`TICKET_P04A_DESKTOP_STATUS_MIRROR.md`）← 已实现并通过验收；先交付 Tauri/HTTP 共用的 Tier 0 状态镜子契约与 CLI JSON 出口，不引入未验证桌面依赖；服务环节：定位模糊 → 针对性补缺
 - [x] **P04B HTTP API 门**（`TICKET_P04B_HTTP_API.md`）← 已实现并通过验收；为常驻伴随 UI 暴露本地 HTTP 最小闭环：health/status/next/evidence；服务环节：验证真懂 → 定位模糊 → 针对性补缺
 - [x] **P04C MRT 微随机化引擎（预登记审计）+ 教法签名后验（F1）+ 个人摩擦曲线拟合（F3）**（`TICKET_P04C_MRT_FRICTION_SIGNATURE.md`）← 已实现并通过验收；在 `next` 选 move 决策点加入审计化微随机与摩擦/签名后验；服务环节：验证真懂 → 定位模糊 → 针对性补缺
-- P04D 目标引擎移植（goals/dimensions/milestones，参考 Polaris schema v9）
+- [x] **P04D 目标引擎移植（goals/dimensions/milestones，参考 Polaris schema v9）**（`TICKET_P04D_GOAL_ENGINE.md`）← 已实现并通过验收；迁入 goals/dimensions/milestones 建模核心与 Engine 薄封装，不接入调度/MRT/HTTP/MCP；服务环节：验证真懂 → 定位模糊 → 针对性补缺
 - [x] **P04E 学习模拟端到端测试**（`TICKET_P04E_LEARNING_SIMULATION_TEST.md`）← 已实现并通过验收；三画像 30 天模拟 + 每日 summary + 无死锁/相变/HMM/θ 跟踪断言；服务环节：验证真懂 → 定位模糊 → 针对性补缺（全闭环验证）
 
 ## Phase 5 — 第二 pack + 育种

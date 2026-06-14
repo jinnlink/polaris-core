@@ -265,6 +265,49 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             n INTEGER
         );
 
+        CREATE TABLE IF NOT EXISTS goals(
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            description TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            deadline TEXT,
+            pace TEXT,
+            priority INTEGER NOT NULL DEFAULT 50,
+            parent_goal_id TEXT,
+            completion_summary TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS goal_dimensions(
+            id TEXT PRIMARY KEY,
+            goal_id TEXT NOT NULL REFERENCES goals(id),
+            dimension_key TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            metric_type TEXT NOT NULL,
+            target_value REAL NOT NULL,
+            target_label TEXT,
+            weight REAL NOT NULL DEFAULT 1.0,
+            current_value REAL NOT NULL DEFAULT 0,
+            current_updated_at TEXT,
+            query_sql TEXT,
+            query_hint TEXT,
+            UNIQUE(goal_id, dimension_key)
+        );
+
+        CREATE TABLE IF NOT EXISTS goal_milestones(
+            id TEXT PRIMARY KEY,
+            goal_id TEXT NOT NULL REFERENCES goals(id),
+            title TEXT NOT NULL,
+            description TEXT,
+            trigger_type TEXT NOT NULL,
+            trigger_config TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            reached_at TEXT,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(goal_id, sort_order)
+        );
+
         CREATE INDEX IF NOT EXISTS idx_attempts_concept_created
             ON attempts(concept_id, created_at);
         CREATE INDEX IF NOT EXISTS idx_attempts_created
@@ -283,6 +326,16 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             ON edges(dst);
         CREATE INDEX IF NOT EXISTS idx_bred_moves_status_context
             ON bred_moves(status, context_hash);
+        CREATE INDEX IF NOT EXISTS idx_goals_updated_at
+            ON goals(updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_goals_status
+            ON goals(status, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_goals_parent
+            ON goals(parent_goal_id);
+        CREATE INDEX IF NOT EXISTS idx_goal_dim_goal
+            ON goal_dimensions(goal_id);
+        CREATE INDEX IF NOT EXISTS idx_milestone_goal
+            ON goal_milestones(goal_id);
         "#,
     )?;
 
@@ -353,6 +406,9 @@ mod tests {
             "mirror_reports",
             "hazard_models",
             "state_gate_evals",
+            "goals",
+            "goal_dimensions",
+            "goal_milestones",
         ] {
             let exists: i64 = conn
                 .query_row(
@@ -396,6 +452,11 @@ mod tests {
             "idx_edges_src",
             "idx_edges_dst",
             "idx_bred_moves_status_context",
+            "idx_goals_updated_at",
+            "idx_goals_status",
+            "idx_goals_parent",
+            "idx_goal_dim_goal",
+            "idx_milestone_goal",
         ] {
             let exists: i64 = conn
                 .query_row(

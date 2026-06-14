@@ -19,6 +19,10 @@ use crate::geometry::{
     upsert_geometry_maps_to_candidates, EmbeddingProvider, EmbeddingRefreshSummary,
     GeometryCandidate,
 };
+use crate::goals::{
+    create_goal, goal_progress, goal_snapshot, refresh_goal_milestones,
+    update_goal_dimension_value, GoalInput, GoalMilestoneRecord, GoalProgressReport, GoalRecord,
+};
 use crate::grader::{
     grade_request_for_attempt, grade_with_config, grade_with_static_response,
     heuristic_score_with_conn, GradeRequest, LlmConfig,
@@ -177,6 +181,31 @@ impl Engine {
 
     pub fn status_snapshot(&self) -> Result<StatusSnapshot> {
         status_snapshot(&self.conn)
+    }
+
+    pub fn create_goal(&self, input: GoalInput) -> Result<GoalRecord> {
+        create_goal(&self.conn, input)
+    }
+
+    pub fn goal_snapshot(&self, goal_id: &str) -> Result<Option<GoalRecord>> {
+        goal_snapshot(&self.conn, goal_id)
+    }
+
+    pub fn update_goal_dimension_value(
+        &self,
+        goal_id: &str,
+        dimension_key: &str,
+        current_value: f64,
+    ) -> Result<()> {
+        update_goal_dimension_value(&self.conn, goal_id, dimension_key, current_value)
+    }
+
+    pub fn goal_progress(&self, goal_id: &str) -> Result<GoalProgressReport> {
+        goal_progress(&self.conn, goal_id)
+    }
+
+    pub fn refresh_goal_milestones(&self, goal_id: &str) -> Result<Vec<GoalMilestoneRecord>> {
+        refresh_goal_milestones(&self.conn, goal_id)
     }
 
     pub fn teaching_instruction(&self, concept_id: &str) -> Result<TeachingInstruction> {
