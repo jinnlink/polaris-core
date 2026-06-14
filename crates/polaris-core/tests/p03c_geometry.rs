@@ -119,6 +119,31 @@ fn geometry_candidates_use_hnsw_and_combined_scores() {
 }
 
 #[test]
+fn geometry_candidates_rank_combined_score_after_hnsw_overfetch() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    let _env = EnvRestore::with_embed_env();
+    let conn = setup_geometry_graph();
+    store_embedding(&conn, "schema:drop", &[1.0, 0.0]);
+    store_embedding(&conn, "schema:raii", &[0.8, 0.2]);
+    store_q(&conn, "schema:drop", &[1.0, 0.0]);
+    store_q(&conn, "schema:raii", &[1.0, 0.0]);
+    seed_matching_residuals(&conn, "schema:drop", "schema:raii");
+    for idx in 0..12 {
+        let id = format!("schema:near_{idx:02}");
+        insert_concept(&conn, &id, "schema");
+        store_embedding(&conn, &id, &[1.0, 0.001 * (idx as f64 + 1.0)]);
+        store_q(&conn, &id, &[0.0, 1.0]);
+    }
+    let engine = Engine::new(conn);
+
+    let candidates = engine.geometry_candidates("schema:drop", 1).unwrap();
+
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].target, "schema:raii");
+    assert!(candidates[0].assoc > 0.99);
+}
+
+#[test]
 fn geometry_candidates_keep_semantically_far_discover_candidates() {
     let _guard = ENV_LOCK.lock().unwrap();
     let _env = EnvRestore::with_embed_env();

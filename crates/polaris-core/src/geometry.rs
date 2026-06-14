@@ -148,7 +148,9 @@ pub fn geometry_candidates(
 
     let m = meta_usize(conn, "geometry.hnsw_m")?;
     let ef_search = meta_usize(conn, "geometry.ef_search")?;
-    let neighbor_indices = hnsw_neighbor_indices(&items, source_idx, limit, m, ef_search);
+    let candidate_pool_limit = items.len().saturating_sub(1).min(limit.max(ef_search));
+    let neighbor_indices =
+        hnsw_neighbor_indices(&items, source_idx, candidate_pool_limit, m, ef_search);
     let source_item = &items[source_idx];
     let mut candidates = Vec::new();
     for idx in neighbor_indices {
@@ -315,6 +317,10 @@ fn hnsw_neighbor_indices(
     m: usize,
     ef_search: usize,
 ) -> Vec<usize> {
+    let desired = limit.min(items.len().saturating_sub(1));
+    if desired == 0 {
+        return Vec::new();
+    }
     let vectors = items
         .iter()
         .map(|item| {
@@ -324,17 +330,43 @@ fn hnsw_neighbor_indices(
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
-    let ef = ef_search.max(limit + 1).max(m);
+    let ef = ef_search.max(desired + 1).max(m);
     let hnsw = Hnsw::<f32, DistCosine>::new(m, items.len(), 16, ef, DistCosine {});
     for (idx, vector) in vectors.iter().enumerate() {
         hnsw.insert((&vector[..], idx));
     }
-    hnsw.search(&vectors[source_idx], limit + 1, ef)
+    let indices = hnsw
+        .search(&vectors[source_idx], desired + 1, ef)
         .into_iter()
         .map(|neighbor| neighbor.d_id)
-        .filter(|idx| *idx != source_idx)
-        .take(limit)
-        .collect()
+        .collect::<Vec<_>>();
+    complete_neighbor_indices(indices, items.len(), source_idx, desired)
+}
+
+fn complete_neighbor_indices(
+    indices: Vec<usize>,
+    item_count: usize,
+    source_idx: usize,
+    desired: usize,
+) -> Vec<usize> {
+    let mut completed = Vec::new();
+    for idx in indices {
+        if idx < item_count && idx != source_idx && !completed.contains(&idx) {
+            completed.push(idx);
+            if completed.len() >= desired {
+                return completed;
+            }
+        }
+    }
+    for idx in 0..item_count {
+        if completed.len() >= desired {
+            break;
+        }
+        if idx != source_idx && !completed.contains(&idx) {
+            completed.push(idx);
+        }
+    }
+    completed
 }
 
 fn geometry_items(conn: &Connection) -> Result<Vec<GeometryItem>> {
@@ -508,4 +540,16 @@ fn concept_kind(conn: &Connection, concept_id: &str) -> Result<String> {
 
 fn ensure_concept_exists(conn: &Connection, concept_id: &str) -> Result<()> {
     concept_kind(conn, concept_id).map(|_| ())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn completes_neighbor_indices_without_source_or_duplicates() {
+        let completed = complete_neighbor_indices(vec![2, 2, 0], 5, 0, 3);
+
+        assert_eq!(completed, vec![2, 1, 3]);
+    }
 }

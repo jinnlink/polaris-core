@@ -30,6 +30,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 - [x] **P03L 索引审计**（`TICKET_P03L_INDEX_AUDIT.md`）← 已实现并通过验收；全库首批索引 + 查询计划断言（Tier 0 预算结构保障）；服务环节：全环节
 
 - [x] **P03M 多 pack latent 维度映射**（`TICKET_P03M_LATENT_DIMENSION_MAPPING.md`）← 已实现并通过验收；从 P03A 审查后续转正，补齐 `latent.dims` / pack→维度映射，避免 Q 降级初始化把所有 pack 概念压到同一潜因子；服务环节：定位模糊 → 针对性补缺
+- [x] **P03N 几何候选池确定性**（`TICKET_P03N_GEOMETRY_CANDIDATE_DETERMINISM.md`）← 已实现并通过验收；从 P05A 验收观察转正，扩大 HNSW 候选池并补确定性夹具，避免强综合分候选在最终排序前被截掉；服务环节：全环节（验证稳定性）
 
 ## Phase 4 — UI + MRT
 
@@ -50,7 +51,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 ## Backlog（票外发现的问题记在这里，不顺手做）
 
 - P03A 审查后续：当前 Q 降级初始化在单 Rust pack 下使用 `q[0]=1.0` 作为 deterministic one-hot track 维；多 pack/多 track 前需补 `latent.dims` 或 pack/track→维度映射，避免所有概念共用同一潜因子。→ 已转正式票 P03M。
-- P05A 验收观察：`cargo test --workspace` 首次在 `p03c_geometry::geometry_candidates_use_hnsw_and_combined_scores` 偶发缺少 `schema:raii` 候选，导致同文件后续用例因 `ENV_LOCK` PoisonError 连锁失败；单跑 `cargo test -p polaris-core --test p03c_geometry` 通过，重跑 `cargo test --workspace` 通过。建议后续单独开票把 HNSW 候选测试改成确定性夹具或扩大候选池；服务环节：全环节（验证稳定性）。
+- P05A 验收观察：`cargo test --workspace` 首次在 `p03c_geometry::geometry_candidates_use_hnsw_and_combined_scores` 偶发缺少 `schema:raii` 候选，导致同文件后续用例因 `ENV_LOCK` PoisonError 连锁失败；单跑 `cargo test -p polaris-core --test p03c_geometry` 通过，重跑 `cargo test --workspace` 通过。建议后续单独开票把 HNSW 候选测试改成确定性夹具或扩大候选池；服务环节：全环节（验证稳定性）。→ 已转正式票 P03N。
 - 强化轴线候选（详见 `docs/ENHANCEMENT_ROADMAP.md` 2026-06-12 提案，排序待用户裁决）：
   - ~~P03K 心智动力学拟合层激活~~ ← 已转正式票（见 Phase 3 列表）。
   - 索引审计（全库无 CREATE INDEX；json_extract 热路径）+ DATA_MODEL §11 性能预算回归基准；服务环节：全环节（Tier 0 预算铁律）。
