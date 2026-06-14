@@ -39,7 +39,7 @@ use crate::mental_state::{
     HmmObservation, StatePosterior, HAZARD_FEATURE_COUNT, STATE_COUNT,
 };
 use crate::mirt::{
-    ensure_theta, fused_p_known, initial_track_q_blob, latent_prediction, update_theta_for_attempt,
+    ensure_theta, fused_p_known, initial_pack_q_blob, latent_prediction, update_theta_for_attempt,
     FusedPKnown, LatentPrediction,
 };
 use crate::moves::{
@@ -306,8 +306,8 @@ impl Engine {
 
     pub fn init_pack(&mut self, path: impl AsRef<Path>) -> Result<()> {
         let pack = load_pack(path)?;
-        let initial_q = initial_track_q_blob(&self.conn)?;
         let tx = self.conn.transaction()?;
+        let initial_q = initial_pack_q_blob(&tx, &pack.id)?;
 
         tx.execute(
             "INSERT OR REPLACE INTO meta(key, value) VALUES (?1, ?2)",

@@ -73,6 +73,39 @@ pub fn initial_track_q_blob(conn: &Connection) -> Result<Vec<u8>> {
     Ok(encode_vector(&initial_track_q(&params)))
 }
 
+pub fn initial_pack_q_blob(conn: &Connection, pack_id: &str) -> Result<Vec<u8>> {
+    let params = MirtParams::from_conn(conn)?;
+    let label = pack_dimension_label(pack_id);
+    let mut dims = latent_dims(conn)?;
+    let index = match dims.iter().position(|item| item == &label) {
+        Some(index) if index < params.k => index,
+        Some(index) => {
+            return Err(PolarisError::InvalidParameter {
+                key: "latent.dims".to_owned(),
+                value: format!("{label} index {index} >= latent.k {}", params.k),
+            });
+        }
+        None => {
+            if dims.len() >= params.k {
+                return Err(PolarisError::InvalidParameter {
+                    key: "latent.dims".to_owned(),
+                    value: format!("cannot add {label}; latent.k {} is full", params.k),
+                });
+            }
+            dims.push(label);
+            conn.execute(
+                "INSERT OR REPLACE INTO meta(key, value) VALUES ('latent.dims', ?1)",
+                [serde_json::to_string(&dims)?],
+            )?;
+            dims.len() - 1
+        }
+    };
+
+    let mut q = vec![0.0; params.k];
+    q[index] = 1.0;
+    Ok(encode_vector(&q))
+}
+
 pub fn ensure_theta(conn: &Connection) -> Result<()> {
     let params = MirtParams::from_conn(conn)?;
     let zero = vec![0.0; params.k];
@@ -197,6 +230,31 @@ fn initial_track_q(params: &MirtParams) -> Vec<f64> {
     let mut q = vec![0.0; params.k];
     q[0] = 1.0;
     q
+}
+
+fn latent_dims(conn: &Connection) -> Result<Vec<String>> {
+    let json: Option<String> = conn
+        .query_row(
+            "SELECT value FROM meta WHERE key='latent.dims'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let Some(json) = json else {
+        return Ok(Vec::new());
+    };
+    let dims: Vec<String> = serde_json::from_str(&json)?;
+    if dims.iter().any(|item| item.trim().is_empty()) {
+        return Err(PolarisError::InvalidParameter {
+            key: "latent.dims".to_owned(),
+            value: json,
+        });
+    }
+    Ok(dims)
+}
+
+fn pack_dimension_label(pack_id: &str) -> String {
+    format!("pack:{pack_id}")
 }
 
 fn concept_q_and_b(conn: &Connection, concept_id: &str) -> Result<(Vec<f64>, f64)> {

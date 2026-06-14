@@ -29,6 +29,8 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 - [x] **P03K 心智动力学拟合层激活**（`TICKET_P03K_MENTAL_DYNAMICS_FIT.md`）← 已实现并通过验收；hazard 周拟合 + HMM 状态门控评估 + EM 重估，激活 P03D/P03I 登记的三个死门；服务环节：定位模糊 → 针对性补缺
 - [x] **P03L 索引审计**（`TICKET_P03L_INDEX_AUDIT.md`）← 已实现并通过验收；全库首批索引 + 查询计划断言（Tier 0 预算结构保障）；服务环节：全环节
 
+- [x] **P03M 多 pack latent 维度映射**（`TICKET_P03M_LATENT_DIMENSION_MAPPING.md`）← 已实现并通过验收；从 P03A 审查后续转正，补齐 `latent.dims` / pack→维度映射，避免 Q 降级初始化把所有 pack 概念压到同一潜因子；服务环节：定位模糊 → 针对性补缺
+
 ## Phase 4 — UI + MRT
 
 - [x] **P04A Tauri 常驻小窗（100% Tier 0 秒开）+ 可展开工作区（状态镜子=相图）**（`TICKET_P04A_DESKTOP_STATUS_MIRROR.md`）← 已实现并通过验收；先交付 Tauri/HTTP 共用的 Tier 0 状态镜子契约与 CLI JSON 出口，不引入未验证桌面依赖；服务环节：定位模糊 → 针对性补缺
@@ -47,7 +49,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 
 ## Backlog（票外发现的问题记在这里，不顺手做）
 
-- P03A 审查后续：当前 Q 降级初始化在单 Rust pack 下使用 `q[0]=1.0` 作为 deterministic one-hot track 维；多 pack/多 track 前需补 `latent.dims` 或 pack/track→维度映射，避免所有概念共用同一潜因子。
+- P03A 审查后续：当前 Q 降级初始化在单 Rust pack 下使用 `q[0]=1.0` 作为 deterministic one-hot track 维；多 pack/多 track 前需补 `latent.dims` 或 pack/track→维度映射，避免所有概念共用同一潜因子。→ 已转正式票 P03M。
 - P05A 验收观察：`cargo test --workspace` 首次在 `p03c_geometry::geometry_candidates_use_hnsw_and_combined_scores` 偶发缺少 `schema:raii` 候选，导致同文件后续用例因 `ENV_LOCK` PoisonError 连锁失败；单跑 `cargo test -p polaris-core --test p03c_geometry` 通过，重跑 `cargo test --workspace` 通过。建议后续单独开票把 HNSW 候选测试改成确定性夹具或扩大候选池；服务环节：全环节（验证稳定性）。
 - 强化轴线候选（详见 `docs/ENHANCEMENT_ROADMAP.md` 2026-06-12 提案，排序待用户裁决）：
   - ~~P03K 心智动力学拟合层激活~~ ← 已转正式票（见 Phase 3 列表）。
