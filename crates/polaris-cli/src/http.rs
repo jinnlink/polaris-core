@@ -69,23 +69,7 @@ impl HttpApi {
             return Ok(response(200, json!({ "task": null })));
         };
 
-        self.engine.conn().execute(
-            "INSERT INTO sessions(id, started_at, context_json)
-             VALUES (?1, strftime('%Y-%m-%dT%H:%M:%SZ','now'), '{}')
-             ON CONFLICT(id) DO NOTHING",
-            [session],
-        )?;
-        let event_payload = json!({
-            "task_type": &task.task_type,
-            "prompt": &task.prompt_text,
-            "reason": &task.reason,
-        })
-        .to_string();
-        self.engine.conn().execute(
-            "INSERT INTO behavior_events(id, session_id, at, type, concept_id, payload_json)
-             VALUES (lower(hex(randomblob(16))), ?1, strftime('%Y-%m-%dT%H:%M:%SZ','now'), 'next', ?2, ?3)",
-            (session, task.concept_id.as_str(), event_payload.as_str()),
-        )?;
+        self.engine.record_next_task_event(session, &task)?;
 
         let instruction = self.engine.teaching_instruction(&task.concept_id)?;
         Ok(response(

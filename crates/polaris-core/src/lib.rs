@@ -17,6 +17,7 @@ pub mod mental_state;
 pub mod mirt;
 pub mod moves;
 pub mod pack;
+pub mod pedagogy;
 pub mod phase;
 pub mod report;
 pub mod scheduler;

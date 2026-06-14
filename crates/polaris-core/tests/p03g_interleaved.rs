@@ -185,6 +185,7 @@ fn fewer_than_three_concepts_degrades_to_existing_next_task() {
     let root = temp_pack_dir("small");
     write_pack(&root, two_concept_pack());
     let engine = engine_for_pack(&root);
+    disable_mrt(&engine);
     seed_mastery(&engine, "weak", 0.55, 2, "recall", 0.0);
     seed_mastery(&engine, "review_a", 0.86, 10, "explain", 0.2);
 
@@ -216,6 +217,13 @@ fn engine_for_pack(root: &Path) -> Engine {
     let mut engine = Engine::new(conn);
     engine.init_pack(root).unwrap();
     engine
+}
+
+fn disable_mrt(engine: &Engine) {
+    engine
+        .conn()
+        .execute("UPDATE meta SET value='0.0' WHERE key='mrt.epsilon'", [])
+        .unwrap();
 }
 
 fn seed_mastery(

@@ -8,8 +8,9 @@ use serde_json::Value;
 #[test]
 fn nightly_consolidation_refreshes_residual_stats() {
     let engine = initialized_engine();
-    seed_final_attempt(engine.conn(), "ownership", "a1", 0.90, 21);
-    seed_final_attempt(engine.conn(), "ownership", "a2", 0.70, 20);
+    let (monday, tuesday) = recent_same_iso_week(engine.conn());
+    seed_final_attempt_at(engine.conn(), "ownership", "a1", 0.90, &monday);
+    seed_final_attempt_at(engine.conn(), "ownership", "a2", 0.70, &tuesday);
 
     let summary = run_nightly_consolidation(engine.conn()).unwrap();
 
@@ -156,6 +157,33 @@ fn seed_final_attempt(
         params![attempt_id, concept_id, final_score, created_at],
     )
     .unwrap();
+}
+
+fn seed_final_attempt_at(
+    conn: &Connection,
+    concept_id: &str,
+    attempt_id: &str,
+    final_score: f64,
+    created_at: &str,
+) {
+    conn.execute(
+        "INSERT INTO attempts(id, session_id, concept_id, task_type, self_confidence,
+                              provisional_score, final_score, theta_version, created_at)
+         VALUES (?1, 's1', ?2, 'recall', 3, ?3, ?3, 1, ?4)",
+        params![attempt_id, concept_id, final_score, created_at],
+    )
+    .unwrap();
+}
+
+fn recent_same_iso_week(conn: &Connection) -> (String, String) {
+    conn.query_row(
+        "SELECT
+            strftime('%Y-%m-%dT00:00:00Z', 'now', 'weekday 1', '-14 days'),
+            strftime('%Y-%m-%dT00:00:00Z', 'now', 'weekday 1', '-13 days')",
+        [],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+    .unwrap()
 }
 
 fn concept_q_len(conn: &Connection, concept_id: &str) -> usize {

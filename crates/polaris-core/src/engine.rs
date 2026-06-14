@@ -43,6 +43,7 @@ use crate::moves::{
     select_next_move_for_concept, task_type_target_depth, SelectedMove,
 };
 use crate::pack::load_pack;
+use crate::pedagogy::{record_move_effect_for_attempt, select_move_for_concept};
 use crate::phase::{determine_phase, Depth, Phase, PhaseInput, PhaseParams};
 use crate::report::{
     latest_mirror_report, record_report_feedback, run_mirror_report, MirrorReport,
@@ -59,9 +60,13 @@ pub struct Engine {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NextTask {
     pub concept_id: String,
+    pub move_id: String,
     pub task_type: String,
     pub prompt_text: String,
     pub reason: String,
+    pub mrt_context_hash: String,
+    pub mrt_prereg_id: String,
+    pub mrt_randomized: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -329,20 +334,58 @@ impl Engine {
             return Ok(None);
         };
 
-        let selected_move = select_next_move_for_concept(&self.conn, &best.id)?;
+        let base_move = select_next_move_for_concept(&self.conn, &best.id)?;
+        let selection = select_move_for_concept(
+            &self.conn,
+            &best.id,
+            &best.name,
+            base_move,
+            best.p_known,
+            best.phase,
+        )?;
+        let selected_move = selection.selected_move;
         let template = move_template_for_concept(&self.conn, &best.id, selected_move.id)?
             .map(|item| item.template)
             .unwrap_or_else(|| fallback_template(selected_move.id).to_owned());
         let prompt_text = render_move_prompt(&template, &best.name);
         Ok(Some(NextTask {
             concept_id: best.id.clone(),
+            move_id: selected_move.id.to_owned(),
             task_type: selected_move.task_type.to_owned(),
             prompt_text,
             reason: format!(
                 "选它因为：当前效用最高。\n证据是：U={:.3}，并结合 p_known 与 max_depth 选择 {}。\n现在做什么：完成一个 {} 任务。",
                 best.utility, selected_move.target_depth, selected_move.id
             ),
+            mrt_context_hash: selection.context_hash,
+            mrt_prereg_id: selection.prereg_id,
+            mrt_randomized: selection.randomized,
         }))
+    }
+
+    pub fn record_next_task_event(&self, session_id: &str, task: &NextTask) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO sessions(id, started_at, context_json)
+             VALUES (?1, strftime('%Y-%m-%dT%H:%M:%SZ','now'), '{}')
+             ON CONFLICT(id) DO NOTHING",
+            [session_id],
+        )?;
+        let payload = serde_json::json!({
+            "task_type": &task.task_type,
+            "prompt": &task.prompt_text,
+            "reason": &task.reason,
+            "move": &task.move_id,
+            "mrt_context_hash": &task.mrt_context_hash,
+            "mrt_prereg_id": &task.mrt_prereg_id,
+            "mrt_randomized": task.mrt_randomized,
+        })
+        .to_string();
+        self.conn.execute(
+            "INSERT INTO behavior_events(id, session_id, at, type, concept_id, payload_json)
+             VALUES (lower(hex(randomblob(16))), ?1, strftime('%Y-%m-%dT%H:%M:%SZ','now'), 'next', ?2, ?3)",
+            (session_id, task.concept_id.as_str(), payload.as_str()),
+        )?;
+        Ok(())
     }
 
     pub fn get_interleaved_batch(&self, batch_size: usize) -> Result<Vec<TaskAssignment>> {
@@ -778,6 +821,7 @@ impl Engine {
             self.record_final_mental_state_snapshot_for_attempt(&receipt.attempt_id, grade.score)?;
             update_theta_for_attempt(&self.conn, &receipt.attempt_id)?;
             self.replay_concept_after(&input.concept_id, Some(&receipt.attempt_id))?;
+            record_move_effect_for_attempt(&self.conn, &receipt.attempt_id, grade.score)?;
             let _ = self.run_gu_induction()?;
         }
 
@@ -884,6 +928,7 @@ impl Engine {
             self.record_final_mental_state_snapshot_for_attempt(attempt_id, final_score)?;
         update_theta_for_attempt(&self.conn, attempt_id)?;
         self.replay_concept_after(&concept_id, Some(attempt_id))?;
+        record_move_effect_for_attempt(&self.conn, attempt_id, final_score)?;
         let _ = self.run_gu_induction()?;
         Ok(())
     }
@@ -1681,6 +1726,7 @@ impl Engine {
                 self.record_final_mental_state_snapshot_for_attempt(&attempt_id, result.score)?;
             update_theta_for_attempt(&self.conn, &attempt_id)?;
             self.replay_concept_after(&concept_id, Some(&attempt_id))?;
+            record_move_effect_for_attempt(&self.conn, &attempt_id, result.score)?;
             let _ = self.run_gu_induction()?;
             processed += 1;
         }

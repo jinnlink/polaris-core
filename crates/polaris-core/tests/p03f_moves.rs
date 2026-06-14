@@ -79,6 +79,7 @@ fn next_task_advances_from_apply_to_analyze_evaluate_and_falls_back_when_weak() 
     migrate(&conn).unwrap();
     let mut engine = Engine::new(conn);
     engine.init_pack(&root).unwrap();
+    disable_mrt(&engine);
 
     engine
         .conn()
@@ -126,6 +127,7 @@ fn next_task_follows_full_bloom_depth_ladder() {
     migrate(&conn).unwrap();
     let mut engine = Engine::new(conn);
     engine.init_pack(&root).unwrap();
+    disable_mrt(&engine);
 
     assert_eq!(
         engine.next_task().unwrap().expect("initial task").task_type,
@@ -364,4 +366,11 @@ fn workspace_pack_path(path: &str) -> PathBuf {
         .join("..")
         .join("..")
         .join(path)
+}
+
+fn disable_mrt(engine: &Engine) {
+    engine
+        .conn()
+        .execute("UPDATE meta SET value='0.0' WHERE key='mrt.epsilon'", [])
+        .unwrap();
 }

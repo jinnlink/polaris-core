@@ -168,23 +168,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 },
                 Commands::Next { session } => {
                     if let Some(task) = engine.next_task()? {
-                        engine.conn().execute(
-                            "INSERT INTO sessions(id, started_at, context_json)
-                             VALUES (?1, strftime('%Y-%m-%dT%H:%M:%SZ','now'), '{}')
-                             ON CONFLICT(id) DO NOTHING",
-                            [&session],
-                        )?;
-                        let payload = serde_json::json!({
-                            "task_type": &task.task_type,
-                            "prompt": &task.prompt_text,
-                            "reason": &task.reason,
-                        })
-                        .to_string();
-                        engine.conn().execute(
-                            "INSERT INTO behavior_events(id, session_id, at, type, concept_id, payload_json)
-                             VALUES (lower(hex(randomblob(16))), ?1, strftime('%Y-%m-%dT%H:%M:%SZ','now'), 'next', ?2, ?3)",
-                            (&session, &task.concept_id, &payload),
-                        )?;
+                        engine.record_next_task_event(&session, &task)?;
                         println!("concept: {}", task.concept_id);
                         println!("task_type: {}", task.task_type);
                         println!("prompt: {}", task.prompt_text);

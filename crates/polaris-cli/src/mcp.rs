@@ -115,27 +115,7 @@ impl McpSession {
         };
 
         self.engine
-            .conn()
-            .execute(
-                "INSERT INTO sessions(id, started_at, context_json)
-                 VALUES (?1, strftime('%Y-%m-%dT%H:%M:%SZ','now'), '{}')
-                 ON CONFLICT(id) DO NOTHING",
-                [session],
-            )
-            .map_err(|error| error.to_string())?;
-        let payload = json!({
-            "task_type": &task.task_type,
-            "prompt": &task.prompt_text,
-            "reason": &task.reason,
-        })
-        .to_string();
-        self.engine
-            .conn()
-            .execute(
-                "INSERT INTO behavior_events(id, session_id, at, type, concept_id, payload_json)
-                 VALUES (lower(hex(randomblob(16))), ?1, strftime('%Y-%m-%dT%H:%M:%SZ','now'), 'next', ?2, ?3)",
-                (session, task.concept_id.as_str(), payload.as_str()),
-            )
+            .record_next_task_event(session, &task)
             .map_err(|error| error.to_string())?;
 
         let instruction = self
