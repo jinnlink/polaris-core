@@ -1,12 +1,13 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use clap::{Parser, Subcommand};
 use polaris_core::db::{open_database, open_database_read_only};
 use polaris_core::engine::{Engine, SubmitInput};
+use polaris_core::ops::{doctor_report, DoctorReport};
 use polaris_core::pack::validate_pack_path;
 use polaris_core::status::StatusSnapshot;
-use rusqlite::OptionalExtension;
+use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use serde_json::Value;
 
 mod http;
@@ -73,6 +74,14 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+    Backup {
+        #[arg(long)]
+        output: PathBuf,
+    },
+    Doctor {
+        #[arg(long)]
+        json: bool,
+    },
     ServeHttp {
         #[arg(long, default_value = "127.0.0.1")]
         host: String,
@@ -130,6 +139,24 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             let conn = open_database(cli.db.unwrap_or_else(default_db_path))?;
             let engine = Engine::new(conn);
             mcp::serve_stdio(engine)?;
+        }
+        Commands::Backup { output } => {
+            let db_path = cli.db.unwrap_or_else(default_db_path);
+            let conn = open_existing_database(&db_path)?;
+            backup_database(&conn, &output)?;
+            println!("backup written: {}", output.display());
+        }
+        Commands::Doctor { json } => {
+            let conn = open_database_read_only(cli.db.unwrap_or_else(default_db_path))?;
+            let report = doctor_report(&conn)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            } else {
+                print!("{}", doctor_report_text(&report));
+            }
+            if !report.ok {
+                return Err(adapter_error("doctor found data integrity problems"));
+            }
         }
         command => {
             let conn = open_database(cli.db.unwrap_or_else(default_db_path))?;
@@ -283,6 +310,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 }
                 Commands::Diagnose { .. } => unreachable!("handled before writable database open"),
                 Commands::Mcp => unreachable!("handled before command dispatch"),
+                Commands::Backup { .. } => unreachable!("handled before writable database open"),
+                Commands::Doctor { .. } => unreachable!("handled before writable database open"),
                 Commands::Pack { .. } => unreachable!("handled before database open"),
             }
         }
@@ -544,6 +573,58 @@ fn adapter_error(message: impl Into<String>) -> Box<dyn std::error::Error> {
     ))
 }
 
+fn open_existing_database(path: &Path) -> Result<Connection, Box<dyn std::error::Error>> {
+    if !path.exists() {
+        return Err(adapter_error(format!(
+            "database does not exist: {}",
+            path.display()
+        )));
+    }
+    Connection::open_with_flags(
+        path,
+        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_URI,
+    )
+    .map_err(Into::into)
+}
+
+fn backup_database(conn: &Connection, output: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    if output.exists() {
+        return Err(adapter_error(format!(
+            "backup output already exists: {}",
+            output.display()
+        )));
+    }
+    if let Some(parent) = output.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    conn.execute("VACUUM INTO ?1", [output.to_string_lossy().to_string()])?;
+    Ok(())
+}
+
+fn doctor_report_text(report: &DoctorReport) -> String {
+    let mut text = String::new();
+    text.push_str(&format!("ok={}\n", report.ok));
+    text.push_str(&format!(
+        "integrity={}\n",
+        if report.integrity_ok { "ok" } else { "failed" }
+    ));
+    for message in &report.integrity_messages {
+        text.push_str(&format!("integrity_message={message}\n"));
+    }
+    text.push_str(&format!("replay_checked={}\n", report.replay_checked));
+    text.push_str(&format!(
+        "replay_mismatches={}\n",
+        report.replay_mismatches.len()
+    ));
+    for mismatch in &report.replay_mismatches {
+        text.push_str(&format!(
+            "mismatch\t{}\t{}\texpected={}\tactual={}\n",
+            mismatch.concept_id, mismatch.field, mismatch.expected, mismatch.actual
+        ));
+    }
+    text
+}
+
 fn status_snapshot_json(snapshot: &StatusSnapshot) -> serde_json::Result<String> {
     serde_json::to_string_pretty(snapshot)
 }
@@ -757,6 +838,9 @@ mod tests {
             vec!["polaris", "abandon", "--concept", "ownership"],
             vec!["polaris", "status"],
             vec!["polaris", "status", "--json"],
+            vec!["polaris", "backup", "--output", "backup.db"],
+            vec!["polaris", "doctor"],
+            vec!["polaris", "doctor", "--json"],
             vec![
                 "polaris",
                 "serve-http",
@@ -939,6 +1023,92 @@ mod tests {
 
         assert!(result.is_err());
         assert!(!path.exists(), "diagnose must not create a missing db");
+    }
+
+    #[test]
+    fn backup_and_doctor_helpers_create_backup_and_report() {
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let db_path = std::env::temp_dir().join(format!("polaris-core-backup-src-{suffix}.db"));
+        let backup_path =
+            std::env::temp_dir().join(format!("polaris-core-backup-copy-{suffix}.db"));
+        let _ = std::fs::remove_file(&db_path);
+        let _ = std::fs::remove_file(&backup_path);
+
+        let conn = polaris_core::db::open_database(&db_path).unwrap();
+        conn.execute(
+            "INSERT INTO evidence_items(id, session_id, source, content_type, text, concept_ids_json, created_at)
+             VALUES ('e1', 's1', 'cli-test', 'text/plain', 'backup smoke', '[]', '2026-01-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+
+        backup_database(&conn, &backup_path).unwrap();
+        let backup_conn = rusqlite::Connection::open(&backup_path).unwrap();
+        let evidence_count: i64 = backup_conn
+            .query_row("SELECT COUNT(*) FROM evidence_items", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(evidence_count, 1);
+
+        let report = polaris_core::ops::doctor_report(&conn).unwrap();
+        assert!(report.ok);
+        let text = doctor_report_text(&report);
+        assert!(text.contains("integrity=ok"));
+        assert!(text.contains("replay_checked=0"));
+
+        drop(backup_conn);
+        drop(conn);
+        let _ = std::fs::remove_file(&backup_path);
+        let _ = std::fs::remove_file(&db_path);
+        let _ = std::fs::remove_file(db_path.with_extension("db-wal"));
+        let _ = std::fs::remove_file(db_path.with_extension("db-shm"));
+    }
+
+    #[test]
+    fn backup_rejects_missing_source_without_creating_it() {
+        let path = std::env::temp_dir().join(format!(
+            "polaris-core-missing-source-{}.db",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_file(&path);
+
+        let error = open_existing_database(&path).unwrap_err().to_string();
+
+        assert!(error.contains("database does not exist"));
+        assert!(!path.exists(), "missing backup source must not be created");
+    }
+
+    #[test]
+    fn backup_rejects_existing_output_without_overwriting() {
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let db_path = std::env::temp_dir().join(format!("polaris-core-existing-src-{suffix}.db"));
+        let backup_path =
+            std::env::temp_dir().join(format!("polaris-core-existing-output-{suffix}.db"));
+        let _ = std::fs::remove_file(&db_path);
+        let _ = std::fs::remove_file(&backup_path);
+        std::fs::write(&backup_path, b"keep me").unwrap();
+        let conn = polaris_core::db::open_database(&db_path).unwrap();
+
+        let error = backup_database(&conn, &backup_path)
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("backup output already exists"));
+        assert_eq!(std::fs::read(&backup_path).unwrap(), b"keep me");
+
+        drop(conn);
+        let _ = std::fs::remove_file(&backup_path);
+        let _ = std::fs::remove_file(&db_path);
+        let _ = std::fs::remove_file(db_path.with_extension("db-wal"));
+        let _ = std::fs::remove_file(db_path.with_extension("db-shm"));
     }
 
     fn in_memory_engine_with_rust_pack() -> Engine {
