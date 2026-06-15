@@ -1,6 +1,6 @@
 # 票队列（单票制）
 
-状态：**P09A engine.rs 模块化拆分 In Progress**。任何时刻只允许 1 张票 In Progress。
+状态：**P09A engine.rs 模块化拆分已实现并通过验收**。任何时刻只允许 1 张票 In Progress。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 新增票必须标注它服务主命题（验证真懂→定位模糊→针对性补缺）的哪一环。
 
@@ -60,7 +60,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 
 ## Phase 7+ — 产品形态与工程演进
 
-- [ ] **P09A engine.rs 模块化拆分**（`TICKET_P09A_ENGINE_MODULARIZATION.md`）← In Progress；拆 `engine/task_selection.rs`、`engine/submit_pipeline.rs`、`engine/mental_state.rs`，保留 `engine.rs` 薄 facade 与 public API；服务环节：全环节（可演进）
+- [x] **P09A engine.rs 模块化拆分**（`TICKET_P09A_ENGINE_MODULARIZATION.md`）← 已实现并通过验收；拆 `engine/task_selection.rs`、`engine/submit_pipeline.rs`、`engine/mental_state.rs`，保留 `engine.rs` 薄 facade 与 public API；服务环节：全环节（可演进）
 
 
 ## Backlog（票外发现的问题记在这里，不顺手做）
