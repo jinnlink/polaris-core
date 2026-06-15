@@ -2,6 +2,7 @@
 
 状态：**P08B LLM 调用隐私清单 + 纯 Tier 0 模式已实现并通过验收**。任何时刻只允许 1 张票 In Progress。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
+**Phase 7+ 产品形态轴线见 `docs/PRODUCT_ROADMAP.md`**（轴 6 学习者形态 / 轴 7 多 Pack 承载 / 轴 8 工程演进 / 轴 9 信任面板）。
 新增票必须标注它服务主命题（验证真懂→定位模糊→针对性补缺）的哪一环。
 
 ## Phase 1 — Walking Skeleton
@@ -63,7 +64,6 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 - [x] **P09A engine.rs 模块化拆分**（`TICKET_P09A_ENGINE_MODULARIZATION.md`）← 已实现并通过验收；拆 `engine/task_selection.rs`、`engine/submit_pipeline.rs`、`engine/mental_state.rs`，保留 `engine.rs` 薄 facade 与 public API；服务环节：全环节（可演进）
 - [x] **P08B LLM 调用隐私清单 + 纯 Tier 0 模式**（`TICKET_P08B_LLM_PRIVACY_TIER0.md`）← 已实现并通过验收；新增外发调用清单、`polaris privacy show` 与 `POLARIS_TIER0_ONLY=1` 全禁外部模型调用；服务环节：信任前提
 
-
 ## Backlog（票外发现的问题记在这里，不顺手做）
 
 - P03A 审查后续：当前 Q 降级初始化在单 Rust pack 下使用 `q[0]=1.0` 作为 deterministic one-hot track 维；多 pack/多 track 前需补 `latent.dims` 或 pack/track→维度映射，避免所有概念共用同一潜因子。→ 已转正式票 P03M。
@@ -77,3 +77,17 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
   - 镜像报告 Tier 1 叙事润色（strict-citation 引断言原文，降级=现状断言列表）；服务环节：定位模糊。→ 已转正式票 P06D。
   - 数学深化候选（全部带留出验证门）：校准后验化（分层 Beta-Binomial，复用 P03I 数学）→ 已转正式票 P06F；θ AdaGrad 步长 → 已转正式票 P06G；BKT-MIRT 逆方差加权融合、G_u 层级 Beta 超先验、相变马尔可夫动力学；不过门=假设，不进产品行为。
   - FSRS 个人参数拟合（`fsrs.w` C 类登记的预留票，FSRS-optimizer 思路 + 留出对拍门）。
+
+- 产品形态轴线候选（2026-06-15 产品经理审查沉淀；详见 `docs/PRODUCT_ROADMAP.md`，排序与建议执行序见该文 §5）：
+  - **P07A 相图产品化语义层**（S）：8 个相图名加"产品名 + 一句话解读"映射，不改判据；服务环节：验证真懂 → 用户读懂。
+  - **P07B 学习者状态镜子 v1**（M）：复用 atlas 静态站基建扩出学习者实时面板（自信 vs 实际曲线、相分布、近期断言摘要）；服务环节：验证真懂 → 定位模糊。依赖 P07A。
+  - **P07C 报告 top_signal + suggested_action**（S）：镜像报告加"如果你只看一句"顶部提示与每条断言对应的可选行动；服务环节：定位模糊 → 针对性补缺。依赖 P07A。
+  - **P07D 行动闭环（相 → 任务响应策略）**（M）：补 `BatchStrategy::PhantomChallenge` 等相专属调度分支，每条带留出验证门；服务环节：针对性补缺。依赖 P07A、P03F、P03G。
+  - **P07E 学习者反馈通道扩展**（S）：在"标不准"之外加"我现在状态是 / 我想暂停"等语义化触点；服务环节：验证真懂。依赖 P07B。
+  - **P08A 多 Pack 切换 + 数据隔离开关**（M）：`polaris pack switch/list` + 每 pack 是否共享 θ 的开关；服务环节：全环节（通用性）。
+  - **P08B LLM 调用隐私清单 + 纯 Tier 0 模式**（M）→ 已转正式票 P08B：`polaris privacy show` + `POLARIS_TIER0_ONLY=1`；服务环节：信任前提。Tauri/UI 大投入之前的必备。
+  - **P08C Pack 作者上手指南 + 模板 Pack**（S）：30 分钟上手文档 + 5 概念样板 pack；服务环节：生态。依赖 P05A0。
+  - **P09A engine.rs 模块化拆分**（M）→ 已转正式票 P09A：拆 `engine/task_selection.rs`、`engine/submit_pipeline.rs`、`engine/mental_state.rs` + 测试搬到 `tests/`；服务环节：全环节（可演进）。
+  - **P09B polaris config 浏览 CLI + 参数文档自动生成**（S）：`polaris config list [--class A|B|C]` + 自动生成 `docs/PARAMETERS.md`；服务环节：全环节（可治理）。
+  - **P09C polaris doctor --diagnose 全面诊断**（S）：最近 7 天 tuning/breeding/mental_fit/gu/consolidation/report 摘要；服务环节：全环节（运维）。依赖 P06B。
+  - **P10A 五框架门状态面板 + 实验透明度**（M）：`polaris trust show` 暴露 F1-F5 门状态、当前 breeding/MRT 活跃实验；同时把 `breeding.min_n` 默认从 6 提到 20；服务环节：验证真懂（验证门可见）。依赖 P03I、P05B、P04C。
