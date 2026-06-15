@@ -1,6 +1,6 @@
 # 票队列（单票制）
 
-状态：**P06G theta AdaGrad 步长已实现并通过验收**。任何时刻只允许 1 张票 In Progress。
+状态：**P09A engine.rs 模块化拆分 In Progress**。任何时刻只允许 1 张票 In Progress。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 新增票必须标注它服务主命题（验证真懂→定位模糊→针对性补缺）的哪一环。
 
@@ -57,6 +57,11 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 - [x] **P06E 性能预算回归**（`TICKET_P06E_PERFORMANCE_BUDGET_REGRESSION.md`）← 已实现并通过验收；把 DATA_MODEL §11 的 Tier 0 热路径预算做成可重复回归门；服务环节：全环节（Tier 0 预算铁律）
 - [x] **P06F 校准后验化**（`TICKET_P06F_CALIBRATION_POSTERIOR.md`）← 已实现并通过验收；把幻影相判据从纯 EWMA 硬阈值升级为 Beta-Binomial 后验概率门，并让镜像报告复用同一校准摘要；服务环节：验证真懂 → 定位模糊
 - [x] **P06G theta AdaGrad 步长**（`TICKET_P06G_THETA_ADAGRAD.md`）← 已实现并通过验收；把 MIRT θ 在线更新从固定步长改为每维 AdaGrad 自适应步长，仍保留 step cap 与在线梯度语义；服务环节：验证真懂 → 定位模糊
+
+## Phase 7+ — 产品形态与工程演进
+
+- [ ] **P09A engine.rs 模块化拆分**（`TICKET_P09A_ENGINE_MODULARIZATION.md`）← In Progress；拆 `engine/task_selection.rs`、`engine/submit_pipeline.rs`、`engine/mental_state.rs`，保留 `engine.rs` 薄 facade 与 public API；服务环节：全环节（可演进）
+
 
 ## Backlog（票外发现的问题记在这里，不顺手做）
 
