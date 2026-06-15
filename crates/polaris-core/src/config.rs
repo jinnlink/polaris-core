@@ -108,6 +108,13 @@ pub fn default_registry() -> BTreeMap<&'static str, ParameterSpec> {
             TuningRoute::Replay,
         ),
         spec(
+            "calib.phantom_confidence",
+            "0.60",
+            ParameterClass::A,
+            Some("[0.50,0.95]"),
+            TuningRoute::Manual,
+        ),
+        spec(
             "sched.w_r",
             "0.40",
             ParameterClass::B,
@@ -836,6 +843,13 @@ mod tests {
             .expect("report.confidence_floor");
         assert_eq!(confidence_floor.default_value, "0.6");
         assert_eq!(confidence_floor.class, ParameterClass::A);
+
+        let phantom_confidence = registry
+            .get("calib.phantom_confidence")
+            .expect("calib.phantom_confidence");
+        assert_eq!(phantom_confidence.default_value, "0.60");
+        assert_eq!(phantom_confidence.class, ParameterClass::A);
+        assert_eq!(phantom_confidence.tuning_route, TuningRoute::Manual);
 
         for key in [
             "report.window_days",

@@ -74,6 +74,9 @@ fn determine_phase_uses_configured_phantom_thresholds() {
     input.p_known = 0.55;
     input.calib_gap = 0.30;
     input.attempt_count = 2;
+    input.calibration_sample_count = 3;
+    input.calibration_overestimates = 3;
+    input.calibration_probability_over_half = 0.875;
 
     let mut params = phase_params();
     params.phantom_n = 3;
@@ -81,6 +84,25 @@ fn determine_phase_uses_configured_phantom_thresholds() {
     assert_eq!(determine_phase(&input, &params), Phase::Undetermined);
     input.attempt_count = 3;
     assert_eq!(determine_phase(&input, &params), Phase::Phantom);
+}
+
+#[test]
+fn phantom_requires_posterior_overestimate_gate() {
+    let mut input = base_phase_input();
+    input.p_known = 0.55;
+    input.calib_gap = 0.30;
+    input.attempt_count = 4;
+    input.calibration_sample_count = 4;
+    input.calibration_overestimates = 2;
+    input.calibration_probability_over_half = 0.50;
+    assert_eq!(
+        determine_phase(&input, &phase_params()),
+        Phase::Undetermined
+    );
+
+    input.calibration_overestimates = 4;
+    input.calibration_probability_over_half = 0.9375;
+    assert_eq!(determine_phase(&input, &phase_params()), Phase::Phantom);
 }
 
 #[test]
@@ -264,6 +286,51 @@ fn engine_uses_meta_phantom_thresholds() {
 
     let third = submit_high_confidence(&mut engine);
     engine.apply_final_score(&third.attempt_id, 0.20).unwrap();
+    assert_eq!(engine.concept_phase("ownership").unwrap(), Phase::Phantom);
+}
+
+#[test]
+fn engine_uses_posterior_gate_for_phantom() {
+    let conn = Connection::open_in_memory().unwrap();
+    migrate(&conn).unwrap();
+    conn.execute(
+        "UPDATE meta SET value='0.80' WHERE key='calib.phantom_confidence'",
+        [],
+    )
+    .unwrap();
+    let mut engine = Engine::new(conn);
+    engine.init_pack(workspace_pack_path("packs/rust")).unwrap();
+
+    let first = submit_high_confidence(&mut engine);
+    set_attempt_time(&engine, &first.attempt_id, 1);
+    engine.apply_final_score(&first.attempt_id, 0.20).unwrap();
+    let second = submit_high_confidence(&mut engine);
+    set_attempt_time(&engine, &second.attempt_id, 2);
+    engine.apply_final_score(&second.attempt_id, 0.20).unwrap();
+    let third = engine
+        .submit(SubmitInput {
+            session_id: "phase-test".to_owned(),
+            concept_id: "ownership".to_owned(),
+            task_type: "recall".to_owned(),
+            prompt_text: "Explain ownership.".to_owned(),
+            response_text: "Ownership controls drops.".to_owned(),
+            self_confidence: 1,
+            latency_ms: 1200,
+            hint_count: 0,
+        })
+        .unwrap();
+    set_attempt_time(&engine, &third.attempt_id, 3);
+    engine.apply_final_score(&third.attempt_id, 0.90).unwrap();
+
+    assert_eq!(
+        engine.concept_phase("ownership").unwrap(),
+        Phase::Undetermined
+    );
+
+    let fourth = submit_high_confidence(&mut engine);
+    set_attempt_time(&engine, &fourth.attempt_id, 4);
+    engine.apply_final_score(&fourth.attempt_id, 0.20).unwrap();
+
     assert_eq!(engine.concept_phase("ownership").unwrap(), Phase::Phantom);
 }
 
@@ -499,6 +566,9 @@ fn base_phase_input() -> PhaseInput {
         transfer_fail_count: 0,
         novel_context_success: 0,
         novel_context_fail: 0,
+        calibration_overestimates: 2,
+        calibration_sample_count: 2,
+        calibration_probability_over_half: 0.75,
         median_latency_ratio: None,
     }
 }
@@ -550,6 +620,9 @@ fn arbitrary_phase_input() -> impl proptest::strategy::Strategy<Value = PhaseInp
                 transfer_fail_count,
                 novel_context_success: 0,
                 novel_context_fail,
+                calibration_overestimates: attempt_count as usize,
+                calibration_sample_count: attempt_count as usize,
+                calibration_probability_over_half: 0.99,
                 median_latency_ratio,
             },
         )
@@ -646,6 +719,16 @@ fn insert_novel_attempt(engine: &Engine, attempt_id: &str, score: f64, sequence:
         .unwrap();
 }
 
+fn set_attempt_time(engine: &Engine, attempt_id: &str, sequence: u32) {
+    engine
+        .conn()
+        .execute(
+            "UPDATE attempts SET created_at=?2 WHERE id=?1",
+            rusqlite::params![attempt_id, timestamp(sequence)],
+        )
+        .unwrap();
+}
+
 fn timestamp(sequence: u32) -> String {
     format!("2026-01-01T00:{sequence:02}:00Z")
 }
@@ -655,6 +738,7 @@ fn phase_params() -> PhaseParams {
         phantom_gap: 0.25,
         phantom_p: 0.60,
         phantom_n: 2,
+        phantom_confidence: 0.60,
     }
 }
 

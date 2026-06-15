@@ -9,6 +9,7 @@ use crate::breeding::{
     admitted_bred_moves, evaluate_bred_moves, preregister_bred_move, record_bred_move_outcome,
     BredMove, BredMoveInput, BreedingEvaluationSummary,
 };
+use crate::calibration::{calibration_samples, posterior_from_samples};
 use crate::config::meta_f64;
 use crate::consolidation::{run_nightly_consolidation, ConsolidationSummary};
 use crate::diagnosis::{diagnose_concept, GraphDiagnosis};
@@ -1461,6 +1462,8 @@ impl Engine {
             self.context_counts(concept_id, cut_hi)?;
         let (relevant_task_attempt_count, median_latency_ratio) =
             self.relevant_task_latency_ratio(concept_id)?;
+        let calibration_posterior =
+            posterior_from_samples(&calibration_samples(&self.conn, concept_id, 12)?);
 
         Ok(PhaseInput {
             p_known: state.p_known,
@@ -1478,6 +1481,9 @@ impl Engine {
             transfer_fail_count: transfer_fail_count.max(0) as u32,
             novel_context_success,
             novel_context_fail,
+            calibration_overestimates: calibration_posterior.overestimates,
+            calibration_sample_count: calibration_posterior.total,
+            calibration_probability_over_half: calibration_posterior.probability_over_half,
             median_latency_ratio,
         })
     }

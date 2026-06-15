@@ -34,6 +34,10 @@ fn calibration_phantom_assertion_carries_attempt_evidence_and_confidence() {
         .expect("phantom assertion present");
     assert!(assertion.confidence >= 0.6, "got {}", assertion.confidence);
     assert_eq!(assertion.evidence_ids.len(), 4);
+    assert_eq!(
+        assertion.stats["probability_over_half"].as_f64().unwrap(),
+        assertion.confidence
+    );
     for evidence in &assertion.evidence_ids {
         let attempt_id = evidence.strip_prefix("attempt:").expect("attempt prefix");
         let exists: i64 = engine

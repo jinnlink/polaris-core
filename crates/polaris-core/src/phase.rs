@@ -137,6 +137,9 @@ pub struct PhaseInput {
     pub transfer_fail_count: u32,
     pub novel_context_success: u32,
     pub novel_context_fail: u32,
+    pub calibration_overestimates: usize,
+    pub calibration_sample_count: usize,
+    pub calibration_probability_over_half: f64,
     pub median_latency_ratio: Option<f64>,
 }
 
@@ -145,6 +148,7 @@ pub struct PhaseParams {
     pub phantom_gap: f64,
     pub phantom_p: f64,
     pub phantom_n: u32,
+    pub phantom_confidence: f64,
 }
 
 impl PhaseParams {
@@ -153,6 +157,7 @@ impl PhaseParams {
             phantom_gap: meta_f64(conn, "calib.phantom_gap")?,
             phantom_p: meta_f64(conn, "calib.phantom_p")?,
             phantom_n: meta_i64(conn, "calib.phantom_n")?.max(0) as u32,
+            phantom_confidence: meta_f64(conn, "calib.phantom_confidence")?,
         })
     }
 }
@@ -170,6 +175,8 @@ pub fn determine_phase(input: &PhaseInput, params: &PhaseParams) -> Phase {
     if input.attempt_count >= params.phantom_n
         && input.calib_gap >= params.phantom_gap
         && input.p_known < params.phantom_p
+        && input.calibration_sample_count >= params.phantom_n as usize
+        && input.calibration_probability_over_half >= params.phantom_confidence
     {
         return Phase::Phantom;
     }

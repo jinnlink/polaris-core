@@ -2,9 +2,9 @@ use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde_json::json;
 use uuid::Uuid;
 
+use crate::calibration::prob_beta_greater;
 use crate::config::{meta_f64, meta_i64};
 use crate::error::{PolarisError, Result};
-use crate::report::prob_beta_greater;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BredMoveStatus {
