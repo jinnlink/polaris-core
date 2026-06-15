@@ -37,6 +37,8 @@ pub struct ReportItem {
     pub confidence: f64,
     pub evidence_ids: Vec<String>,
     pub stats: serde_json::Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suggested_action: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -71,6 +73,8 @@ pub struct MirrorReport {
     pub assertions: Vec<ReportItem>,
     pub hypotheses: Vec<ReportItem>,
     pub suggestions: Vec<ReportItem>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top_signal: Option<ReportItem>,
     pub skipped: Vec<SkippedCandidate>,
     pub hazard_gate: HazardGateStatus,
     pub reflection_prompts: Vec<String>,
@@ -178,6 +182,7 @@ fn run_mirror_report_inner(
     sort_items(&mut assertions);
     sort_items(&mut hypotheses);
     sort_items(&mut suggestions);
+    let top_signal = select_top_signal(&assertions, &hypotheses, &suggestions);
     skipped.sort_by(|left, right| left.id.cmp(&right.id));
 
     let generated_at = now_iso(conn)?;
@@ -190,6 +195,7 @@ fn run_mirror_report_inner(
         assertions,
         hypotheses,
         suggestions,
+        top_signal,
         skipped,
         hazard_gate,
         reflection_prompts: REFLECTION_PROMPTS
@@ -522,6 +528,63 @@ fn sort_items(items: &mut [ReportItem]) {
     items.sort_by(|left, right| left.id.cmp(&right.id));
 }
 
+fn select_top_signal(
+    assertions: &[ReportItem],
+    hypotheses: &[ReportItem],
+    suggestions: &[ReportItem],
+) -> Option<ReportItem> {
+    let mut candidates = assertions
+        .iter()
+        .chain(suggestions.iter())
+        .chain(hypotheses.iter())
+        .filter(|item| item.kind != "param_suggestion")
+        .collect::<Vec<_>>();
+    candidates.sort_by(|left, right| {
+        top_signal_score(right)
+            .partial_cmp(&top_signal_score(left))
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| left.kind.cmp(&right.kind))
+            .then_with(|| left.id.cmp(&right.id))
+    });
+    candidates.first().map(|item| (*item).clone())
+}
+
+fn top_signal_score(item: &ReportItem) -> f64 {
+    let confidence = if item.confidence.is_finite() {
+        item.confidence
+    } else {
+        0.0
+    };
+    confidence * top_signal_kind_weight(&item.kind)
+}
+
+fn top_signal_kind_weight(kind: &str) -> f64 {
+    match kind {
+        "calibration_phantom" => 1.30,
+        "gu_pattern" => 1.20,
+        "abandon_time_contrast" => 1.10,
+        "hazard_risk_summary" => 1.05,
+        "hint_abandon_conditional" => 1.00,
+        "consolidation_hypothesis" => 0.60,
+        _ => 0.0,
+    }
+}
+
+fn suggested_action_for_kind(kind: &str) -> Option<&'static str> {
+    match kind {
+        "calibration_phantom" => Some("可以为该概念挑一道更高深度的验证题（迁移 / 自由解释）。"),
+        "hint_abandon_conditional" => {
+            Some("下次连续求提示时，不妨先停下复述你对边界的理解，再看提示。")
+        }
+        "abandon_time_contrast" => Some("考虑避开高放弃率时段，或把该时段改为纯复习任务。"),
+        "gu_pattern" => Some("针对该错误模式做一道反例 / 边界题，看能否独立识别。"),
+        "consolidation_hypothesis" => Some("这是引擎提出的待验证假设，暂当参考、不必当结论。"),
+        "param_suggestion" => Some("给开发者的参数复核建议，不影响你的今天。"),
+        "hazard_risk_summary" => Some("今天可以适当降低任务强度，或把高摩擦任务往后挪。"),
+        _ => None,
+    }
+}
+
 fn now_iso(conn: &Connection) -> Result<String> {
     conn.query_row("SELECT strftime('%Y-%m-%dT%H:%M:%SZ','now')", [], |row| {
         row.get(0)
@@ -601,6 +664,7 @@ fn calibration_phantom_candidates(conn: &Connection) -> Result<Vec<Candidate>> {
                     "beta": posterior.beta,
                     "probability_over_half": posterior.probability_over_half,
                 }),
+                suggested_action: suggested_action_for_kind("calibration_phantom").map(str::to_owned),
             },
             sample_n: n,
         });
@@ -721,6 +785,8 @@ fn hint_abandon_candidate(conn: &Connection, window_days: i64) -> Result<Vec<Can
                 "base_success": base_success,
                 "base_n": base_n,
             }),
+            suggested_action: suggested_action_for_kind("hint_abandon_conditional")
+                .map(str::to_owned),
         },
         sample_n: cond_n,
     }])
@@ -827,6 +893,7 @@ fn abandon_time_contrast_candidate(
                 "lo_abandons": abandon_counts[lo],
                 "lo_activity": activity[lo],
             }),
+            suggested_action: suggested_action_for_kind("abandon_time_contrast").map(str::to_owned),
         },
         sample_n: abandon_counts[hi] + abandon_counts[lo],
     }])
@@ -890,6 +957,7 @@ fn gu_pattern_candidates(conn: &Connection) -> Result<Vec<Candidate>> {
                     "alpha": alpha,
                     "beta": beta,
                 }),
+                suggested_action: suggested_action_for_kind("gu_pattern").map(str::to_owned),
             },
         });
     }
@@ -941,6 +1009,8 @@ fn consolidation_hypotheses(conn: &Connection) -> Result<Vec<Candidate>> {
                 confidence: 0.5,
                 evidence_ids: vec![format!("consolidation:{run_id}")],
                 stats: proposal.clone(),
+                suggested_action: suggested_action_for_kind("consolidation_hypothesis")
+                    .map(str::to_owned),
             },
         });
     }
@@ -1005,6 +1075,7 @@ fn param_suggestions(conn: &Connection) -> Result<Vec<Candidate>> {
                 "n": n,
                 "aligned": aligned,
             }),
+            suggested_action: suggested_action_for_kind("param_suggestion").map(str::to_owned),
         },
     }])
 }
@@ -1078,6 +1149,7 @@ fn hazard_risk_candidate(
                 "n": n,
                 "validation_auc": validation_auc,
             }),
+            suggested_action: suggested_action_for_kind("hazard_risk_summary").map(str::to_owned),
         },
     }])
 }

@@ -15,6 +15,7 @@ fn empty_database_produces_report_with_no_unevidenced_items() {
     assert!(!report.hazard_gate.participates);
     assert_eq!(report.hazard_gate.reason, "no_mental_state_data");
     assert_eq!(report.reflection_prompts.len(), 3);
+    assert!(report.top_signal.is_none());
 
     let stored: i64 = engine
         .conn()
@@ -51,6 +52,14 @@ fn calibration_phantom_assertion_carries_attempt_evidence_and_confidence() {
         assert_eq!(exists, 1, "evidence {evidence} must resolve");
     }
     assert!(assertion.claim.contains("幻影"));
+    assert_eq!(
+        assertion.suggested_action.as_deref(),
+        Some("可以为该概念挑一道更高深度的验证题（迁移 / 自由解释）。")
+    );
+    assert_eq!(
+        report.top_signal.as_ref().map(|item| item.id.as_str()),
+        Some("calibration_phantom:ownership")
+    );
 }
 
 #[test]
@@ -308,6 +317,14 @@ fn param_suggestion_fires_without_mutating_meta() {
         .expect("suggestion present");
     assert!(suggestion.claim.contains("仅建议"));
     assert!(!suggestion.evidence_ids.is_empty());
+    assert_eq!(
+        suggestion.suggested_action.as_deref(),
+        Some("给开发者的参数复核建议，不影响你的今天。")
+    );
+    assert!(
+        report.top_signal.is_none(),
+        "param_suggestion should not become the learner-facing top signal"
+    );
 
     let base: String = engine
         .conn()
@@ -327,6 +344,69 @@ fn param_suggestion_fires_without_mutating_meta() {
         .unwrap();
     assert_eq!(base, "0.10");
     assert_eq!(slope, "0.80");
+}
+
+#[test]
+fn calibration_phantom_beats_param_suggestion_for_top_signal() {
+    let engine = seeded_engine();
+    seed_phantom_concept(&engine, "ownership", 4);
+    for idx in 0..12 {
+        engine
+            .conn()
+            .execute(
+                "INSERT INTO attempts(id, session_id, concept_id, task_type, provisional_score,
+                                      final_score, created_at, graded_at)
+                 VALUES (?1, 's1', 'borrowing', 'recall', 0.9, 0.5,
+                         strftime('%Y-%m-%dT%H:%M:%SZ','now','-1 day'),
+                         strftime('%Y-%m-%dT%H:%M:%SZ','now','-1 day'))",
+                [format!("biased-with-phantom-{idx}")],
+            )
+            .unwrap();
+    }
+
+    let report = engine.run_mirror_report().unwrap();
+
+    assert!(find_item(&report.suggestions, "param_suggestion:grade.provisional").is_some());
+    assert_eq!(
+        report.top_signal.as_ref().map(|item| item.id.as_str()),
+        Some("calibration_phantom:ownership")
+    );
+}
+
+#[test]
+fn legacy_report_json_without_p07c_fields_deserializes() {
+    let json = r#"{
+        "schema_version": 1,
+        "id": "legacy-report",
+        "week": "2026-W24",
+        "generated_at": "2026-06-15T00:00:00Z",
+        "window_days": 7,
+        "assertions": [{
+            "id": "legacy-item",
+            "kind": "calibration_phantom",
+            "subject": "ownership",
+            "claim": "legacy claim",
+            "confidence": 0.8,
+            "evidence_ids": [],
+            "stats": {}
+        }],
+        "hypotheses": [],
+        "suggestions": [],
+        "skipped": [],
+        "hazard_gate": {
+            "participates": false,
+            "reason": "legacy",
+            "validation_auc": null,
+            "auc_gate": 0.7
+        },
+        "reflection_prompts": [],
+        "narrative": null
+    }"#;
+
+    let report: MirrorReport = serde_json::from_str(json).unwrap();
+
+    assert!(report.top_signal.is_none());
+    assert!(report.assertions[0].suggested_action.is_none());
 }
 
 #[test]

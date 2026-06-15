@@ -830,22 +830,34 @@ fn print_diagnosis(diagnosis: polaris_core::diagnosis::GraphDiagnosis) {
 }
 
 fn print_mirror_report(report: &polaris_core::report::MirrorReport) {
-    println!("镜像报告 {} （周 {}）", report.id, report.week);
-    println!(
-        "窗口={}天 断言={} 假设={} 建议={} 被过滤={}",
+    print!("{}", mirror_report_text(report));
+}
+
+fn mirror_report_text(report: &polaris_core::report::MirrorReport) -> String {
+    let mut text = String::new();
+    text.push_str(&format!("镜像报告 {} （周 {}）\n", report.id, report.week));
+    text.push_str(&format!(
+        "窗口={}天 断言={} 假设={} 建议={} 被过滤={}\n",
         report.window_days,
         report.assertions.len(),
         report.hypotheses.len(),
         report.suggestions.len(),
         report.skipped.len()
-    );
-    println!(
-        "hazard 门：participates={} reason={}",
+    ));
+    text.push_str(&format!(
+        "hazard 门：participates={} reason={}\n",
         report.hazard_gate.participates, report.hazard_gate.reason
-    );
+    ));
+    if let Some(top_signal) = &report.top_signal {
+        text.push_str(&format!("top_signal: {}\n", top_signal.claim));
+        text.push_str(&format!(
+            "top_action: {}\n\n",
+            top_signal.suggested_action.as_deref().unwrap_or("-")
+        ));
+    }
     if let Some(narrative) = &report.narrative {
-        println!("--- Tier 1 叙事 ---");
-        println!("{}", narrative.text);
+        text.push_str("--- Tier 1 叙事 ---\n");
+        text.push_str(&format!("{}\n", narrative.text));
         if !narrative.citations.is_empty() {
             let cited = narrative
                 .citations
@@ -853,7 +865,7 @@ fn print_mirror_report(report: &polaris_core::report::MirrorReport) {
                 .map(|citation| citation.evidence_id.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
-            println!("引用断言：{cited}");
+            text.push_str(&format!("引用断言：{cited}\n"));
         }
     }
     for section in [
@@ -865,27 +877,28 @@ fn print_mirror_report(report: &polaris_core::report::MirrorReport) {
         if items.is_empty() {
             continue;
         }
-        println!("--- {label} ---");
+        text.push_str(&format!("--- {label} ---\n"));
         for item in items.iter() {
-            println!(
-                "[{}] 置信度={:.0}% 证据={}条",
+            text.push_str(&format!(
+                "[{}] 置信度={:.0}% 证据={}条\n",
                 item.id,
                 item.confidence * 100.0,
                 item.evidence_ids.len()
-            );
-            println!("  {}", item.claim);
+            ));
+            text.push_str(&format!("  {}\n", item.claim));
         }
     }
     if !report.skipped.is_empty() {
-        println!("--- 被过滤候选 ---");
+        text.push_str("--- 被过滤候选 ---\n");
         for skip in &report.skipped {
-            println!("[{}] reason={}", skip.id, skip.reason);
+            text.push_str(&format!("[{}] reason={}\n", skip.id, skip.reason));
         }
     }
-    println!("--- 三问反思 ---");
+    text.push_str("--- 三问反思 ---\n");
     for prompt in &report.reflection_prompts {
-        println!("· {prompt}");
+        text.push_str(&format!("· {prompt}\n"));
     }
+    text
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1108,6 +1121,49 @@ mod tests {
 
         assert!(markdown.starts_with("# Polaris Parameter Registry\n\n"));
         assert!(markdown.contains("| `bkt.p_init` | `0.20` | B | `[0.05,0.50]` | Replay |"));
+    }
+
+    #[test]
+    fn mirror_report_text_surfaces_top_signal_before_sections() {
+        let item = polaris_core::report::ReportItem {
+            id: "calibration_phantom:ownership".to_owned(),
+            kind: "calibration_phantom".to_owned(),
+            subject: "ownership".to_owned(),
+            claim: "你的自信持续高于实际表现。".to_owned(),
+            confidence: 0.8,
+            evidence_ids: vec!["attempt:a1".to_owned()],
+            stats: serde_json::json!({}),
+            suggested_action: Some(
+                "可以为该概念挑一道更高深度的验证题（迁移 / 自由解释）。".to_owned(),
+            ),
+        };
+        let report = polaris_core::report::MirrorReport {
+            schema_version: 1,
+            id: "report-1".to_owned(),
+            week: "2026-W24".to_owned(),
+            generated_at: "2026-06-15T00:00:00Z".to_owned(),
+            window_days: 7,
+            assertions: vec![item.clone()],
+            hypotheses: Vec::new(),
+            suggestions: Vec::new(),
+            skipped: Vec::new(),
+            hazard_gate: polaris_core::report::HazardGateStatus {
+                participates: false,
+                reason: "fixture".to_owned(),
+                validation_auc: None,
+                auc_gate: 0.7,
+            },
+            reflection_prompts: Vec::new(),
+            top_signal: Some(item),
+            narrative: None,
+        };
+
+        let text = mirror_report_text(&report);
+
+        assert!(text.contains("top_signal: 你的自信持续高于实际表现。\n"));
+        assert!(text.contains(
+            "top_action: 可以为该概念挑一道更高深度的验证题（迁移 / 自由解释）。\n\n--- 断言 ---"
+        ));
     }
 
     #[test]
