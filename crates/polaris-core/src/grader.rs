@@ -6,6 +6,7 @@ use crate::config::{default_registry, meta_f64, ParameterSpec};
 use crate::error::{PolarisError, Result};
 use crate::fsrs::{FsrsParams, Rating};
 use crate::gu::active_gu_prompt_for_concept;
+use crate::privacy::tier0_only_enabled;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LlmConfig {
@@ -19,6 +20,9 @@ pub enum LlmConfig {
 
 impl LlmConfig {
     pub fn from_env() -> Self {
+        if tier0_only_enabled() {
+            return Self::Unavailable;
+        }
         read_env_config("POLARIS_LLM_FAST")
             .or_else(|| read_env_config("POLARIS_LLM_STRONG"))
             .unwrap_or(Self::Unavailable)

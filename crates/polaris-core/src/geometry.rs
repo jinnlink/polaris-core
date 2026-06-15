@@ -11,6 +11,7 @@ use crate::graph::{
     structural_mapping_score, upsert_maps_to_candidate, StructuralMapping, CONCEPT_KIND_SCHEMA,
 };
 use crate::mirt::{decode_vector, encode_vector};
+use crate::privacy::tier0_only_enabled;
 
 const MIN_COMMON_WEEKS: usize = 4;
 
@@ -226,6 +227,9 @@ struct OpenAiEmbeddingItem {
 
 impl OpenAiEmbeddingProvider {
     fn from_env() -> Option<Self> {
+        if tier0_only_enabled() {
+            return None;
+        }
         let base_url = required_env("POLARIS_EMBED_BASE_URL")?;
         let model = required_env("POLARIS_EMBED_MODEL")?;
         let api_key = required_env("POLARIS_EMBED_API_KEY")?;
@@ -239,7 +243,8 @@ impl OpenAiEmbeddingProvider {
 }
 
 fn embedding_env_available() -> bool {
-    required_env("POLARIS_EMBED_BASE_URL").is_some()
+    !tier0_only_enabled()
+        && required_env("POLARIS_EMBED_BASE_URL").is_some()
         && required_env("POLARIS_EMBED_MODEL").is_some()
         && required_env("POLARIS_EMBED_API_KEY").is_some()
 }

@@ -22,6 +22,7 @@ pub mod ops;
 pub mod pack;
 pub mod pedagogy;
 pub mod phase;
+pub mod privacy;
 pub mod report;
 pub mod scheduler;
 pub mod simulation;

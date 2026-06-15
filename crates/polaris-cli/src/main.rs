@@ -6,6 +6,7 @@ use polaris_core::db::{open_database, open_database_read_only};
 use polaris_core::engine::{Engine, SubmitInput};
 use polaris_core::ops::{doctor_report, DoctorReport};
 use polaris_core::pack::validate_pack_path;
+use polaris_core::privacy::PrivacyCallInventory;
 use polaris_core::status::StatusSnapshot;
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use serde_json::Value;
@@ -110,11 +111,23 @@ enum Commands {
         #[command(subcommand)]
         command: PackCommands,
     },
+    Privacy {
+        #[command(subcommand)]
+        command: PrivacyCommands,
+    },
 }
 
 #[derive(Debug, Subcommand)]
 enum PackCommands {
     Validate { path: PathBuf },
+}
+
+#[derive(Debug, Subcommand)]
+enum PrivacyCommands {
+    Show {
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -132,6 +145,16 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 "pack ok: concepts={} prerequisites={} misconceptions={}",
                 report.concept_count, report.prerequisite_count, report.misconception_count
             );
+        }
+        Commands::Privacy {
+            command: PrivacyCommands::Show { json },
+        } => {
+            let inventory = PrivacyCallInventory::all();
+            if json {
+                println!("{}", serde_json::to_string_pretty(&inventory)?);
+            } else {
+                print!("{}", privacy_show_text(&inventory, inventory.tier0_only));
+            }
         }
         Commands::Diagnose { concept } => {
             let conn = open_database_read_only(cli.db.unwrap_or_else(default_db_path))?;
@@ -320,6 +343,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 Commands::Backup { .. } => unreachable!("handled before writable database open"),
                 Commands::Doctor { .. } => unreachable!("handled before writable database open"),
                 Commands::Pack { .. } => unreachable!("handled before database open"),
+                Commands::Privacy { .. } => unreachable!("handled before database open"),
             }
         }
     }
@@ -632,6 +656,28 @@ fn doctor_report_text(report: &DoctorReport) -> String {
     text
 }
 
+fn privacy_show_text(inventory: &PrivacyCallInventory, tier0_only: bool) -> String {
+    let mut text = String::new();
+    text.push_str(&format!(
+        "Tier 0 only 模式：{}\n",
+        if tier0_only { "启用" } else { "未启用" }
+    ));
+    text.push_str("设置 POLARIS_TIER0_ONLY=1 可全禁外部模型调用。\n");
+    for call in &inventory.calls {
+        text.push_str(&format!("\n{}\n", call.id));
+        text.push_str(&format!("tier: {}\n", call.tier));
+        text.push_str(&format!("trigger: {}\n", call.trigger));
+        text.push_str(&format!("env: {}\n", call.env_keys.join(", ")));
+        text.push_str(&format!("data_sent: {}\n", call.data_sent.join("; ")));
+        text.push_str(&format!("degradation: {}\n", call.degradation));
+        text.push_str(&format!(
+            "disabled_when_tier0_only: {}\n",
+            call.disabled_when_tier0_only
+        ));
+    }
+    text
+}
+
 fn status_snapshot_json(snapshot: &StatusSnapshot) -> serde_json::Result<String> {
     serde_json::to_string_pretty(snapshot)
 }
@@ -873,6 +919,8 @@ mod tests {
             vec!["polaris", "diagnose", "--concept", "ownership"],
             vec!["polaris", "mcp"],
             vec!["polaris", "pack", "validate", "packs/rust"],
+            vec!["polaris", "privacy", "show"],
+            vec!["polaris", "privacy", "show", "--json"],
         ] {
             Cli::try_parse_from(args).unwrap();
         }
@@ -883,6 +931,34 @@ mod tests {
         let cli = Cli::try_parse_from(vec!["polaris", "report", "--narrative"]).unwrap();
 
         assert!(matches!(cli.command, Commands::Report { narrative: true }));
+    }
+
+    #[test]
+    fn privacy_show_parses_and_reports_tier0_state() {
+        let cli = Cli::try_parse_from(vec!["polaris", "privacy", "show"]).unwrap();
+
+        assert!(matches!(
+            cli.command,
+            Commands::Privacy {
+                command: PrivacyCommands::Show { json: false }
+            }
+        ));
+
+        let text = privacy_show_text(&polaris_core::privacy::PrivacyCallInventory::all(), true);
+        assert!(text.contains("Tier 0 only 模式：启用"));
+        assert!(text.contains("POLARIS_TIER0_ONLY=1"));
+    }
+
+    #[test]
+    fn privacy_show_json_flag_parses() {
+        let cli = Cli::try_parse_from(vec!["polaris", "privacy", "show", "--json"]).unwrap();
+
+        assert!(matches!(
+            cli.command,
+            Commands::Privacy {
+                command: PrivacyCommands::Show { json: true }
+            }
+        ));
     }
 
     #[test]
