@@ -112,7 +112,7 @@ Brier 用二值结果（≥0.75→1，≤0.40→0，死区跳过）：`brier_ewm
 - **a_c ≡ 1.0（v1 锁死，不拟合）**——n=1 可辨识性优先。
 - 任务难度 d_t（logit，meta 表 `mirt.d.<task_type>`）：`recall −0.30；choose −0.15；cloze 0.00；rewrite +0.15；apply/translate +0.30；transfer/free_produce +0.50`。
 - 软标签 `y = final_score`；预测 `p̂ = σ(q_c·θ − b_c − d_t)`。
-- 在线更新：`θ ← θ + 0.05·(y − p̂)·q_c`，逐元素帽 `|Δθ_k| ≤ 0.05`；每夜收缩 `θ ← θ·(1 − 1e−3)`。
+- 在线更新（P06G 后）：`gradient_k = (y − p̂)·q_ck`；每维累积 `g2_k ← g2_k + gradient_k²`；`Δθ_k = eta·gradient_k / sqrt(g2_k + adagrad_epsilon)`，逐元素帽 `|Δθ_k| ≤ step_cap`；每夜收缩 `θ ← θ·(1 − shrink)`（`g2` 不收缩，保留历史步长记忆）。
 - 每条 graded attempt 记 `attempts.theta_version = theta.version`；theta_history 每夜快照后 version+1。
 - **BKT-MIRT 融合**：`p̂_known = λ·BKT + (1−λ)·σ(q·θ−b)`，`λ = n_c/(n_c + 5)`。
 - Q 初始化：pack 安装时 LLM 按图式先验产出 q0（维度命名表 meta('latent.dims') JSON）；LLM 不可用 → q0 = onehot(track 维)。
@@ -203,7 +203,7 @@ Brier 用二值结果（≥0.75→1，≤0.40→0，死区跳过）：`brier_ewm
 | fsrs.w[0..16] | Polaris 移植值 | C | — | 个人复习史拟合（预留未来票，FSRS optimizer 思路） | 遗忘曲线 |
 | latent.k | 32 | B | [8,64] | 巩固过程实际管理 | 初始维数 |
 | latent.k_max | 64 | A | — | 不调 | 硬帽 |
-| mirt.eta / step_cap / shrink / fuse_n0 | .05/.05/1e−3/5 | B | [.01,.2]/[.01,.1]/—/[2,20] | 重放(P03H，目标=留出 logloss) | θ 更新与融合 |
+| mirt.eta / step_cap / shrink / adagrad_epsilon / fuse_n0 | .05/.05/1e−3/1e−8/5 | B | [.01,.2]/[.01,.1]/—/[1e−12,1e−3]/[2,20] | 重放(P03H，目标=留出 logloss) | θ AdaGrad 更新与融合 |
 | mirt.d.* | §4 表 | B | [−1,+1] | 重放(P03H，小步) | 任务难度 |
 | mirt.a_c | ≡1.0 | A | — | 解锁=未来票+门 | 判别度（v1 结构锁死） |
 | consol.*（窗口/阈值/margin…） | §5 | B | 保守 | 手动（巩固自身已有门） | 巩固超参 |

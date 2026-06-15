@@ -311,6 +311,13 @@ pub fn default_registry() -> BTreeMap<&'static str, ParameterSpec> {
             TuningRoute::Replay,
         ),
         spec(
+            "mirt.adagrad_epsilon",
+            "1e-8",
+            ParameterClass::B,
+            Some("[1e-12,1e-3]"),
+            TuningRoute::Replay,
+        ),
+        spec(
             "mirt.shrink",
             "1e-4",
             ParameterClass::B,
@@ -785,6 +792,7 @@ mod tests {
         for key in [
             "mirt.eta",
             "mirt.step_cap",
+            "mirt.adagrad_epsilon",
             "mirt.shrink",
             "mirt.fuse_n0",
             "mirt.d.recall",

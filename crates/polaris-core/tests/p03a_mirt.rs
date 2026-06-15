@@ -34,6 +34,26 @@ fn init_pack_initializes_q_and_theta() {
 }
 
 #[test]
+fn init_pack_initializes_theta_adagrad_accumulator() {
+    let conn = Connection::open_in_memory().unwrap();
+    migrate(&conn).unwrap();
+    let mut engine = Engine::new(conn);
+    engine.init_pack(workspace_pack_path("packs/rust")).unwrap();
+
+    let (theta_blob, g2_blob): (Vec<u8>, Vec<u8>) = engine
+        .conn()
+        .query_row("SELECT vec, g2 FROM theta WHERE id=1", [], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .unwrap();
+    let theta = decode_vector(&theta_blob).unwrap();
+    let g2 = decode_vector(&g2_blob).unwrap();
+
+    assert_eq!(g2.len(), theta.len());
+    assert!(g2.iter().all(|value| *value == 0.0));
+}
+
+#[test]
 fn final_score_updates_theta_and_attempt_version() {
     let conn = Connection::open_in_memory().unwrap();
     migrate(&conn).unwrap();
@@ -73,6 +93,38 @@ fn final_score_updates_theta_and_attempt_version() {
         )
         .unwrap();
     assert_eq!(theta_version, 1);
+}
+
+#[test]
+fn repeated_theta_updates_use_adagrad_accumulator_to_reduce_step() {
+    let conn = Connection::open_in_memory().unwrap();
+    migrate(&conn).unwrap();
+    let mut engine = Engine::new(conn);
+    engine.init_pack(workspace_pack_path("packs/rust")).unwrap();
+
+    let first_attempt = submit_ownership_attempt(&mut engine);
+    engine.apply_final_score(&first_attempt, 0.90).unwrap();
+    let theta_after_first = theta_vec(engine.conn());
+    let g2_after_first = theta_g2(engine.conn());
+    let first_delta = theta_after_first[0];
+
+    let second_attempt = submit_ownership_attempt(&mut engine);
+    engine.apply_final_score(&second_attempt, 0.90).unwrap();
+    let theta_after_second = theta_vec(engine.conn());
+    let g2_after_second = theta_g2(engine.conn());
+    let second_delta = theta_after_second[0] - theta_after_first[0];
+
+    assert!(
+        first_delta > 0.045,
+        "first AdaGrad step should approach the configured cap, got {first_delta}"
+    );
+    assert!(second_delta > 0.0);
+    assert!(
+        second_delta < first_delta,
+        "g2 accumulation should reduce repeated same-dimension step: first={first_delta}, second={second_delta}"
+    );
+    assert!(g2_after_first[0] > 0.0);
+    assert!(g2_after_second[0] > g2_after_first[0]);
 }
 
 #[test]
@@ -182,6 +234,36 @@ fn assert_prediction_shape(prediction: &LatentPrediction) {
     assert_eq!(prediction.task_type, "recall");
     assert!(prediction.p_hat > 0.0);
     assert!(prediction.p_hat < 1.0);
+}
+
+fn submit_ownership_attempt(engine: &mut Engine) -> String {
+    engine
+        .submit(polaris_core::engine::SubmitInput {
+            session_id: "s1".to_owned(),
+            concept_id: "ownership".to_owned(),
+            task_type: "recall".to_owned(),
+            prompt_text: "Explain ownership.".to_owned(),
+            response_text: "Ownership controls drops.".to_owned(),
+            self_confidence: 4,
+            latency_ms: 1000,
+            hint_count: 0,
+        })
+        .unwrap()
+        .attempt_id
+}
+
+fn theta_vec(conn: &Connection) -> Vec<f64> {
+    let blob: Vec<u8> = conn
+        .query_row("SELECT vec FROM theta WHERE id=1", [], |row| row.get(0))
+        .unwrap();
+    decode_vector(&blob).unwrap()
+}
+
+fn theta_g2(conn: &Connection) -> Vec<f64> {
+    let blob: Vec<u8> = conn
+        .query_row("SELECT g2 FROM theta WHERE id=1", [], |row| row.get(0))
+        .unwrap();
+    decode_vector(&blob).unwrap()
 }
 
 fn workspace_pack_path(path: &str) -> std::path::PathBuf {

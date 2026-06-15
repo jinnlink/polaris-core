@@ -142,6 +142,7 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         CREATE TABLE IF NOT EXISTS theta(
             id INTEGER PRIMARY KEY CHECK(id=1),
             vec BLOB,
+            g2 BLOB,
             version INTEGER,
             updated_at TEXT
         );
@@ -345,6 +346,7 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         "phase",
         "TEXT DEFAULT 'undetermined'",
     )?;
+    ensure_column(conn, "theta", "g2", "BLOB")?;
 
     let registry = default_registry();
     let mut stmt = conn.prepare("INSERT OR IGNORE INTO meta(key, value) VALUES (?1, ?2)")?;
@@ -374,6 +376,8 @@ fn ensure_column(conn: &Connection, table: &str, column: &str, definition: &str)
 #[cfg(test)]
 mod tests {
     use rusqlite::Connection;
+
+    use crate::mirt::{decode_vector, encode_vector, ensure_theta};
 
     use super::*;
 
@@ -435,6 +439,43 @@ mod tests {
             )
             .unwrap();
         assert_eq!(quote_min, "8");
+    }
+
+    #[test]
+    fn migration_backfills_theta_adagrad_column_for_existing_database() {
+        let conn = Connection::open_in_memory().unwrap();
+        let zero = vec![0.0; 32];
+        conn.execute_batch(
+            r#"
+            CREATE TABLE theta(
+                id INTEGER PRIMARY KEY CHECK(id=1),
+                vec BLOB,
+                version INTEGER,
+                updated_at TEXT
+            );
+            "#,
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO theta(id, vec, version, updated_at)
+             VALUES (1, ?1, 1, '2026-01-01T00:00:00Z')",
+            [encode_vector(&zero)],
+        )
+        .unwrap();
+
+        migrate(&conn).unwrap();
+        let g2_before: Option<Vec<u8>> = conn
+            .query_row("SELECT g2 FROM theta WHERE id=1", [], |row| row.get(0))
+            .unwrap();
+        assert!(g2_before.is_none());
+
+        ensure_theta(&conn).unwrap();
+        let g2_blob: Vec<u8> = conn
+            .query_row("SELECT g2 FROM theta WHERE id=1", [], |row| row.get(0))
+            .unwrap();
+        let g2 = decode_vector(&g2_blob).unwrap();
+        assert_eq!(g2.len(), zero.len());
+        assert!(g2.iter().all(|value| *value == 0.0));
     }
 
     #[test]
