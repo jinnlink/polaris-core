@@ -85,6 +85,32 @@ impl Phase {
         }
     }
 
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Undetermined => "还看不清",
+            Self::Phantom => "看起来懂",
+            Self::Fluctuation => "刚上路",
+            Self::Settling => "刚扎根",
+            Self::Solidification => "稳了但僵",
+            Self::Transfer => "能迁移",
+            Self::Generation => "能创造",
+            Self::Regression => "退步了",
+        }
+    }
+
+    pub fn summary(self) -> &'static str {
+        match self {
+            Self::Undetermined => "才试了几次，证据还不够，系统会先补探针任务。",
+            Self::Phantom => "自信高但实际表现不稳，需要用更硬的题确认。",
+            Self::Fluctuation => "表现起伏明显，结果还不结实。",
+            Self::Settling => "原场景中渐稳，新场景还卡。",
+            Self::Solidification => "熟练但迁移受限，需要用变式题松动。",
+            Self::Transfer => "能在新情境使用。",
+            Self::Generation => "能独立产出，且迁移表现更快更稳。",
+            Self::Regression => "之前会但近期又脱档，需要回到证据补缺。",
+        }
+    }
+
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "undetermined" => Some(Self::Undetermined),

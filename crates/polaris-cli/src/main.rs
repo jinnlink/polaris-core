@@ -1001,6 +1001,8 @@ mod tests {
                 p_known: 0.42,
                 calib_gap: 0.31,
                 phase: "phantom".to_owned(),
+                phase_label: "看起来懂".to_owned(),
+                phase_summary: "自信高但实际表现不稳，需要用更硬的题确认。".to_owned(),
             }],
         };
 
@@ -1013,6 +1015,11 @@ mod tests {
         assert_eq!(payload["phase_counts"][0]["count"], 1);
         assert_eq!(payload["concepts"][0]["concept_id"], "ownership");
         assert_eq!(payload["concepts"][0]["phase"], "phantom");
+        assert_eq!(payload["concepts"][0]["phase_label"], "看起来懂");
+        assert_eq!(
+            payload["concepts"][0]["phase_summary"],
+            "自信高但实际表现不稳，需要用更硬的题确认。"
+        );
     }
 
     #[test]
@@ -1028,6 +1035,8 @@ mod tests {
                 p_known: 0.42,
                 calib_gap: 0.31,
                 phase: "phantom".to_owned(),
+                phase_label: "看起来懂".to_owned(),
+                phase_summary: "自信高但实际表现不稳，需要用更硬的题确认。".to_owned(),
             }],
         };
 

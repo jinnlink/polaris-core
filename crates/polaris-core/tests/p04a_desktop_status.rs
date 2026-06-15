@@ -31,6 +31,18 @@ fn status_snapshot_exposes_stable_phase_counts_for_desktop_mirror() {
     assert_eq!(snapshot.concepts[0].concept_id, "ownership");
     assert_eq!(snapshot.concepts[0].phase, Phase::Phantom.as_str());
     assert_eq!(snapshot.concepts[2].phase, Phase::Undetermined.as_str());
+
+    let concepts_json = serde_json::to_value(&snapshot.concepts).unwrap();
+    assert_eq!(concepts_json[0]["phase_label"], "看起来懂");
+    assert_eq!(
+        concepts_json[0]["phase_summary"],
+        "自信高但实际表现不稳，需要用更硬的题确认。"
+    );
+    assert_eq!(concepts_json[2]["phase_label"], "还看不清");
+    assert_eq!(
+        concepts_json[2]["phase_summary"],
+        "才试了几次，证据还不够，系统会先补探针任务。"
+    );
 }
 
 fn seed_concept(conn: &Connection, id: &str, name: &str, seed_order: i64) {

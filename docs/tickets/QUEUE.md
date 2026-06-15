@@ -1,6 +1,6 @@
 # 票队列（单票制）
 
-状态：**P08B LLM 调用隐私清单 + 纯 Tier 0 模式已实现并通过验收**。任何时刻只允许 1 张票 In Progress。
+状态：**P07A 相图产品化语义层已实现并通过验收**。任何时刻只允许 1 张票 In Progress。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 **Phase 7+ 产品形态轴线见 `docs/PRODUCT_ROADMAP.md`**（轴 6 学习者形态 / 轴 7 多 Pack 承载 / 轴 8 工程演进 / 轴 9 信任面板）。
 新增票必须标注它服务主命题（验证真懂→定位模糊→针对性补缺）的哪一环。
@@ -61,6 +61,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 
 ## Phase 7+ — 产品形态与工程演进
 
+- [x] **P07A 相图产品化语义层**（`TICKET_P07A_PHASE_PRODUCT_SEMANTICS.md`）← 已实现并通过验收；8 个相图名加“产品名 + 一句话解读”映射，不改判据；服务环节：验证真懂 → 用户读懂
 - [x] **P09A engine.rs 模块化拆分**（`TICKET_P09A_ENGINE_MODULARIZATION.md`）← 已实现并通过验收；拆 `engine/task_selection.rs`、`engine/submit_pipeline.rs`、`engine/mental_state.rs`，保留 `engine.rs` 薄 facade 与 public API；服务环节：全环节（可演进）
 - [x] **P08B LLM 调用隐私清单 + 纯 Tier 0 模式**（`TICKET_P08B_LLM_PRIVACY_TIER0.md`）← 已实现并通过验收；新增外发调用清单、`polaris privacy show` 与 `POLARIS_TIER0_ONLY=1` 全禁外部模型调用；服务环节：信任前提
 
@@ -79,7 +80,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
   - FSRS 个人参数拟合（`fsrs.w` C 类登记的预留票，FSRS-optimizer 思路 + 留出对拍门）。
 
 - 产品形态轴线候选（2026-06-15 产品经理审查沉淀；详见 `docs/PRODUCT_ROADMAP.md`，排序与建议执行序见该文 §5）：
-  - **P07A 相图产品化语义层**（S）：8 个相图名加"产品名 + 一句话解读"映射，不改判据；服务环节：验证真懂 → 用户读懂。
+  - **P07A 相图产品化语义层**（S）→ 已转正式票 P07A：8 个相图名加"产品名 + 一句话解读"映射，不改判据；服务环节：验证真懂 → 用户读懂。
   - **P07B 学习者状态镜子 v1**（M）：复用 atlas 静态站基建扩出学习者实时面板（自信 vs 实际曲线、相分布、近期断言摘要）；服务环节：验证真懂 → 定位模糊。依赖 P07A。
   - **P07C 报告 top_signal + suggested_action**（S）：镜像报告加"如果你只看一句"顶部提示与每条断言对应的可选行动；服务环节：定位模糊 → 针对性补缺。依赖 P07A。
   - **P07D 行动闭环（相 → 任务响应策略）**（M）：补 `BatchStrategy::PhantomChallenge` 等相专属调度分支，每条带留出验证门；服务环节：针对性补缺。依赖 P07A、P03F、P03G。

@@ -69,6 +69,63 @@ fn determine_phase_uses_frozen_priority_order() {
 }
 
 #[test]
+fn phase_semantics_cover_all_stable_phase_values() {
+    let expected = [
+        (
+            Phase::Undetermined,
+            "undetermined",
+            "还看不清",
+            "才试了几次，证据还不够，系统会先补探针任务。",
+        ),
+        (
+            Phase::Phantom,
+            "phantom",
+            "看起来懂",
+            "自信高但实际表现不稳，需要用更硬的题确认。",
+        ),
+        (
+            Phase::Fluctuation,
+            "fluctuation",
+            "刚上路",
+            "表现起伏明显，结果还不结实。",
+        ),
+        (
+            Phase::Settling,
+            "settling",
+            "刚扎根",
+            "原场景中渐稳，新场景还卡。",
+        ),
+        (
+            Phase::Solidification,
+            "solidification",
+            "稳了但僵",
+            "熟练但迁移受限，需要用变式题松动。",
+        ),
+        (Phase::Transfer, "transfer", "能迁移", "能在新情境使用。"),
+        (
+            Phase::Generation,
+            "generation",
+            "能创造",
+            "能独立产出，且迁移表现更快更稳。",
+        ),
+        (
+            Phase::Regression,
+            "regression",
+            "退步了",
+            "之前会但近期又脱档，需要回到证据补缺。",
+        ),
+    ];
+
+    assert_eq!(Phase::ALL.len(), expected.len());
+    for (idx, (phase, phase_id, label, summary)) in expected.iter().enumerate() {
+        assert_eq!(Phase::ALL[idx], *phase);
+        assert_eq!(phase.as_str(), *phase_id);
+        assert_eq!(phase.label(), *label);
+        assert_eq!(phase.summary(), *summary);
+    }
+}
+
+#[test]
 fn determine_phase_uses_configured_phantom_thresholds() {
     let mut input = base_phase_input();
     input.p_known = 0.55;

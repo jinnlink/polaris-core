@@ -29,6 +29,8 @@ pub struct ConceptStatus {
     pub p_known: f64,
     pub calib_gap: f64,
     pub phase: String,
+    pub phase_label: String,
+    pub phase_summary: String,
 }
 
 pub fn status_snapshot(conn: &Connection) -> Result<StatusSnapshot> {
@@ -66,10 +68,7 @@ pub fn status_snapshot(conn: &Connection) -> Result<StatusSnapshot> {
             .map(|state| retrievability(state.stability, elapsed_days.unwrap_or(0.0).max(0.0)));
         let p_known = row.get::<_, f64>(2)?;
         let calib_gap = row.get::<_, f64>(3)?;
-        let phase = Phase::parse(&row.get::<_, String>(7)?)
-            .unwrap_or(Phase::Undetermined)
-            .as_str()
-            .to_owned();
+        let phase = Phase::parse(&row.get::<_, String>(7)?).unwrap_or(Phase::Undetermined);
 
         Ok(ConceptStatus {
             concept_id: row.get(0)?,
@@ -77,7 +76,9 @@ pub fn status_snapshot(conn: &Connection) -> Result<StatusSnapshot> {
             retrieval,
             p_known,
             calib_gap,
-            phase,
+            phase: phase.as_str().to_owned(),
+            phase_label: phase.label().to_owned(),
+            phase_summary: phase.summary().to_owned(),
         })
     })?;
     let concepts = rows.collect::<std::result::Result<Vec<_>, _>>()?;
