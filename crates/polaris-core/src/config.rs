@@ -1,17 +1,37 @@
 use std::collections::BTreeMap;
 
 use rusqlite::{Connection, OptionalExtension};
+use serde::Serialize;
 
 use crate::error::{PolarisError, Result};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum ParameterClass {
     A,
     B,
     C,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+impl ParameterClass {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::A => "A",
+            Self::B => "B",
+            Self::C => "C",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "A" => Some(Self::A),
+            "B" => Some(Self::B),
+            "C" => Some(Self::C),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum TuningRoute {
     Replay,
     Mrt,
@@ -19,7 +39,28 @@ pub enum TuningRoute {
     Fit,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+impl TuningRoute {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Replay => "Replay",
+            Self::Mrt => "Mrt",
+            Self::Manual => "Manual",
+            Self::Fit => "Fit",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "Replay" => Some(Self::Replay),
+            "Mrt" => Some(Self::Mrt),
+            "Manual" => Some(Self::Manual),
+            "Fit" => Some(Self::Fit),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct ParameterSpec {
     pub key: &'static str,
     pub default_value: &'static str,
@@ -701,6 +742,46 @@ pub fn default_registry() -> BTreeMap<&'static str, ParameterSpec> {
     .collect()
 }
 
+pub fn parameter_specs(
+    class: Option<ParameterClass>,
+    tuning_route: Option<TuningRoute>,
+) -> Vec<ParameterSpec> {
+    default_registry()
+        .values()
+        .filter(|spec| class.is_none_or(|class| spec.class == class))
+        .filter(|spec| tuning_route.is_none_or(|route| spec.tuning_route == route))
+        .copied()
+        .collect()
+}
+
+pub fn parameters_markdown(specs: &[ParameterSpec]) -> String {
+    let mut output = String::from(
+        "# Polaris Parameter Registry\n\n\
+         > Generated from `default_registry()` by `polaris config list --md`.\n\n\
+         | key | default | class | bounds | tuning_route |\n\
+         |---|---:|:---:|---|---|\n",
+    );
+
+    for spec in specs {
+        let bounds = spec.bounds.unwrap_or("-");
+        let bounds = if spec.bounds.is_some() {
+            format!("`{bounds}`")
+        } else {
+            bounds.to_owned()
+        };
+        output.push_str(&format!(
+            "| `{}` | `{}` | {} | {} | {} |\n",
+            spec.key,
+            spec.default_value,
+            spec.class.as_str(),
+            bounds,
+            spec.tuning_route.as_str()
+        ));
+    }
+
+    output
+}
+
 pub fn meta_value(conn: &Connection, key: &str) -> Result<String> {
     if let Some(value) = conn
         .query_row("SELECT value FROM meta WHERE key=?1", [key], |row| {
@@ -918,5 +999,66 @@ mod tests {
         let embedding_dim = registry.get("embedding.dim").expect("embedding.dim");
         assert_eq!(embedding_dim.default_value, "0");
         assert_eq!(embedding_dim.class, ParameterClass::C);
+    }
+
+    #[test]
+    fn parameter_class_and_tuning_route_have_stable_labels() {
+        assert_eq!(ParameterClass::A.as_str(), "A");
+        assert_eq!(ParameterClass::B.as_str(), "B");
+        assert_eq!(ParameterClass::C.as_str(), "C");
+        assert_eq!(TuningRoute::Replay.as_str(), "Replay");
+        assert_eq!(TuningRoute::Mrt.as_str(), "Mrt");
+        assert_eq!(TuningRoute::Manual.as_str(), "Manual");
+        assert_eq!(TuningRoute::Fit.as_str(), "Fit");
+    }
+
+    #[test]
+    fn parameter_specs_filter_by_class_and_tuning_route() {
+        let class_a = parameter_specs(Some(ParameterClass::A), None);
+        assert!(!class_a.is_empty());
+        assert!(class_a.iter().all(|spec| spec.class == ParameterClass::A));
+
+        let replay = parameter_specs(None, Some(TuningRoute::Replay));
+        assert!(!replay.is_empty());
+        assert!(replay
+            .iter()
+            .all(|spec| spec.tuning_route == TuningRoute::Replay));
+
+        let class_b_replay = parameter_specs(Some(ParameterClass::B), Some(TuningRoute::Replay));
+        assert!(!class_b_replay.is_empty());
+        assert!(class_b_replay.iter().all(|spec| {
+            spec.class == ParameterClass::B && spec.tuning_route == TuningRoute::Replay
+        }));
+    }
+
+    #[test]
+    fn parameters_markdown_uses_registry_fields() {
+        let markdown = parameters_markdown(&parameter_specs(None, None));
+
+        assert!(markdown.contains("| `bkt.p_init` | `0.20` | B | `[0.05,0.50]` | Replay |"));
+        assert!(markdown.contains("| `latent.k_max` | `64` | A | - | Manual |"));
+    }
+
+    #[test]
+    fn params_doc_keys_match_registry() {
+        let doc = include_str!("../../../docs/PARAMETERS.md");
+        let doc_keys = parse_parameter_doc_keys(doc);
+        let registry_keys = parameter_specs(None, None)
+            .into_iter()
+            .map(|spec| spec.key)
+            .collect::<std::collections::BTreeSet<_>>();
+
+        assert_eq!(
+            doc_keys, registry_keys,
+            "参数文档与 registry 不同步。修复请跑：\n  cargo run -p polaris-cli -- config list --md > docs/PARAMETERS.md\n"
+        );
+    }
+
+    fn parse_parameter_doc_keys(doc: &str) -> std::collections::BTreeSet<&str> {
+        doc.lines()
+            .filter_map(|line| line.strip_prefix("| `"))
+            .filter_map(|line| line.split_once("` |"))
+            .map(|(key, _)| key)
+            .collect()
     }
 }

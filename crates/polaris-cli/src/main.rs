@@ -2,6 +2,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use clap::{Parser, Subcommand};
+use polaris_core::config::{
+    parameter_specs, parameters_markdown, ParameterClass, ParameterSpec, TuningRoute,
+};
 use polaris_core::db::{open_database, open_database_read_only};
 use polaris_core::engine::{Engine, SubmitInput};
 use polaris_core::ops::{doctor_report, DoctorReport};
@@ -115,6 +118,10 @@ enum Commands {
         #[command(subcommand)]
         command: PrivacyCommands,
     },
+    Config {
+        #[command(subcommand)]
+        command: ConfigCommands,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -127,6 +134,20 @@ enum PrivacyCommands {
     Show {
         #[arg(long)]
         json: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum ConfigCommands {
+    List {
+        #[arg(long)]
+        class: Option<String>,
+        #[arg(long = "tuning-route")]
+        tuning_route: Option<String>,
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        md: bool,
     },
 }
 
@@ -154,6 +175,31 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 println!("{}", serde_json::to_string_pretty(&inventory)?);
             } else {
                 print!("{}", privacy_show_text(&inventory, inventory.tier0_only));
+            }
+        }
+        Commands::Config {
+            command:
+                ConfigCommands::List {
+                    class,
+                    tuning_route,
+                    json,
+                    md,
+                },
+        } => {
+            if json && md {
+                return Err(adapter_error(
+                    "config list accepts either --json or --md, not both",
+                ));
+            }
+            let class = parse_parameter_class(class.as_deref())?;
+            let tuning_route = parse_tuning_route(tuning_route.as_deref())?;
+            let specs = parameter_specs(class, tuning_route);
+            if json {
+                println!("{}", config_list_json(&specs)?);
+            } else if md {
+                print!("{}", config_list_markdown(&specs));
+            } else {
+                print!("{}", config_list_text(&specs));
             }
         }
         Commands::Diagnose { concept } => {
@@ -344,6 +390,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 Commands::Doctor { .. } => unreachable!("handled before writable database open"),
                 Commands::Pack { .. } => unreachable!("handled before database open"),
                 Commands::Privacy { .. } => unreachable!("handled before database open"),
+                Commands::Config { .. } => unreachable!("handled before database open"),
             }
         }
     }
@@ -678,6 +725,52 @@ fn privacy_show_text(inventory: &PrivacyCallInventory, tier0_only: bool) -> Stri
     text
 }
 
+fn parse_parameter_class(
+    value: Option<&str>,
+) -> Result<Option<ParameterClass>, Box<dyn std::error::Error>> {
+    value
+        .map(|value| {
+            ParameterClass::parse(value)
+                .ok_or_else(|| adapter_error("config --class must be one of A, B, C"))
+        })
+        .transpose()
+}
+
+fn parse_tuning_route(
+    value: Option<&str>,
+) -> Result<Option<TuningRoute>, Box<dyn std::error::Error>> {
+    value
+        .map(|value| {
+            TuningRoute::parse(value).ok_or_else(|| {
+                adapter_error("config --tuning-route must be one of Replay, Mrt, Manual, Fit")
+            })
+        })
+        .transpose()
+}
+
+fn config_list_text(specs: &[ParameterSpec]) -> String {
+    let mut text = String::from("key\tdefault\tclass\tbounds\ttuning_route\n");
+    for spec in specs {
+        text.push_str(&format!(
+            "{}\t{}\t{}\t{}\t{}\n",
+            spec.key,
+            spec.default_value,
+            spec.class.as_str(),
+            spec.bounds.unwrap_or("-"),
+            spec.tuning_route.as_str()
+        ));
+    }
+    text
+}
+
+fn config_list_json(specs: &[ParameterSpec]) -> serde_json::Result<String> {
+    serde_json::to_string_pretty(specs)
+}
+
+fn config_list_markdown(specs: &[ParameterSpec]) -> String {
+    parameters_markdown(specs)
+}
+
 fn status_snapshot_json(snapshot: &StatusSnapshot) -> serde_json::Result<String> {
     serde_json::to_string_pretty(snapshot)
 }
@@ -959,6 +1052,62 @@ mod tests {
                 command: PrivacyCommands::Show { json: true }
             }
         ));
+    }
+
+    #[test]
+    fn config_list_flags_parse() {
+        let cli = Cli::try_parse_from(vec![
+            "polaris",
+            "config",
+            "list",
+            "--class",
+            "A",
+            "--tuning-route",
+            "Replay",
+            "--md",
+        ])
+        .unwrap();
+
+        assert!(matches!(
+            cli.command,
+            Commands::Config {
+                command: ConfigCommands::List {
+                    class: Some(ref class),
+                    tuning_route: Some(ref tuning_route),
+                    md: true,
+                    json: false,
+                }
+            } if class == "A" && tuning_route == "Replay"
+        ));
+    }
+
+    #[test]
+    fn config_list_text_and_json_use_stable_fields() {
+        let specs = polaris_core::config::parameter_specs(
+            Some(polaris_core::config::ParameterClass::B),
+            Some(polaris_core::config::TuningRoute::Replay),
+        );
+
+        let text = config_list_text(&specs);
+        assert!(text.contains("key\tdefault\tclass\tbounds\ttuning_route\n"));
+        assert!(text.contains("bkt.p_init\t0.20\tB\t[0.05,0.50]\tReplay\n"));
+
+        let json = config_list_json(&specs).unwrap();
+        let payload: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(payload
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["key"] == "bkt.p_init" && item["tuning_route"] == "Replay"));
+    }
+
+    #[test]
+    fn config_list_markdown_matches_parameters_doc_shape() {
+        let specs = polaris_core::config::parameter_specs(None, None);
+        let markdown = config_list_markdown(&specs);
+
+        assert!(markdown.starts_with("# Polaris Parameter Registry\n\n"));
+        assert!(markdown.contains("| `bkt.p_init` | `0.20` | B | `[0.05,0.50]` | Replay |"));
     }
 
     #[test]
