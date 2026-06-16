@@ -286,6 +286,14 @@ mod tests {
     }
 
     #[test]
+    fn validates_template_pack_shape() {
+        let report = validate_pack_path(workspace_pack_path("packs/template")).unwrap();
+        assert_eq!(report.concept_count, 5);
+        assert!(report.prerequisite_count >= 3);
+        assert!(report.misconception_count >= 2);
+    }
+
+    #[test]
     fn rejects_misconception_with_missing_concept_reference() {
         let root = temp_pack_dir("missing-reference");
         fs::create_dir_all(&root).unwrap();

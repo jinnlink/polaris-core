@@ -1,0 +1,85 @@
+[[concept]]
+id = "template_course_goal"
+name = "Course goal map"
+kind = "schema"
+seed_order = 1
+p_init = 0.20
+
+[[concept]]
+id = "template_core_terms"
+name = "Core terms"
+seed_order = 2
+p_init = 0.20
+
+[[concept]]
+id = "template_boundary_cases"
+name = "Boundary cases"
+seed_order = 3
+p_init = 0.18
+
+[[concept]]
+id = "template_worked_example"
+name = "Worked example"
+seed_order = 4
+p_init = 0.18
+
+[[concept]]
+id = "template_transfer_context"
+name = "Transfer context"
+seed_order = 5
+p_init = 0.16
+
+[[edge]]
+id = "template_core_terms_to_boundary_cases"
+src = "template_core_terms"
+dst = "template_boundary_cases"
+type = "prerequisite"
+
+[[edge]]
+id = "template_core_terms_to_worked_example"
+src = "template_core_terms"
+dst = "template_worked_example"
+type = "prerequisite"
+
+[[edge]]
+id = "template_boundary_cases_to_transfer_context"
+src = "template_boundary_cases"
+dst = "template_transfer_context"
+type = "prerequisite"
+
+[[edge]]
+id = "template_worked_example_to_transfer_context"
+src = "template_worked_example"
+dst = "template_transfer_context"
+type = "prerequisite"
+
+[[edge]]
+id = "template_core_terms_component_of_goal"
+src = "template_core_terms"
+dst = "template_course_goal"
+type = "component_of"
+
+[[edge]]
+id = "template_boundary_cases_component_of_goal"
+src = "template_boundary_cases"
+dst = "template_course_goal"
+type = "component_of"
+
+[[edge]]
+id = "template_worked_example_component_of_goal"
+src = "template_worked_example"
+dst = "template_course_goal"
+type = "component_of"
+
+[[edge]]
+id = "template_transfer_context_component_of_goal"
+src = "template_transfer_context"
+dst = "template_course_goal"
+type = "component_of"
+
+[[edge]]
+id = "template_boundary_example_confusion"
+src = "template_boundary_cases"
+dst = "template_worked_example"
+type = "confusion"
+weight = 0.6

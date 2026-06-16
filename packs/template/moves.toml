@@ -1,0 +1,34 @@
+[[move]]
+id = "recall"
+task_type = "recall"
+template = "Recall {concept}. State the shortest useful definition and one cue that tells you it applies."
+
+[[move]]
+id = "explain"
+task_type = "free_explain"
+template = "Explain {concept} in your own words. Include one boundary where the idea stops applying."
+
+[[move]]
+id = "apply"
+task_type = "apply"
+template = "Use {concept} in a small worked example. Name the step that depends on the concept."
+
+[[move]]
+id = "analyze"
+task_type = "analyze"
+template = "Analyze two cases involving {concept}. Identify which detail changes the answer."
+
+[[move]]
+id = "evaluate"
+task_type = "evaluate"
+template = "Evaluate a learner answer about {concept}. Mark what is correct, what is unsupported, and why."
+
+[[move]]
+id = "create"
+task_type = "create"
+template = "Create a new task that would test {concept} without relying on memorized wording."
+
+[[move]]
+id = "transfer"
+task_type = "transfer"
+template = "Transfer {concept} to a different context. Explain which constraint stayed stable and which changed."

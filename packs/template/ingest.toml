@@ -1,0 +1,10 @@
+# Optional protocol sketch. The current validator does not require this file,
+# and core does not consume domain-specific ingest logic directly.
+
+[[source]]
+id = "example_attempt"
+content_type = "text/plain"
+maps_to = "attempt"
+concept_id_field = "concept_id"
+response_field = "answer"
+self_confidence_field = "confidence"

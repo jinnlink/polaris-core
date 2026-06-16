@@ -1,0 +1,17 @@
+[[misconception]]
+id = "template_label_fluency"
+concept_id = "template_core_terms"
+title = "Treating familiar labels as understanding"
+pattern = "fluency-illusion"
+
+[[misconception]]
+id = "template_single_example_overreach"
+concept_id = "template_boundary_cases"
+title = "Assuming one example covers all boundaries"
+pattern = "boundary-blindness"
+
+[[misconception]]
+id = "template_transfer_without_context"
+concept_id = "template_transfer_context"
+title = "Transferring a method without checking context"
+pattern = "granularity-mismatch"

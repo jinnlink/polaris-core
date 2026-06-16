@@ -1,0 +1,8 @@
+id = "template"
+title = "Template Course Pack"
+
+name = "template"
+display_name = "Template Course Pack"
+version = "0.1.0"
+lang = "zh"
+description = "A small neutral pack authors can copy before replacing concepts, misconceptions, rubric, and moves."
