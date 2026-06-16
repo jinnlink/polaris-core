@@ -371,6 +371,8 @@ mod tests {
 
     use super::*;
 
+    const API_CONTRACT_DOC: &str = include_str!("../../../docs/API_CONTRACT.md");
+
     #[test]
     fn http_health_returns_service_metadata() {
         let mut api = test_api();
@@ -380,6 +382,141 @@ mod tests {
         assert_eq!(response.status, 200);
         assert_eq!(response.body["service"], "polaris-core");
         assert_eq!(response.body["version"], env!("CARGO_PKG_VERSION"));
+    }
+
+    #[test]
+    fn http_contract_document_names_stable_routes_and_policy() {
+        for required in [
+            "# API 稳定性合约",
+            "## HTTP v1",
+            "GET /health",
+            "GET /status",
+            "GET /learner-mirror",
+            "GET /trust",
+            "POST /next",
+            "POST /evidence",
+            "POST /feedback",
+            "## 兼容性规则",
+            "## 废弃策略",
+        ] {
+            assert!(
+                API_CONTRACT_DOC.contains(required),
+                "API contract missing section: {required}"
+            );
+        }
+    }
+
+    #[test]
+    fn http_contract_routes_keep_stable_top_level_fields() {
+        let mut api = test_api();
+
+        let health = api.handle("GET", "/health", "").unwrap();
+        assert_eq!(health.status, 200);
+        assert_string_field(&health.body, "service");
+        assert_string_field(&health.body, "version");
+
+        let status = api.handle("GET", "/status", "").unwrap();
+        assert_eq!(status.status, 200);
+        assert_fields(
+            &status.body,
+            &[
+                "current_pack",
+                "theta_mode",
+                "packs",
+                "due_today",
+                "phase_counts",
+                "concepts",
+            ],
+        );
+
+        let mirror = api.handle("GET", "/learner-mirror", "").unwrap();
+        assert_eq!(mirror.status, 200);
+        assert_fields(
+            &mirror.body,
+            &[
+                "generated_at",
+                "confidence_curve",
+                "phase_distribution",
+                "recent_assertions",
+            ],
+        );
+
+        let trust = api.handle("GET", "/trust", "").unwrap();
+        assert_eq!(trust.status, 200);
+        assert_fields(
+            &trust.body,
+            &[
+                "gates",
+                "active_breeding_experiments",
+                "active_mrt_experiments",
+                "recent_activity",
+                "governance",
+            ],
+        );
+
+        let next = api
+            .handle("POST", "/next", &json!({"session": "contract"}).to_string())
+            .unwrap();
+        assert_eq!(next.status, 200);
+        assert_fields(&next.body, &["task", "teaching_instruction"]);
+        assert_fields(
+            &next.body["task"],
+            &["concept_id", "task_type", "prompt", "reason"],
+        );
+
+        let evidence = api
+            .handle(
+                "POST",
+                "/evidence",
+                &json!({
+                    "session": "contract",
+                    "concept_id": next.body["task"]["concept_id"].as_str().unwrap(),
+                    "response": "Ownership controls which binding can drop a value.",
+                    "confidence": 4
+                })
+                .to_string(),
+            )
+            .unwrap();
+        assert_eq!(evidence.status, 200);
+        assert_string_field(&evidence.body, "attempt_id");
+        assert_number_field(&evidence.body, "provisional_score");
+        assert_bool_field(&evidence.body, "degraded");
+
+        let feedback = api
+            .handle(
+                "POST",
+                "/feedback",
+                &json!({
+                    "session": "contract",
+                    "kind": "state",
+                    "concept_id": "ownership",
+                    "state": "flow"
+                })
+                .to_string(),
+            )
+            .unwrap();
+        assert_eq!(feedback.status, 200);
+        assert_fields(&feedback.body, &["session_id", "kind", "effect"]);
+    }
+
+    #[test]
+    fn http_contract_errors_keep_stable_shape() {
+        let mut api = test_api();
+
+        let not_found = api.handle("GET", "/missing", "").unwrap();
+        assert_eq!(not_found.status, 404);
+        assert_eq!(not_found.body["error"], "not found");
+
+        let method_not_allowed = api.handle("GET", "/next", "").unwrap();
+        assert_eq!(method_not_allowed.status, 405);
+        assert_eq!(method_not_allowed.body["error"], "method not allowed");
+
+        let bad_request = api.handle("POST", "/evidence", "{").unwrap();
+        assert_eq!(bad_request.status, 400);
+        assert!(bad_request.body["error"]
+            .as_str()
+            .unwrap()
+            .starts_with("invalid JSON"));
     }
 
     #[test]
@@ -766,5 +903,36 @@ mod tests {
             .join("..")
             .join("..")
             .join(path)
+    }
+
+    fn assert_fields(value: &Value, fields: &[&str]) {
+        let object = value.as_object().expect("expected JSON object");
+        for field in fields {
+            assert!(
+                object.contains_key(*field),
+                "missing field {field} in {value}"
+            );
+        }
+    }
+
+    fn assert_string_field(value: &Value, field: &str) {
+        assert!(
+            value[field].as_str().is_some(),
+            "expected string field {field} in {value}"
+        );
+    }
+
+    fn assert_number_field(value: &Value, field: &str) {
+        assert!(
+            value[field].as_f64().is_some(),
+            "expected number field {field} in {value}"
+        );
+    }
+
+    fn assert_bool_field(value: &Value, field: &str) {
+        assert!(
+            value[field].as_bool().is_some(),
+            "expected bool field {field} in {value}"
+        );
     }
 }

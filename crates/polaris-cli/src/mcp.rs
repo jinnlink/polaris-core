@@ -620,6 +620,8 @@ mod tests {
 
     use super::*;
 
+    const API_CONTRACT_DOC: &str = include_str!("../../../docs/API_CONTRACT.md");
+
     #[test]
     fn mcp_lists_polaris_tools_and_status_resource() {
         let mut session = test_session();
@@ -628,15 +630,10 @@ mod tests {
             .handle_request(json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}))
             .unwrap()
             .unwrap();
-        let tool_names = tools["result"]["tools"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|tool| tool["name"].as_str().unwrap())
-            .collect::<Vec<_>>();
-        assert_eq!(
-            tool_names,
-            vec![
+        let tools = tools["result"]["tools"].as_array().unwrap();
+        assert_contains_names(
+            tools,
+            &[
                 "get_next_task",
                 "get_interleaved_batch",
                 "get_phase_snapshot",
@@ -648,22 +645,16 @@ mod tests {
                 "record_learner_feedback",
                 "get_trust_panel",
                 "submit_evidence",
-                "get_teaching_instruction"
-            ]
+                "get_teaching_instruction",
+            ],
         );
 
         let resources = session
             .handle_request(json!({"jsonrpc": "2.0", "id": 2, "method": "resources/list"}))
             .unwrap()
             .unwrap();
-        let resource_uris = resources["result"]["resources"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|resource| resource["uri"].as_str().unwrap())
-            .collect::<Vec<_>>();
-        assert!(resource_uris.contains(&"polaris://status"));
-        assert!(resource_uris.contains(&"polaris://trust"));
+        let resources = resources["result"]["resources"].as_array().unwrap();
+        assert_contains_uris(resources, &["polaris://status", "polaris://trust"]);
 
         let templates = session
             .handle_request(
@@ -671,10 +662,184 @@ mod tests {
             )
             .unwrap()
             .unwrap();
+        let templates = templates["result"]["resourceTemplates"].as_array().unwrap();
+        assert!(
+            find_by_field(templates, "uriTemplate", "polaris://concept/{id}/diagnosis").is_some()
+        );
+    }
+
+    #[test]
+    fn mcp_contract_document_names_stable_surface_and_policy() {
+        for required in [
+            "## MCP v1",
+            "initialize",
+            "tools/list",
+            "resources/list",
+            "resources/read",
+            "polaris://status",
+            "polaris://trust",
+            "get_next_task",
+            "submit_evidence",
+            "record_learner_feedback",
+            "get_trust_panel",
+        ] {
+            assert!(
+                API_CONTRACT_DOC.contains(required),
+                "API contract missing MCP item: {required}"
+            );
+        }
+    }
+
+    #[test]
+    fn mcp_contract_initialize_keeps_stable_handshake_fields() {
+        let mut session = test_session();
+
+        let response = session
+            .handle_request(json!({"jsonrpc": "2.0", "id": 100, "method": "initialize"}))
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(response["jsonrpc"], "2.0");
+        assert_eq!(response["id"], 100);
+        assert_string_field(&response["result"], "protocolVersion");
+        assert!(response["result"]["capabilities"].as_object().is_some());
+        assert_eq!(response["result"]["serverInfo"]["name"], "polaris-core");
         assert_eq!(
-            templates["result"]["resourceTemplates"][0]["uriTemplate"],
+            response["result"]["serverInfo"]["version"],
+            env!("CARGO_PKG_VERSION")
+        );
+    }
+
+    #[test]
+    fn mcp_contract_lists_stable_tools_resources_and_templates() {
+        let mut session = test_session();
+
+        let tools_response = session
+            .handle_request(json!({"jsonrpc": "2.0", "id": 101, "method": "tools/list"}))
+            .unwrap()
+            .unwrap();
+        let tools = tools_response["result"]["tools"].as_array().unwrap();
+        assert_contains_names(
+            tools,
+            &[
+                "get_next_task",
+                "get_interleaved_batch",
+                "get_phase_snapshot",
+                "get_active_gu_rules",
+                "run_mirror_report",
+                "get_latest_mirror_report",
+                "mark_report_assertion_inaccurate",
+                "mark_report_assertion_accurate",
+                "record_learner_feedback",
+                "get_trust_panel",
+                "submit_evidence",
+                "get_teaching_instruction",
+            ],
+        );
+        for tool in tools {
+            assert_string_field(tool, "name");
+            assert_string_field(tool, "description");
+            assert_eq!(tool["inputSchema"]["type"], "object");
+        }
+
+        let resources_response = session
+            .handle_request(json!({"jsonrpc": "2.0", "id": 102, "method": "resources/list"}))
+            .unwrap()
+            .unwrap();
+        let resources = resources_response["result"]["resources"]
+            .as_array()
+            .unwrap();
+        assert_contains_uris(resources, &["polaris://status", "polaris://trust"]);
+        for resource in resources {
+            assert_string_field(resource, "name");
+            assert_eq!(resource["mimeType"], "application/json");
+        }
+
+        let templates_response = session
+            .handle_request(
+                json!({"jsonrpc": "2.0", "id": 103, "method": "resources/templates/list"}),
+            )
+            .unwrap()
+            .unwrap();
+        let templates = templates_response["result"]["resourceTemplates"]
+            .as_array()
+            .unwrap();
+        let diagnosis_template =
+            find_by_field(templates, "uriTemplate", "polaris://concept/{id}/diagnosis")
+                .expect("missing concept diagnosis template");
+        assert_eq!(
+            diagnosis_template["uriTemplate"],
             "polaris://concept/{id}/diagnosis"
         );
+        assert_string_field(diagnosis_template, "name");
+        assert_eq!(diagnosis_template["mimeType"], "application/json");
+    }
+
+    #[test]
+    fn mcp_contract_resource_reads_keep_stable_top_level_fields() {
+        let mut session = test_session();
+
+        let status = read_json_resource(&mut session, "polaris://status");
+        assert_fields(
+            &status,
+            &[
+                "current_pack",
+                "theta_mode",
+                "packs",
+                "due_today",
+                "phase_counts",
+                "concepts",
+            ],
+        );
+
+        let trust = read_json_resource(&mut session, "polaris://trust");
+        assert_fields(
+            &trust,
+            &[
+                "gates",
+                "active_breeding_experiments",
+                "active_mrt_experiments",
+                "recent_activity",
+                "governance",
+            ],
+        );
+    }
+
+    #[test]
+    fn mcp_contract_errors_keep_stable_shape() {
+        let mut session = test_session();
+
+        let unknown_method = session
+            .handle_request(json!({"jsonrpc": "2.0", "id": 201, "method": "missing/method"}))
+            .unwrap()
+            .unwrap();
+        assert_eq!(unknown_method["jsonrpc"], "2.0");
+        assert_eq!(unknown_method["id"], 201);
+        assert_eq!(unknown_method["error"]["code"], -32601);
+        assert_eq!(unknown_method["error"]["message"], "method not found");
+
+        let unknown_resource = session
+            .handle_request(json!({
+                "jsonrpc": "2.0",
+                "id": 202,
+                "method": "resources/read",
+                "params": {"uri": "polaris://missing"}
+            }))
+            .unwrap()
+            .unwrap();
+        assert_eq!(unknown_resource["result"]["isError"], true);
+        assert_eq!(
+            unknown_resource["result"]["contents"][0]["uri"],
+            "polaris://error"
+        );
+        assert_eq!(
+            unknown_resource["result"]["contents"][0]["mimeType"],
+            "text/plain"
+        );
+        assert!(unknown_resource["result"]["contents"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("unknown resource"));
     }
 
     #[test]
@@ -1323,5 +1488,60 @@ mod tests {
             .join("..")
             .join("..")
             .join(path)
+    }
+
+    fn read_json_resource(session: &mut McpSession, uri: &str) -> Value {
+        let response = session
+            .handle_request(json!({
+                "jsonrpc": "2.0",
+                "id": 301,
+                "method": "resources/read",
+                "params": {"uri": uri}
+            }))
+            .unwrap()
+            .unwrap();
+        let text = response["result"]["contents"][0]["text"].as_str().unwrap();
+        serde_json::from_str(text).unwrap()
+    }
+
+    fn assert_fields(value: &Value, fields: &[&str]) {
+        let object = value.as_object().expect("expected JSON object");
+        for field in fields {
+            assert!(
+                object.contains_key(*field),
+                "missing field {field} in {value}"
+            );
+        }
+    }
+
+    fn assert_string_field(value: &Value, field: &str) {
+        assert!(
+            value[field].as_str().is_some(),
+            "expected string field {field} in {value}"
+        );
+    }
+
+    fn assert_contains_names(items: &[Value], expected: &[&str]) {
+        for name in expected {
+            assert!(
+                find_by_field(items, "name", name).is_some(),
+                "missing stable name {name}"
+            );
+        }
+    }
+
+    fn assert_contains_uris(items: &[Value], expected: &[&str]) {
+        for uri in expected {
+            assert!(
+                find_by_field(items, "uri", uri).is_some(),
+                "missing stable uri {uri}"
+            );
+        }
+    }
+
+    fn find_by_field<'a>(items: &'a [Value], field: &str, expected: &str) -> Option<&'a Value> {
+        items
+            .iter()
+            .find(|item| item[field].as_str() == Some(expected))
     }
 }

@@ -1,6 +1,6 @@
 # 票队列（单票制）
 
-状态：**无 In Progress；P11A 数据库 schema 版本化迁移已通过验收并提交（2026-06-17）**。任何时刻只允许 1 张票 In Progress。
+状态：**无 In Progress；P11B MCP/HTTP API 稳定性合约已通过验收（2026-06-17）**。任何时刻只允许 1 张票 In Progress。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 **Phase 7+ 产品形态轴线见 `docs/PRODUCT_ROADMAP.md`**（轴 6 学习者形态 / 轴 7 多 Pack 承载 / 轴 8 工程演进 / 轴 9 信任面板）。
 新增票必须标注它服务主命题（验证真懂→定位模糊→针对性补缺）的哪一环。
@@ -77,6 +77,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 ## Phase 11 — 版本化与发布前硬化
 
 - [x] **P11A 数据库 schema 版本化迁移**（`TICKET_P11A_SCHEMA_VERSIONED_MIGRATIONS.md`）← 已实现、通过验收并提交；为 SQLite schema 建立版本号、迁移账本与 doctor 可见性，保留既有数据和用户参数；服务环节：全环节（Local-persistent / 可演进底座）
+- [x] **P11B MCP/HTTP API 稳定性合约**（`TICKET_P11B_API_CONTRACT_STABILITY.md`）← 已实现并通过验收；建立 HTTP/MCP 当前公开面契约、兼容/废弃规则和结构化 contract tests；服务环节：全环节（外部接口可演进底座）
 
 ## Backlog（票外发现的问题记在这里，不顺手做）
 
