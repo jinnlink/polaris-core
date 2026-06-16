@@ -12,7 +12,7 @@
 | `bkt.p_init` | `0.20` | B | `[0.05,0.50]` | Replay |
 | `bkt.slip` | `0.10` | B | `[0.02,0.30]` | Replay |
 | `breeding.admit_p` | `0.80` | A | `[0.5,0.99]` | Manual |
-| `breeding.min_n` | `6` | A | `[2,1000]` | Manual |
+| `breeding.min_n` | `20` | A | `[2,1000]` | Manual |
 | `breeding.retire_p` | `0.50` | A | `[0.01,0.80]` | Manual |
 | `calib.ewma` | `0.30` | B | `[0.10,0.50]` | Replay |
 | `calib.phantom_confidence` | `0.60` | A | `[0.50,0.95]` | Manual |

@@ -31,6 +31,7 @@ pub mod scheduler;
 pub mod simulation;
 pub mod status;
 pub mod teaching;
+pub mod trust;
 pub mod tuning;
 
 pub const VERSION: &str = "0.1.0";

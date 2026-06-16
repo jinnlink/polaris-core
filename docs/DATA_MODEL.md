@@ -218,7 +218,7 @@ Brier 用二值结果（≥0.75→1，≤0.40→0，死区跳过）：`brier_ewm
 | friction.lambda | 1.0 | B | [0.5,3.0] | MRT/手动（个人风险厌恶度） | φ\* 取舍 |
 | mrt.epsilon | 0.20 | B | [0.05,0.30] | 手动/按计划随签名收窄而衰减 | 探索率 |
 | sig.shrink_n0 / thompson.prior_n | 10/10 | B | [5,30] | 重放(P03H) | 收缩强度 |
-| breeding.admit_p / retire_p / min_n | .80/.50/6 | **A** | [0.5,0.99]/[0.01,0.80]/[2,1000] | 不调（F5 验证门） | 育种准入、退役与样本量门 |
+| breeding.admit_p / retire_p / min_n | .80/.50/20 | **A** | [0.5,0.99]/[0.01,0.80]/[2,1000] | 不调（F5 验证门） | 育种准入、退役与样本量门 |
 | gu.retire_p / retire_thresh / window_days | .30/.80/30 | B | — | 重放(P03H，目标=前瞻 precision) | 误解语法 |
 | consol.accept_margin / holdout_frac | 0.01/0.20 | **A** | — | 不调（验收标准） | 巩固门 |
 

@@ -570,7 +570,7 @@ pub fn default_registry() -> BTreeMap<&'static str, ParameterSpec> {
         ),
         spec(
             "breeding.min_n",
-            "6",
+            "20",
             ParameterClass::A,
             Some("[2,1000]"),
             TuningRoute::Manual,

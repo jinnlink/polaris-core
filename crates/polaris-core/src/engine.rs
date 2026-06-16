@@ -64,6 +64,7 @@ use crate::report::{
 use crate::scheduler::{rank_candidates_with_params, ScheduleCandidate, SchedulerParams};
 use crate::status::{status_snapshot, StatusSnapshot};
 use crate::teaching::{teaching_instruction, TeachingInstruction};
+use crate::trust::{trust_panel, TrustPanel};
 use crate::tuning::{run_param_tuning, TuningSummary};
 
 mod mental_state;
@@ -217,6 +218,10 @@ impl Engine {
 
     pub fn learner_mirror_snapshot(&self) -> Result<LearnerMirrorSnapshot> {
         learner_mirror_snapshot(&self.conn)
+    }
+
+    pub fn trust_panel(&self) -> Result<TrustPanel> {
+        trust_panel(&self.conn)
     }
 
     pub fn create_goal(&self, input: GoalInput) -> Result<GoalRecord> {

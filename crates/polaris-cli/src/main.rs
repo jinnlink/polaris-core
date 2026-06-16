@@ -16,6 +16,7 @@ use polaris_core::pack::validate_pack_path;
 use polaris_core::pack_state::{PackSummary, PackSwitchReceipt, ThetaMode};
 use polaris_core::privacy::PrivacyCallInventory;
 use polaris_core::status::StatusSnapshot;
+use polaris_core::trust::{TrustPanel, TrustParameter};
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use serde_json::Value;
 
@@ -135,6 +136,10 @@ enum Commands {
         #[command(subcommand)]
         command: PrivacyCommands,
     },
+    Trust {
+        #[command(subcommand)]
+        command: TrustCommands,
+    },
     Config {
         #[command(subcommand)]
         command: ConfigCommands,
@@ -209,6 +214,14 @@ enum PrivacyCommands {
 }
 
 #[derive(Debug, Subcommand)]
+enum TrustCommands {
+    Show {
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
 enum ConfigCommands {
     List {
         #[arg(long)]
@@ -246,6 +259,18 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 println!("{}", serde_json::to_string_pretty(&inventory)?);
             } else {
                 print!("{}", privacy_show_text(&inventory, inventory.tier0_only));
+            }
+        }
+        Commands::Trust {
+            command: TrustCommands::Show { json },
+        } => {
+            let conn = open_database_read_only(cli.db.unwrap_or_else(default_db_path))?;
+            let engine = Engine::new(conn);
+            let panel = engine.trust_panel()?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&panel)?);
+            } else {
+                print!("{}", trust_show_text(&panel));
             }
         }
         Commands::Config {
@@ -564,6 +589,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 Commands::Backup { .. } => unreachable!("handled before writable database open"),
                 Commands::Doctor { .. } => unreachable!("handled before writable database open"),
                 Commands::Privacy { .. } => unreachable!("handled before database open"),
+                Commands::Trust { .. } => unreachable!("handled before writable database open"),
                 Commands::Config { .. } => unreachable!("handled before database open"),
             }
         }
@@ -911,6 +937,132 @@ fn activity_summary_text(label: &str, summary: &ActivitySummary) -> String {
         summary.count_7d,
         summary.last_at.as_deref().unwrap_or("-"),
         summary.last_status.as_deref().unwrap_or("-")
+    )
+}
+
+fn trust_show_text(panel: &TrustPanel) -> String {
+    let mut text = String::new();
+    text.push_str(&format!("generated_at={}\n", panel.generated_at));
+    text.push_str(&format!("window_days={}\n", panel.window_days));
+    text.push_str(&format!(
+        "current_pack={}\n",
+        panel.governance.current_pack_id.as_deref().unwrap_or("-")
+    ));
+
+    text.push_str("\ngates\n");
+    for gate in &panel.gates {
+        text.push_str(&format!(
+            "{}\t{}\tstatus={}\tgate={}\tmetric={}\treason={}\n",
+            gate.framework,
+            gate.name,
+            gate.status,
+            gate.gate,
+            gate.metric.as_deref().unwrap_or("-"),
+            gate.reason
+        ));
+    }
+
+    text.push_str("\nactive_breeding_experiments\n");
+    if panel.active_breeding_experiments.is_empty() {
+        text.push_str("-\n");
+    } else {
+        for experiment in &panel.active_breeding_experiments {
+            text.push_str(&format!(
+                "{}\t{}>{}\tstatus={}\tposterior={:.3}\tn={}/{}\tmin_n={}\tadmit_p={:.2}\tretire_p={:.2}\tcontext={}\thypothesis={}\n",
+                experiment.id,
+                experiment.candidate_move,
+                experiment.incumbent_move,
+                experiment.status,
+                experiment.posterior_win_prob,
+                experiment.n_candidate,
+                experiment.n_incumbent,
+                experiment.min_n,
+                experiment.admit_p,
+                experiment.retire_p,
+                experiment.context_hash,
+                experiment.main_effect_hypothesis
+            ));
+        }
+    }
+
+    text.push_str("\nactive_mrt_experiments\n");
+    if panel.active_mrt_experiments.is_empty() {
+        text.push_str("-\n");
+    } else {
+        for experiment in &panel.active_mrt_experiments {
+            text.push_str(&format!(
+                "{}\tmove={}\trandomized={}\tprereg_id={}\tcontext={}\twindow={}\thypothesis={}\tat={}\n",
+                experiment.id,
+                experiment.move_id,
+                experiment.randomized,
+                experiment.prereg_id,
+                experiment.context_hash.as_deref().unwrap_or("-"),
+                experiment.window.as_deref().unwrap_or("-"),
+                experiment.main_effect_hypothesis.as_deref().unwrap_or("-"),
+                experiment.at
+            ));
+        }
+    }
+
+    text.push_str("\nrecent_activity\n");
+    text.push_str(&activity_summary_text(
+        "param_tuning_runs",
+        &panel.recent_activity.param_tuning_runs,
+    ));
+    text.push_str(&activity_summary_text(
+        "breeding.evaluated_7d",
+        &panel.recent_activity.breeding_evaluated_7d,
+    ));
+    text.push_str(&activity_summary_text(
+        "breeding.admitted_7d",
+        &panel.recent_activity.breeding_admitted_7d,
+    ));
+    text.push_str(&activity_summary_text(
+        "breeding.retired_7d",
+        &panel.recent_activity.breeding_retired_7d,
+    ));
+    text.push_str(&activity_summary_text(
+        "mental_fit.hazard",
+        &panel.recent_activity.mental_fit_hazard,
+    ));
+    text.push_str(&activity_summary_text(
+        "mental_fit.state_gate",
+        &panel.recent_activity.mental_fit_state_gate,
+    ));
+    text.push_str(&activity_summary_text(
+        "gu_inductions",
+        &panel.recent_activity.gu_inductions,
+    ));
+    text.push_str(&activity_summary_text(
+        "nightly_consolidation",
+        &panel.recent_activity.nightly_consolidation,
+    ));
+    text.push_str(&activity_summary_text(
+        "mirror_reports",
+        &panel.recent_activity.mirror_reports,
+    ));
+
+    text.push_str("\ngovernance\n");
+    for parameter in [
+        &panel.governance.breeding_admit_p,
+        &panel.governance.breeding_retire_p,
+        &panel.governance.breeding_min_n,
+    ] {
+        text.push_str(&trust_parameter_text(parameter));
+    }
+    text
+}
+
+fn trust_parameter_text(parameter: &TrustParameter) -> String {
+    format!(
+        "{}\tcurrent={}\tdefault={}\tclass={}\tbounds={}\ttuning_route={}\tgovernance_gate={}\n",
+        parameter.key,
+        parameter.current_value,
+        parameter.default_value,
+        parameter.class,
+        parameter.bounds.as_deref().unwrap_or("-"),
+        parameter.tuning_route,
+        parameter.is_governance_gate
     )
 }
 
@@ -1330,6 +1482,8 @@ mod tests {
             ],
             vec!["polaris", "privacy", "show"],
             vec!["polaris", "privacy", "show", "--json"],
+            vec!["polaris", "trust", "show"],
+            vec!["polaris", "trust", "show", "--json"],
         ] {
             Cli::try_parse_from(args).unwrap();
         }
@@ -1406,6 +1560,18 @@ mod tests {
         assert!(matches!(
             cli.command,
             Commands::LearnerMirror { json: true }
+        ));
+    }
+
+    #[test]
+    fn trust_show_json_flag_parses() {
+        let cli = Cli::try_parse_from(vec!["polaris", "trust", "show", "--json"]).unwrap();
+
+        assert!(matches!(
+            cli.command,
+            Commands::Trust {
+                command: TrustCommands::Show { json: true }
+            }
         ));
     }
 

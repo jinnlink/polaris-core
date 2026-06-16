@@ -55,6 +55,10 @@ impl HttpApi {
                 200,
                 serde_json::to_value(self.engine.learner_mirror_snapshot()?)?,
             )),
+            ("GET", "/trust") => Ok(response(
+                200,
+                serde_json::to_value(self.engine.trust_panel()?)?,
+            )),
             ("POST", "/next") => self.next(body),
             ("POST", "/evidence") => self.evidence(body),
             ("POST", "/feedback") => self.feedback(body),
@@ -62,9 +66,8 @@ impl HttpApi {
             | ("GET", "/evidence")
             | ("GET", "/feedback")
             | ("POST", "/status")
-            | ("POST", "/learner-mirror") => {
-                Ok(response(405, json!({"error": "method not allowed"})))
-            }
+            | ("POST", "/learner-mirror")
+            | (_, "/trust") => Ok(response(405, json!({"error": "method not allowed"}))),
             _ => Ok(response(404, json!({"error": "not found"}))),
         }
     }
@@ -415,6 +418,32 @@ mod tests {
             polaris_core::phase::Phase::ALL.len()
         );
         assert!(response.body["recent_assertions"].as_array().is_some());
+    }
+
+    #[test]
+    fn http_trust_returns_stable_panel_shape() {
+        let mut api = test_api();
+
+        let response = api.handle("GET", "/trust", "").unwrap();
+
+        assert_eq!(response.status, 200);
+        assert!(response.body["gates"].as_array().is_some());
+        assert!(response.body["active_breeding_experiments"]
+            .as_array()
+            .is_some());
+        assert!(response.body["active_mrt_experiments"].as_array().is_some());
+        assert!(response.body["recent_activity"].as_object().is_some());
+        assert!(response.body["governance"].as_object().is_some());
+    }
+
+    #[test]
+    fn http_trust_rejects_non_get_methods_as_method_not_allowed() {
+        let mut api = test_api();
+
+        let response = api.handle("PUT", "/trust", "").unwrap();
+
+        assert_eq!(response.status, 405);
+        assert_eq!(response.body["error"], "method not allowed");
     }
 
     #[test]

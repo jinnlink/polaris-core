@@ -52,6 +52,7 @@ fn preregistration_writes_audit_and_keeps_candidate_out_of_admitted_library() {
 #[test]
 fn candidate_admits_only_after_posterior_beats_incumbent_with_minimum_n() {
     let engine = empty_engine();
+    set_breeding_min_n(&engine, 8);
     engine
         .preregister_bred_move(sample_input("breed-admit"))
         .unwrap();
@@ -176,6 +177,7 @@ fn breeding_parameters_are_governance_gates() {
         assert_eq!(spec.tuning_route, TuningRoute::Manual);
     }
     assert_eq!(registry["breeding.admit_p"].default_value, "0.80");
+    assert_eq!(registry["breeding.min_n"].default_value, "20");
 }
 
 fn empty_engine() -> Engine {
@@ -202,6 +204,7 @@ fn sample_input(id: &str) -> BredMoveInput {
 }
 
 fn admit_candidate(engine: &Engine, id: &str) {
+    set_breeding_min_n(engine, 8);
     engine.preregister_bred_move(sample_input(id)).unwrap();
     for _ in 0..8 {
         engine
@@ -213,6 +216,16 @@ fn admit_candidate(engine: &Engine, id: &str) {
     }
     let summary = engine.evaluate_bred_moves().unwrap();
     assert_eq!(summary.admitted, 1);
+}
+
+fn set_breeding_min_n(engine: &Engine, min_n: i64) {
+    engine
+        .conn()
+        .execute(
+            "INSERT OR REPLACE INTO meta(key, value) VALUES ('breeding.min_n', ?1)",
+            [min_n.to_string()],
+        )
+        .unwrap();
 }
 
 fn bred_status(engine: &Engine, id: &str) -> String {

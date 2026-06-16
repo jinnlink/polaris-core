@@ -66,6 +66,7 @@ impl McpSession {
                 }
                 "mark_report_assertion_accurate" => self.mark_report_assertion_accurate(arguments),
                 "record_learner_feedback" => self.record_learner_feedback(arguments),
+                "get_trust_panel" => self.get_trust_panel(),
                 "submit_evidence" => self.submit_evidence(arguments),
                 "get_teaching_instruction" => self.get_teaching_instruction(arguments),
                 other => Err(format!("unknown tool: {other}")),
@@ -90,6 +91,15 @@ impl McpSession {
                     .status_snapshot()
                     .map_err(|error| error.to_string())?;
                 return serde_json::to_string_pretty(&snapshot)
+                    .map_err(|error| error.to_string())
+                    .map(|text| resource_text(uri, text));
+            }
+            if uri == "polaris://trust" {
+                let panel = self
+                    .engine
+                    .trust_panel()
+                    .map_err(|error| error.to_string())?;
+                return serde_json::to_string_pretty(&panel)
                     .map_err(|error| error.to_string())
                     .map(|text| resource_text(uri, text));
             }
@@ -229,6 +239,14 @@ impl McpSession {
         Ok(json!({
             "report": self.engine.latest_mirror_report().map_err(|error| error.to_string())?
         }))
+    }
+
+    fn get_trust_panel(&self) -> Result<Value, String> {
+        let panel = self
+            .engine
+            .trust_panel()
+            .map_err(|error| error.to_string())?;
+        serde_json::to_value(panel).map_err(|error| error.to_string())
     }
 
     fn mark_report_assertion_inaccurate(&self, arguments: &Value) -> Result<Value, String> {
@@ -423,6 +441,14 @@ fn tool_definitions() -> Value {
             }
         },
         {
+            "name": "get_trust_panel",
+            "description": "Return the read-only trust panel with F1-F5 gate status, active breeding and MRT experiments, recent activity, and governance thresholds.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {}
+            }
+        },
+        {
             "name": "submit_evidence",
             "description": "Submit learner evidence for engine-owned scoring and optimistic mastery update. External AI judgement is not accepted as mastery state.",
             "inputSchema": {
@@ -463,6 +489,12 @@ fn resource_definitions() -> Value {
             "uri": "polaris://status",
             "name": "Polaris status",
             "description": "Read-only status snapshot with current_pack, theta_mode, due_today, and concept states.",
+            "mimeType": "application/json"
+        },
+        {
+            "uri": "polaris://trust",
+            "name": "Polaris trust panel",
+            "description": "Read-only F1-F5 gate status, active experiments, recent activity, and governance thresholds.",
             "mimeType": "application/json"
         }
     ])
@@ -614,6 +646,7 @@ mod tests {
                 "mark_report_assertion_inaccurate",
                 "mark_report_assertion_accurate",
                 "record_learner_feedback",
+                "get_trust_panel",
                 "submit_evidence",
                 "get_teaching_instruction"
             ]
@@ -630,6 +663,7 @@ mod tests {
             .map(|resource| resource["uri"].as_str().unwrap())
             .collect::<Vec<_>>();
         assert!(resource_uris.contains(&"polaris://status"));
+        assert!(resource_uris.contains(&"polaris://trust"));
 
         let templates = session
             .handle_request(
@@ -666,6 +700,47 @@ mod tests {
         assert_eq!(payload["due_today"], 0);
         assert_eq!(payload["concepts"][0]["concept_id"], "ownership");
         assert_eq!(payload["concepts"][0]["phase"], "undetermined");
+    }
+
+    #[test]
+    fn mcp_get_trust_panel_tool_and_resource_share_shape() {
+        let mut session = test_session();
+
+        let tool_response = session
+            .handle_request(json!({
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "tools/call",
+                "params": {"name": "get_trust_panel", "arguments": {}}
+            }))
+            .unwrap()
+            .unwrap();
+        let tool_text = tool_response["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap();
+        let tool_payload: Value = serde_json::from_str(tool_text).unwrap();
+
+        let resource_response = session
+            .handle_request(json!({
+                "jsonrpc": "2.0",
+                "id": 5,
+                "method": "resources/read",
+                "params": {"uri": "polaris://trust"}
+            }))
+            .unwrap()
+            .unwrap();
+        let resource_text = resource_response["result"]["contents"][0]["text"]
+            .as_str()
+            .unwrap();
+        let resource_payload: Value = serde_json::from_str(resource_text).unwrap();
+
+        for payload in [&tool_payload, &resource_payload] {
+            assert!(payload["gates"].as_array().is_some());
+            assert!(payload["active_breeding_experiments"].as_array().is_some());
+            assert!(payload["active_mrt_experiments"].as_array().is_some());
+            assert!(payload["recent_activity"].as_object().is_some());
+            assert!(payload["governance"].as_object().is_some());
+        }
     }
 
     #[test]

@@ -1,6 +1,6 @@
 # 票队列（单票制）
 
-状态：**无 In Progress；P08C Pack 作者上手指南 + 模板 Pack 已通过验收（2026-06-17）**。任何时刻只允许 1 张票 In Progress。
+状态：**无 In Progress；P10A 五框架门状态面板 + 实验透明度已提交（2026-06-17）**。任何时刻只允许 1 张票 In Progress。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 **Phase 7+ 产品形态轴线见 `docs/PRODUCT_ROADMAP.md`**（轴 6 学习者形态 / 轴 7 多 Pack 承载 / 轴 8 工程演进 / 轴 9 信任面板）。
 新增票必须标注它服务主命题（验证真懂→定位模糊→针对性补缺）的哪一环。
@@ -72,6 +72,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 - [x] **P09C polaris doctor --diagnose 全面诊断**（`TICKET_P09C_DOCTOR_DIAGNOSE.md`）← 已实现并通过验收；最近 7 天 tuning/breeding/mental_fit/GU/consolidation/report 摘要；服务环节：全环节（运维）
 - [x] **P08B LLM 调用隐私清单 + 纯 Tier 0 模式**（`TICKET_P08B_LLM_PRIVACY_TIER0.md`）← 已实现并通过验收；新增外发调用清单、`polaris privacy show` 与 `POLARIS_TIER0_ONLY=1` 全禁外部模型调用；服务环节：信任前提
 - [x] **P08C Pack 作者上手指南 + 模板 Pack**（`TICKET_P08C_PACK_AUTHOR_GUIDE_TEMPLATE.md`）← 已实现并通过验收；30 分钟上手文档 + `packs/template/` 最小可验证样板；服务环节：生态可用性
+- [x] **P10A 五框架门状态面板 + 实验透明度**（`TICKET_P10A_TRUST_PANEL.md`）← 已实现、通过验收并提交；`polaris trust show` + 只读 HTTP/MCP 出口暴露 F1-F5 门状态、active breeding/MRT 实验与最近关键后台摘要；`breeding.min_n` 默认 6→20；服务环节：验证真懂（验证门可见）
 
 ## Backlog（票外发现的问题记在这里，不顺手做）
 
