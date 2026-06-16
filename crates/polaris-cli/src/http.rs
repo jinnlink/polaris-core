@@ -50,9 +50,16 @@ impl HttpApi {
                 200,
                 serde_json::to_value(self.engine.status_snapshot()?)?,
             )),
+            ("GET", "/learner-mirror") => Ok(response(
+                200,
+                serde_json::to_value(self.engine.learner_mirror_snapshot()?)?,
+            )),
             ("POST", "/next") => self.next(body),
             ("POST", "/evidence") => self.evidence(body),
-            ("GET", "/next") | ("GET", "/evidence") | ("POST", "/status") => {
+            ("GET", "/next")
+            | ("GET", "/evidence")
+            | ("POST", "/status")
+            | ("POST", "/learner-mirror") => {
                 Ok(response(405, json!({"error": "method not allowed"})))
             }
             _ => Ok(response(404, json!({"error": "not found"}))),
@@ -357,6 +364,25 @@ mod tests {
     }
 
     #[test]
+    fn http_learner_mirror_returns_static_panel_snapshot() {
+        let mut api = test_api();
+
+        let response = api.handle("GET", "/learner-mirror", "").unwrap();
+
+        assert_eq!(response.status, 200);
+        assert!(response.body["generated_at"].as_str().is_some());
+        assert!(response.body["confidence_curve"].as_array().is_some());
+        assert_eq!(
+            response.body["phase_distribution"]
+                .as_array()
+                .unwrap()
+                .len(),
+            polaris_core::phase::Phase::ALL.len()
+        );
+        assert!(response.body["recent_assertions"].as_array().is_some());
+    }
+
+    #[test]
     fn http_next_records_behavior_event_and_returns_instruction() {
         let mut api = test_api();
 
@@ -507,6 +533,29 @@ mod tests {
         assert!(text.contains("Content-Type: application/json"), "{text}");
         assert!(!text.contains("Access-Control-Allow-Origin: *"), "{text}");
         assert!(text.contains(r#""service":"polaris-core""#), "{text}");
+    }
+
+    #[test]
+    fn http_learner_mirror_stream_does_not_add_wildcard_cors() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let mut api = test_api();
+            let (stream, _) = listener.accept().unwrap();
+            handle_stream(&mut api, stream).unwrap();
+        });
+
+        let mut client = TcpStream::connect(addr).unwrap();
+        client
+            .write_all(b"GET /learner-mirror HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+            .unwrap();
+        let mut text = String::new();
+        client.read_to_string(&mut text).unwrap();
+        server.join().unwrap();
+
+        assert!(text.starts_with("HTTP/1.1 200 OK"), "{text}");
+        assert!(!text.contains("Access-Control-Allow-Origin: *"), "{text}");
+        assert!(text.contains(r#""recent_assertions""#), "{text}");
     }
 
     #[test]

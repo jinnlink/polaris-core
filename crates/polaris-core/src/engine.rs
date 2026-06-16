@@ -33,6 +33,7 @@ use crate::gu::{
     active_gu_rules_for_concept, concept_has_active_gu_rule, run_gu_induction, ActiveGuRule,
     GuInductionSummary,
 };
+use crate::learner_mirror::{learner_mirror_snapshot, LearnerMirrorSnapshot};
 use crate::mastery::{fold_all, fold_attempt, AttemptObservation, MasteryParams, MasteryState};
 use crate::mental_fit::{run_mental_dynamics_fit, transitions_from_meta, MentalFitSummary};
 use crate::mental_state::{
@@ -190,6 +191,10 @@ impl Engine {
 
     pub fn status_snapshot(&self) -> Result<StatusSnapshot> {
         status_snapshot(&self.conn)
+    }
+
+    pub fn learner_mirror_snapshot(&self) -> Result<LearnerMirrorSnapshot> {
+        learner_mirror_snapshot(&self.conn)
     }
 
     pub fn create_goal(&self, input: GoalInput) -> Result<GoalRecord> {

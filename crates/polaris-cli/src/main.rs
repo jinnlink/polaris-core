@@ -7,6 +7,7 @@ use polaris_core::config::{
 };
 use polaris_core::db::{open_database, open_database_read_only};
 use polaris_core::engine::{Engine, SubmitInput};
+use polaris_core::learner_mirror::LearnerMirrorSnapshot;
 use polaris_core::ops::{
     doctor_diagnostics, doctor_report, ActivitySummary, DoctorDiagnostics, DoctorReport,
 };
@@ -77,6 +78,10 @@ enum Commands {
         session: String,
     },
     Status {
+        #[arg(long)]
+        json: bool,
+    },
+    LearnerMirror {
         #[arg(long)]
         json: bool,
     },
@@ -210,6 +215,17 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             let conn = open_database_read_only(cli.db.unwrap_or_else(default_db_path))?;
             let engine = Engine::new(conn);
             print_diagnosis(engine.diagnose_concept(&concept)?);
+        }
+        Commands::LearnerMirror { json } => {
+            if !json {
+                return Err(adapter_error("learner-mirror currently requires --json"));
+            }
+            let conn = open_database_read_only(cli.db.unwrap_or_else(default_db_path))?;
+            let engine = Engine::new(conn);
+            println!(
+                "{}",
+                learner_mirror_json(&engine.learner_mirror_snapshot()?)?
+            );
         }
         Commands::Mcp => {
             let conn = open_database(cli.db.unwrap_or_else(default_db_path))?;
@@ -397,6 +413,9 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     println!("该断言将在抑制窗口内不再进入报告；这条反馈本身已成为校正数据。");
                 }
                 Commands::Diagnose { .. } => unreachable!("handled before writable database open"),
+                Commands::LearnerMirror { .. } => {
+                    unreachable!("handled before writable database open")
+                }
                 Commands::Mcp => unreachable!("handled before command dispatch"),
                 Commands::Backup { .. } => unreachable!("handled before writable database open"),
                 Commands::Doctor { .. } => unreachable!("handled before writable database open"),
@@ -824,6 +843,10 @@ fn status_snapshot_json(snapshot: &StatusSnapshot) -> serde_json::Result<String>
     serde_json::to_string_pretty(snapshot)
 }
 
+fn learner_mirror_json(snapshot: &LearnerMirrorSnapshot) -> serde_json::Result<String> {
+    serde_json::to_string_pretty(snapshot)
+}
+
 fn print_status_snapshot(snapshot: &StatusSnapshot) {
     print!("{}", status_snapshot_text(snapshot));
 }
@@ -1089,6 +1112,16 @@ mod tests {
     }
 
     #[test]
+    fn learner_mirror_json_flag_parses() {
+        let cli = Cli::try_parse_from(vec!["polaris", "learner-mirror", "--json"]).unwrap();
+
+        assert!(matches!(
+            cli.command,
+            Commands::LearnerMirror { json: true }
+        ));
+    }
+
+    #[test]
     fn privacy_show_parses_and_reports_tier0_state() {
         let cli = Cli::try_parse_from(vec!["polaris", "privacy", "show"]).unwrap();
 
@@ -1309,6 +1342,45 @@ mod tests {
             payload["concepts"][0]["phase_summary"],
             "自信高但实际表现不稳，需要用更硬的题确认。"
         );
+    }
+
+    #[test]
+    fn learner_mirror_json_serializes_static_panel_fields() {
+        let snapshot = polaris_core::learner_mirror::LearnerMirrorSnapshot {
+            generated_at: "2026-06-16T00:00:00Z".to_owned(),
+            confidence_curve: vec![polaris_core::learner_mirror::ConfidenceCurvePoint {
+                attempt_id: "a1".to_owned(),
+                concept_id: "ownership".to_owned(),
+                created_at: "2026-06-15T00:00:00Z".to_owned(),
+                confidence: 1.0,
+                actual_score: 0.2,
+                is_final: true,
+            }],
+            phase_distribution: vec![polaris_core::learner_mirror::PhaseDistributionItem {
+                phase: "phantom".to_owned(),
+                label: "看起来懂".to_owned(),
+                summary: "自信高但实际表现不稳，需要用更硬的题确认。".to_owned(),
+                count: 1,
+            }],
+            recent_assertions: vec![polaris_core::learner_mirror::RecentAssertion {
+                id: "calibration_phantom:ownership".to_owned(),
+                kind: "calibration_phantom".to_owned(),
+                claim: "Confidence is ahead of actual score.".to_owned(),
+                confidence: 0.82,
+                suggested_action: None,
+            }],
+        };
+
+        let json = learner_mirror_json(&snapshot).unwrap();
+        let payload: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(payload["generated_at"], "2026-06-16T00:00:00Z");
+        assert_eq!(payload["confidence_curve"][0]["attempt_id"], "a1");
+        assert_eq!(payload["confidence_curve"][0]["is_final"], true);
+        assert_eq!(payload["phase_distribution"][0]["phase"], "phantom");
+        let assertion = payload["recent_assertions"][0].as_object().unwrap();
+        assert!(assertion.contains_key("suggested_action"));
+        assert!(assertion["suggested_action"].is_null());
     }
 
     #[test]

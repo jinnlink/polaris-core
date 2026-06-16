@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Polaris Learner Mirror</title>
+    <meta
+      name="description"
+      content="Polaris Core static learner mirror for confidence calibration, phase distribution, assertions, and action prompts."
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="mirror-shell">
+      <header class="masthead" aria-labelledby="page-title">
+        <div class="brand-block">
+          <span class="brand-mark" aria-hidden="true">P</span>
+          <div>
+            <p class="eyebrow">Polaris Core</p>
+            <h1 id="page-title">学习者状态镜子</h1>
+          </div>
+        </div>
+        <div class="run-meta" aria-label="snapshot metadata">
+          <span id="generated-at">loading</span>
+          <span id="data-source">sample fixture</span>
+        </div>
+      </header>
+
+      <section class="summary-grid" aria-label="learner summary">
+        <article class="metric-tile">
+          <span class="metric-label">窗口</span>
+          <strong id="learner-window">--</strong>
+          <small id="learner-name">--</small>
+        </article>
+        <article class="metric-tile">
+          <span class="metric-label">Attempts</span>
+          <strong id="attempt-count">--</strong>
+          <small id="finalized-count">-- finalized</small>
+        </article>
+        <article class="metric-tile signal-tile">
+          <span class="metric-label">Calibration</span>
+          <strong id="calibration-signal">--</strong>
+          <small id="calibration-caption">--</small>
+        </article>
+      </section>
+
+      <section class="dashboard-grid">
+        <article class="panel curve-panel" aria-labelledby="curve-title">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Confidence vs Actual</p>
+              <h2 id="curve-title">自信与实际表现</h2>
+            </div>
+            <div class="legend" aria-label="chart legend">
+              <span><i class="swatch confidence"></i> 自信</span>
+              <span><i class="swatch actual"></i> 实际</span>
+              <span><i class="dot provisional"></i> provisional</span>
+            </div>
+          </div>
+          <div id="curve-chart" class="chart-frame" role="img" aria-label="confidence and actual score line chart"></div>
+        </article>
+
+        <article class="panel phase-panel" aria-labelledby="phase-title">
+          <div class="panel-head compact">
+            <div>
+              <p class="eyebrow">Phase Distribution</p>
+              <h2 id="phase-title">相分布</h2>
+            </div>
+            <strong id="phase-total" class="panel-number">--</strong>
+          </div>
+          <div id="phase-bars" class="phase-bars"></div>
+        </article>
+
+        <article class="panel assertion-panel" aria-labelledby="assertion-title">
+          <div class="panel-head compact">
+            <div>
+              <p class="eyebrow">Recent Assertions</p>
+              <h2 id="assertion-title">近期断言</h2>
+            </div>
+          </div>
+          <div id="assertion-list" class="assertion-list"></div>
+        </article>
+
+        <article class="panel action-panel" aria-labelledby="action-title">
+          <div class="panel-head compact">
+            <div>
+              <p class="eyebrow">Action Prompts</p>
+              <h2 id="action-title">行动提示</h2>
+            </div>
+          </div>
+          <div id="action-list" class="action-list"></div>
+        </article>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

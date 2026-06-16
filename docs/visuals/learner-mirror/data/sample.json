@@ -1,0 +1,173 @@
+{
+  "meta": {
+    "project": "polaris-core",
+    "title": "Learner Mirror Static Fixture",
+    "fixture": true,
+    "synthetic": true,
+    "privacy_note": "Artificial, hand-written fixture for static UI validation. It is not exported from any real learner database.",
+    "schema_version": "p07b-static-v1"
+  },
+  "generated_at": "2026-06-16T09:30:00Z",
+  "learner": {
+    "display_name": "Sample learner",
+    "cohort_label": "synthetic-local-fixture",
+    "window": "recent 14 days",
+    "attempt_count": 18,
+    "finalized_count": 13
+  },
+  "confidence_curve": [
+    {
+      "attempt_id": "attempt.synthetic.001",
+      "created_at": "2026-06-03T09:10:00Z",
+      "label": "06-03",
+      "concept_id": "ownership_transfer",
+      "concept_label": "Ownership transfer",
+      "confidence": 0.72,
+      "actual_score": 0.58,
+      "is_final": true
+    },
+    {
+      "attempt_id": "attempt.synthetic.002",
+      "created_at": "2026-06-04T13:42:00Z",
+      "label": "06-04",
+      "concept_id": "borrow_checker",
+      "concept_label": "Borrow checker",
+      "confidence": 0.63,
+      "actual_score": 0.67,
+      "is_final": true
+    },
+    {
+      "attempt_id": "attempt.synthetic.003",
+      "created_at": "2026-06-05T20:05:00Z",
+      "label": "06-05",
+      "concept_id": "iterator_adapters",
+      "concept_label": "Iterator adapters",
+      "confidence": 0.55,
+      "actual_score": 0.74,
+      "is_final": true
+    },
+    {
+      "attempt_id": "attempt.synthetic.004",
+      "created_at": "2026-06-07T10:18:00Z",
+      "label": "06-07",
+      "concept_id": "lifetimes_in_structs",
+      "concept_label": "Lifetimes in structs",
+      "confidence": 0.78,
+      "actual_score": 0.51,
+      "is_final": true
+    },
+    {
+      "attempt_id": "attempt.synthetic.005",
+      "created_at": "2026-06-09T16:24:00Z",
+      "label": "06-09",
+      "concept_id": "error_propagation",
+      "concept_label": "Error propagation",
+      "confidence": 0.69,
+      "actual_score": 0.81,
+      "is_final": true
+    },
+    {
+      "attempt_id": "attempt.synthetic.006",
+      "created_at": "2026-06-10T21:02:00Z",
+      "label": "06-10",
+      "concept_id": "trait_bounds",
+      "concept_label": "Trait bounds",
+      "confidence": 0.82,
+      "actual_score": 0.62,
+      "is_final": true
+    },
+    {
+      "attempt_id": "attempt.synthetic.007",
+      "created_at": "2026-06-12T08:46:00Z",
+      "label": "06-12",
+      "concept_id": "async_ownership",
+      "concept_label": "Async ownership",
+      "confidence": 0.47,
+      "actual_score": 0.66,
+      "is_final": false
+    },
+    {
+      "attempt_id": "attempt.synthetic.008",
+      "created_at": "2026-06-14T19:35:00Z",
+      "label": "06-14",
+      "concept_id": "module_boundaries",
+      "concept_label": "Module boundaries",
+      "confidence": 0.74,
+      "actual_score": 0.79,
+      "is_final": false
+    }
+  ],
+  "phase_distribution": [
+    {
+      "phase": "undetermined",
+      "label": "还看不清",
+      "summary": "才试了几次，证据还不够，系统会先补探针任务。",
+      "count": 5
+    },
+    {
+      "phase": "phantom",
+      "label": "看起来懂",
+      "summary": "自信高但实际表现不稳，需要用更硬的题确认。",
+      "count": 4
+    },
+    {
+      "phase": "fluctuation",
+      "label": "刚上路",
+      "summary": "表现起伏明显，结果还不结实。",
+      "count": 7
+    },
+    {
+      "phase": "settling",
+      "label": "刚扎根",
+      "summary": "原场景中渐稳，新场景还卡。",
+      "count": 3
+    },
+    {
+      "phase": "solidification",
+      "label": "稳了但僵",
+      "summary": "熟练但迁移受限，需要用变式题松动。",
+      "count": 6
+    },
+    {
+      "phase": "transfer",
+      "label": "能迁移",
+      "summary": "能在新情境使用。",
+      "count": 9
+    },
+    {
+      "phase": "generation",
+      "label": "能创造",
+      "summary": "能独立产出，且迁移表现更快更稳。",
+      "count": 2
+    },
+    {
+      "phase": "regression",
+      "label": "退步了",
+      "summary": "之前会但近期又脱档，需要回到证据补缺。",
+      "count": 1
+    }
+  ],
+  "recent_assertions": [
+    {
+      "id": "assertion.synthetic.001",
+      "kind": "calibration_gap",
+      "claim": "Trait bounds 题组出现高自信低得分，可能存在 fluency illusion。",
+      "confidence": 0.81,
+      "suggested_action": "安排一题要求写出约束失败原因的反例解释。"
+    },
+    {
+      "id": "assertion.synthetic.002",
+      "kind": "phase_shift",
+      "claim": "Iterator adapters 从脆弱转向活跃，连续两次解释与应用均达标。",
+      "confidence": 0.77,
+      "suggested_action": "下一轮给低提示的组合题，避免停留在模板熟练。"
+    },
+    {
+      "id": "assertion.synthetic.003",
+      "kind": "evidence_gap",
+      "claim": "Async ownership 缺少 final_score，当前曲线点仍是 provisional。",
+      "confidence": 0.69,
+      "suggested_action": "等待评分回填前只展示趋势，不把该点计作最终掌握。"
+    }
+  ]
+}

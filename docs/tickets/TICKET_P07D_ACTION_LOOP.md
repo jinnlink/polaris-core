@@ -1,6 +1,6 @@
 # P07D 行动闭环（相 → 任务响应策略）
 
-状态：已实现并通过验收（待用户确认 commit）
+状态：已实现、通过验收并提交（78efe0d）
 
 服务主命题环节：针对性补缺
 
@@ -134,7 +134,7 @@ git revert <P07D-commit-sha>
 
 ## AI 交付记录（2026-06-16）
 
-- 当前状态：已实现并通过验收；等待用户确认后 commit。
+- 当前状态：已实现、通过验收并提交（78efe0d）。
 - 变更清单：
   - 扩展 `BatchStrategy`：新增 `PhantomChallenge`、`SettlingProbe`、`RegressionRecovery`。
   - `get_interleaved_batch()` 仅在 HMM 策略为 `Default` 时启用 phase action loop；`Flow` 与 `EasyReviews` 保持既有策略，疲劳/无聊保护优先。
@@ -146,7 +146,7 @@ git revert <P07D-commit-sha>
   - 规格审批：APPROVE。
   - 代码质量审批：APPROVE。
 - 票外改动说明：
-  - 工作区已有 `.gitignore`、`.cursor/`、`docs/visuals/`、`docs/polaris-core-comic-system-brief.md`、`docs/superpowers/plans/2026-06-13-polaris-porcelain-atlas.md` 等预存改动；本票未修改这些内容，提交 P07D 时需排除。
+  - 工作区已有 `.gitignore`、`.cursor/`、`docs/visuals/`、`docs/polaris-core-comic-system-brief.md`、`docs/superpowers/plans/2026-06-13-polaris-porcelain-atlas.md` 等预存改动；本票未修改这些内容，P07D 提交 `78efe0d` 未纳入这些内容。
 
 ### 验收输出
 
