@@ -1,6 +1,6 @@
 # 票队列（单票制）
 
-状态：**无 In Progress；P11B MCP/HTTP API 稳定性合约已通过验收（2026-06-17）**。任何时刻只允许 1 张票 In Progress。
+状态：**无 In Progress；P03O BKT-MIRT 融合不确定度传播 shadow gate 已通过验收（2026-06-17）**。任何时刻只允许 1 张票 In Progress。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 **Phase 7+ 产品形态轴线见 `docs/PRODUCT_ROADMAP.md`**（轴 6 学习者形态 / 轴 7 多 Pack 承载 / 轴 8 工程演进 / 轴 9 信任面板）。
 新增票必须标注它服务主命题（验证真懂→定位模糊→针对性补缺）的哪一环。
@@ -32,6 +32,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 
 - [x] **P03M 多 pack latent 维度映射**（`TICKET_P03M_LATENT_DIMENSION_MAPPING.md`）← 已实现并通过验收；从 P03A 审查后续转正，补齐 `latent.dims` / pack→维度映射，避免 Q 降级初始化把所有 pack 概念压到同一潜因子；服务环节：定位模糊 → 针对性补缺
 - [x] **P03N 几何候选池确定性**（`TICKET_P03N_GEOMETRY_CANDIDATE_DETERMINISM.md`）← 已实现并通过验收；从 P05A 验收观察转正，扩大 HNSW 候选池并补确定性夹具，避免强综合分候选在最终排序前被截掉；服务环节：全环节（验证稳定性）
+- [x] **P03O BKT-MIRT 融合不确定度传播 shadow gate**（`TICKET_P03O_BKT_MIRT_UNCERTAINTY_SHADOW.md`）← 已实现并通过验收；为当前 λ 融合新增逆方差 shadow 输出与不确定度，不改变主 `p_known` 行为；服务环节：定位模糊
 
 ## Phase 4 — UI + MRT
 

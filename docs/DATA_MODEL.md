@@ -129,7 +129,8 @@ Brier 用二值结果（≥0.75→1，≤0.40→0，死区跳过）：`brier_ewm
 - 软标签 `y = final_score`；预测 `p̂ = σ(q_c·θ − b_c − d_t)`。
 - 在线更新（P06G 后）：`gradient_k = (y − p̂)·q_ck`；每维累积 `g2_k ← g2_k + gradient_k²`；`Δθ_k = eta·gradient_k / sqrt(g2_k + adagrad_epsilon)`，逐元素帽 `|Δθ_k| ≤ step_cap`；每夜收缩 `θ ← θ·(1 − shrink)`（`g2` 不收缩，保留历史步长记忆）。
 - 每条 graded attempt 记 `attempts.theta_version` 与 `attempts.theta_scope`：`shared` 使用全局 `theta.version`；`pack:<id>` 使用 `pack_theta.version`。`theta_history` / `pack_theta_history` 每夜快照后各自 version+1。
-- **BKT-MIRT 融合**：`p̂_known = λ·BKT + (1−λ)·σ(q·θ−b)`，`λ = n_c/(n_c + 5)`。
+- **BKT-MIRT 融合**：`p̂_known = λ·BKT + (1−λ)·σ(q·θ−b−d_t)`，`λ = n_c/(n_c + 5)`。
+- **P03O shadow gate**：主 `p̂_known` 在 v1 仍使用上一条 λ 融合，不切换产品行为；`fused_p_known` 额外输出逆方差 shadow 融合、BKT 方差、MIRT 方差、shadow 权重与融合方差。BKT 方差用 Bernoulli posterior 工程近似并随 `attempt_count` 收缩；MIRT 方差只把 AdaGrad `g2` 与 `q` 当作信息量工程近似，不宣称为严格协方差；BKT 无样本 evidence、无效 `g2` 或非 finite 方差时 shadow 回退到当前 λ 融合（`g2=0` 是有效但高不确定度的冷启动估计）。
 - Q 初始化：pack 安装时 LLM 按图式先验产出 q0（维度命名表 meta('latent.dims') JSON）；LLM 不可用 → q0 = onehot(track 维)。
 
 ## 5. P03B — 夜间巩固（逐步配方）

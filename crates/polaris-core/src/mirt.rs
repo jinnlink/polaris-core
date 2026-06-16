@@ -29,7 +29,18 @@ pub struct FusedPKnown {
     pub bkt_p_known: f64,
     pub mirt_p_hat: f64,
     pub lambda: f64,
+    pub shadow_p_known: f64,
+    pub bkt_variance: f64,
+    pub mirt_variance: f64,
+    pub shadow_bkt_weight: f64,
+    pub shadow_variance: f64,
+    pub shadow_uses_inverse_variance: bool,
 }
+
+const SHADOW_VARIANCE_FLOOR: f64 = 1e-6;
+const SHADOW_VARIANCE_CEILING: f64 = 0.25;
+const BKT_VARIANCE_PRIOR_N: f64 = 2.0;
+const MIRT_INFORMATION_PRIOR: f64 = 1.0;
 
 impl MirtParams {
     pub fn from_conn(conn: &Connection) -> Result<Self> {
@@ -117,6 +128,11 @@ pub fn initial_pack_q_blob(conn: &Connection, pack_id: &str) -> Result<Vec<u8>> 
 }
 
 pub fn ensure_theta(conn: &Connection) -> Result<()> {
+    ensure_theta_row(conn)?;
+    ensure_theta_g2(conn)
+}
+
+fn ensure_theta_row(conn: &Connection) -> Result<()> {
     let params = MirtParams::from_conn(conn)?;
     let zero = vec![0.0; params.k];
     let zero_blob = encode_vector(&zero);
@@ -125,6 +141,12 @@ pub fn ensure_theta(conn: &Connection) -> Result<()> {
          VALUES (1, ?1, ?2, 1, strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
         params![zero_blob, encode_vector(&zero)],
     )?;
+    Ok(())
+}
+
+fn ensure_theta_g2(conn: &Connection) -> Result<()> {
+    let params = MirtParams::from_conn(conn)?;
+    let zero = vec![0.0; params.k];
     let g2_blob = conn
         .query_row("SELECT g2 FROM theta WHERE id=1", [], |row| {
             row.get::<_, Option<Vec<u8>>>(0)
@@ -149,6 +171,11 @@ pub fn ensure_theta(conn: &Connection) -> Result<()> {
 }
 
 pub fn ensure_pack_theta(conn: &Connection, pack_id: &str) -> Result<()> {
+    ensure_pack_theta_row(conn, pack_id)?;
+    ensure_pack_theta_g2(conn, pack_id)
+}
+
+fn ensure_pack_theta_row(conn: &Connection, pack_id: &str) -> Result<()> {
     let params = MirtParams::from_conn(conn)?;
     let zero = vec![0.0; params.k];
     let zero_blob = encode_vector(&zero);
@@ -157,6 +184,12 @@ pub fn ensure_pack_theta(conn: &Connection, pack_id: &str) -> Result<()> {
          VALUES (?1, ?2, ?3, 1, strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
         params![pack_id, zero_blob, encode_vector(&zero)],
     )?;
+    Ok(())
+}
+
+fn ensure_pack_theta_g2(conn: &Connection, pack_id: &str) -> Result<()> {
+    let params = MirtParams::from_conn(conn)?;
+    let zero = vec![0.0; params.k];
     let g2_blob = conn
         .query_row(
             "SELECT g2 FROM pack_theta WHERE pack=?1",
@@ -310,6 +343,19 @@ pub fn fused_p_known(conn: &Connection, concept_id: &str, task_type: &str) -> Re
     }
     .clamp(0.0, 1.0);
     let p_known = lambda * bkt_p_known + (1.0 - lambda) * prediction.p_hat;
+    let bkt_variance = bkt_shadow_variance(bkt_p_known, n);
+    let mirt_variance = mirt_shadow_variance(conn, concept_id, prediction.p_hat);
+    let shadow = inverse_variance_shadow(
+        ShadowFusionInput {
+            bkt_p_known,
+            mirt_p_hat: prediction.p_hat,
+            legacy_p_known: p_known,
+            legacy_bkt_weight: lambda,
+            bkt_variance,
+            mirt_variance,
+        },
+        n > 0.0,
+    );
 
     Ok(FusedPKnown {
         concept_id: concept_id.to_owned(),
@@ -318,7 +364,126 @@ pub fn fused_p_known(conn: &Connection, concept_id: &str, task_type: &str) -> Re
         bkt_p_known,
         mirt_p_hat: prediction.p_hat,
         lambda,
+        shadow_p_known: shadow.p_known,
+        bkt_variance,
+        mirt_variance: shadow.mirt_variance,
+        shadow_bkt_weight: shadow.bkt_weight,
+        shadow_variance: shadow.variance,
+        shadow_uses_inverse_variance: shadow.uses_inverse_variance,
     })
+}
+
+fn bkt_shadow_variance(p_known: f64, attempt_count: f64) -> f64 {
+    let p = finite_probability(p_known).unwrap_or(0.5);
+    let effective_n = attempt_count.max(0.0) + BKT_VARIANCE_PRIOR_N;
+    clamp_shadow_variance(p * (1.0 - p) / effective_n)
+}
+
+fn mirt_shadow_variance(conn: &Connection, concept_id: &str, p_hat: f64) -> Option<f64> {
+    let p = finite_probability(p_hat)?;
+    let (q, _) = concept_q_and_b(conn, concept_id).ok()?;
+    let scope = theta_scope_for_concept(conn, concept_id).ok()?;
+    let (_, g2, _) = match scope {
+        ThetaScope::Shared => theta_state(conn).ok()?,
+        ThetaScope::Pack(pack_id) => pack_theta_state(conn, &pack_id).ok()?,
+    };
+    if q.len() != g2.len() {
+        return None;
+    }
+    let information = q.iter().zip(g2.iter()).try_fold(0.0, |acc, (q_k, g2_k)| {
+        if !q_k.is_finite() || !g2_k.is_finite() || *g2_k < 0.0 {
+            return None;
+        }
+        Some(acc + q_k.powi(2) * g2_k)
+    })?;
+    if !information.is_finite() || information < 0.0 {
+        return None;
+    }
+    Some(clamp_shadow_variance(
+        p * (1.0 - p) / (MIRT_INFORMATION_PRIOR + information),
+    ))
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ShadowFusionInput {
+    bkt_p_known: f64,
+    mirt_p_hat: f64,
+    legacy_p_known: f64,
+    legacy_bkt_weight: f64,
+    bkt_variance: f64,
+    mirt_variance: Option<f64>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ShadowFusion {
+    p_known: f64,
+    bkt_weight: f64,
+    variance: f64,
+    mirt_variance: f64,
+    uses_inverse_variance: bool,
+}
+
+fn inverse_variance_shadow(input: ShadowFusionInput, has_bkt_evidence: bool) -> ShadowFusion {
+    let mirt_variance = input.mirt_variance.unwrap_or(SHADOW_VARIANCE_CEILING);
+    let fallback = || ShadowFusion {
+        p_known: input.legacy_p_known,
+        bkt_weight: input.legacy_bkt_weight,
+        variance: legacy_shadow_variance(
+            input.legacy_bkt_weight,
+            input.bkt_variance,
+            mirt_variance,
+        ),
+        mirt_variance,
+        uses_inverse_variance: false,
+    };
+
+    let Some(mirt_variance) = input.mirt_variance else {
+        return fallback();
+    };
+    if !has_bkt_evidence
+        || !is_valid_shadow_variance(input.bkt_variance)
+        || !is_valid_shadow_variance(mirt_variance)
+    {
+        return fallback();
+    }
+
+    let bkt_precision = 1.0 / input.bkt_variance;
+    let mirt_precision = 1.0 / mirt_variance;
+    let total_precision = bkt_precision + mirt_precision;
+    if !total_precision.is_finite() || total_precision <= 0.0 {
+        return fallback();
+    }
+
+    let bkt_weight = (bkt_precision / total_precision).clamp(0.0, 1.0);
+    let mirt_weight = 1.0 - bkt_weight;
+    ShadowFusion {
+        p_known: (bkt_weight * input.bkt_p_known + mirt_weight * input.mirt_p_hat).clamp(0.0, 1.0),
+        bkt_weight,
+        variance: clamp_shadow_variance(1.0 / total_precision),
+        mirt_variance,
+        uses_inverse_variance: true,
+    }
+}
+
+fn finite_probability(value: f64) -> Option<f64> {
+    value.is_finite().then(|| value.clamp(0.0, 1.0))
+}
+
+fn is_valid_shadow_variance(value: f64) -> bool {
+    value.is_finite() && (SHADOW_VARIANCE_FLOOR..=SHADOW_VARIANCE_CEILING).contains(&value)
+}
+
+fn clamp_shadow_variance(value: f64) -> f64 {
+    if value.is_finite() {
+        value.clamp(SHADOW_VARIANCE_FLOOR, SHADOW_VARIANCE_CEILING)
+    } else {
+        SHADOW_VARIANCE_CEILING
+    }
+}
+
+fn legacy_shadow_variance(lambda: f64, bkt_variance: f64, mirt_variance: f64) -> f64 {
+    let lambda = lambda.clamp(0.0, 1.0);
+    clamp_shadow_variance(lambda.powi(2) * bkt_variance + (1.0 - lambda).powi(2) * mirt_variance)
 }
 
 fn initial_track_q(params: &MirtParams) -> Vec<f64> {
@@ -381,11 +546,11 @@ fn theta_scope_for_concept(conn: &Connection, concept_id: &str) -> Result<ThetaS
 fn theta_for_concept(conn: &Connection, concept_id: &str) -> Result<(Vec<f64>, i64)> {
     match theta_scope_for_concept(conn, concept_id)? {
         ThetaScope::Shared => {
-            ensure_theta(conn)?;
+            ensure_theta_row(conn)?;
             theta(conn)
         }
         ThetaScope::Pack(pack_id) => {
-            ensure_pack_theta(conn, &pack_id)?;
+            ensure_pack_theta_row(conn, &pack_id)?;
             pack_theta(conn, &pack_id)
         }
     }
