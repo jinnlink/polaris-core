@@ -45,6 +45,9 @@
 | `graph.struct_threshold` | `0.40` | A | - | Manual |
 | `gu.min_failures` | `3` | B | `[3,10]` | Replay |
 | `gu.resolve_n` | `3` | B | `[2,10]` | Replay |
+| `gu_prior.max_prior_strength` | `20` | A | `[0,1000]` | Manual |
+| `gu_prior.min_holdout_attempts` | `6` | A | `[1,10000]` | Manual |
+| `gu_prior.min_shadow_rules` | `1` | A | `[1,1000]` | Manual |
 | `gu.retire_p` | `0.30` | B | - | Replay |
 | `gu.retire_thresh` | `0.80` | B | - | Replay |
 | `gu.validate_thresh` | `0.50` | B | `[0.5,0.95]` | Replay |

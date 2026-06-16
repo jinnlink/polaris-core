@@ -13,6 +13,7 @@ pub mod goals;
 pub mod grader;
 pub mod graph;
 pub mod gu;
+pub mod gu_prior;
 pub mod learner_feedback;
 pub mod learner_mirror;
 pub mod mastery;

@@ -33,6 +33,7 @@ use crate::gu::{
     active_gu_rules_for_concept, concept_has_active_gu_rule, run_gu_induction, ActiveGuRule,
     GuInductionSummary,
 };
+use crate::gu_prior::{gu_prior_shadow_summary, GuPriorShadowSummary};
 use crate::learner_feedback::{
     record_learner_feedback, LearnerFeedbackInput, LearnerFeedbackReceipt,
 };
@@ -227,6 +228,10 @@ impl Engine {
 
     pub fn phase_dynamics(&self) -> Result<PhaseDynamicsSummary> {
         phase_dynamics_summary(&self.conn)
+    }
+
+    pub fn gu_prior_shadow(&self) -> Result<GuPriorShadowSummary> {
+        gu_prior_shadow_summary(&self.conn)
     }
 
     pub fn create_goal(&self, input: GoalInput) -> Result<GoalRecord> {

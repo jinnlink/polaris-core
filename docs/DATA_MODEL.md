@@ -202,6 +202,14 @@ Brier 用二值结果（≥0.75→1，≤0.40→0，死区跳过）：`brier_ewm
 - 目标集合 = `transfer|generation`。对每个起点相解 Markov hitting time；目标不可达、存在非目标吸收风险或线性方程奇异时返回 `None`。
 - 验证门：按时间序 holdout，把 Markov 下一相预测与“静态相不变”基线分别记录 accuracy/logloss；样本不足时 `skipped`。阈值走 `phase_dynamics.min_shadow_ready_transitions`、`phase_dynamics.min_validation_transitions`、`phase_dynamics.holdout_frac`，均为 A 类手动参数。未过门前只作为 shadow 统计，不改变相判据、调度、MRT、报告或默认产品行为。
 
+### 9.2 P06I — G_u 层级 Beta 超先验 shadow gate
+
+- 数据源只读：`gu_rules`、`attempts.grader_json.pattern_tags`、`concepts`、`edges`。本票不新增表，不写回 `gu_rules` 生命周期字段。
+- baseline = 现行平坦 `Beta(1,1)`；hierarchical shadow = 同 pattern 既有规则概念与当前规则一跳图谱邻域在 holdout 起点前的 pattern 命中/未命中证据，折算为 bounded pseudo-count。
+- pseudo-count 强度上限由 `gu_prior.max_prior_strength` 控制；无同 pattern / 邻域来源证据时退化为 `Beta(1,1)`。
+- holdout = 当前规则 `last_seen` 之后、`gu.window_days` 内、当前规则概念集合上的 final attempts；标签 = grader_json 是否包含该 rule pattern。
+- 验证摘要分别记录 flat 与 hierarchical 的 sequential Beta predictive logloss/Brier/accuracy；样本不足时 `skipped`。阈值走 `gu_prior.min_shadow_rules`、`gu_prior.min_holdout_attempts`、`gu_prior.max_prior_strength`，均为 A 类手动参数。未过门前只作为 shadow 统计，不改变 G_u 生命周期、调度、评分、报告或默认产品行为。
+
 ## 10. 参数登记处（参数认识论——本节是"不僵硬"的结构保证）
 
 **三类参数制，严禁混淆**：
@@ -237,6 +245,9 @@ Brier 用二值结果（≥0.75→1，≤0.40→0，死区跳过）：`brier_ewm
 | phase_dynamics.min_shadow_ready_transitions | 3 | **A** | [1,1000] | 不调（shadow 验证门） | 相变动力学达到 shadow_ready 的最少有效迁移数 |
 | phase_dynamics.min_validation_transitions | 8 | **A** | [2,1000] | 不调（shadow 验证门） | 相变动力学 holdout 验证最少有效迁移数 |
 | phase_dynamics.holdout_frac | 0.20 | **A** | [0.05,0.50] | 不调（shadow 验证门） | 相变动力学时间序 holdout 比例 |
+| gu_prior.min_shadow_rules | 1 | **A** | [1,1000] | 不调（shadow 验证门） | G_u 层级先验 shadow_ready 的最少可评估规则数 |
+| gu_prior.min_holdout_attempts | 6 | **A** | [1,10000] | 不调（shadow 验证门） | G_u 层级先验 holdout 验证最少 attempt 数 |
+| gu_prior.max_prior_strength | 20 | **A** | [0,1000] | 不调（shadow 验证门） | G_u 层级先验可折算的最大 pseudo-count 强度 |
 | friction.w1..w4 | .4/.2/.2/.2 | **A** | — | 不调（φ 的指数定义） | 摩擦定义 |
 | friction.lambda | 1.0 | B | [0.5,3.0] | MRT/手动（个人风险厌恶度） | φ\* 取舍 |
 | mrt.epsilon | 0.20 | B | [0.05,0.30] | 手动/按计划随签名收窄而衰减 | 探索率 |

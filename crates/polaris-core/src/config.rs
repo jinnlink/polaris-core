@@ -751,6 +751,27 @@ pub fn default_registry() -> BTreeMap<&'static str, ParameterSpec> {
             TuningRoute::Manual,
         ),
         spec(
+            "gu_prior.min_shadow_rules",
+            "1",
+            ParameterClass::A,
+            Some("[1,1000]"),
+            TuningRoute::Manual,
+        ),
+        spec(
+            "gu_prior.min_holdout_attempts",
+            "6",
+            ParameterClass::A,
+            Some("[1,10000]"),
+            TuningRoute::Manual,
+        ),
+        spec(
+            "gu_prior.max_prior_strength",
+            "20",
+            ParameterClass::A,
+            Some("[0,1000]"),
+            TuningRoute::Manual,
+        ),
+        spec(
             "hmm.transitions",
             "[]",
             ParameterClass::C,
@@ -932,6 +953,9 @@ mod tests {
             "gu.min_failures",
             "gu.validate_thresh",
             "gu.resolve_n",
+            "gu_prior.min_shadow_rules",
+            "gu_prior.min_holdout_attempts",
+            "gu_prior.max_prior_strength",
         ] {
             assert!(registry.contains_key(key), "missing {key}");
         }
@@ -1036,6 +1060,47 @@ mod tests {
                 .unwrap()
                 .default_value,
             "0.20"
+        );
+    }
+
+    #[test]
+    fn parameter_registry_contains_gu_prior_shadow_gates() {
+        let registry = default_registry();
+
+        for key in [
+            "gu_prior.min_shadow_rules",
+            "gu_prior.min_holdout_attempts",
+            "gu_prior.max_prior_strength",
+        ] {
+            let spec = registry.get(key).unwrap_or_else(|| panic!("missing {key}"));
+            assert_eq!(
+                spec.class,
+                ParameterClass::A,
+                "{key} is a shadow validation gate and must be class A"
+            );
+            assert_eq!(spec.tuning_route, TuningRoute::Manual);
+        }
+
+        assert_eq!(
+            registry
+                .get("gu_prior.min_shadow_rules")
+                .unwrap()
+                .default_value,
+            "1"
+        );
+        assert_eq!(
+            registry
+                .get("gu_prior.min_holdout_attempts")
+                .unwrap()
+                .default_value,
+            "6"
+        );
+        assert_eq!(
+            registry
+                .get("gu_prior.max_prior_strength")
+                .unwrap()
+                .default_value,
+            "20"
         );
     }
 
