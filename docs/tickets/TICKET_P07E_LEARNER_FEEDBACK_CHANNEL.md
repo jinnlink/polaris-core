@@ -1,6 +1,6 @@
 # P07E 学习者反馈通道扩展
 
-状态：In Progress（2026-06-17 认领）
+状态：已实现、通过验收并提交（`ecee5fb`）
 服务主命题环节：验证真懂
 
 ## 背景
@@ -98,6 +98,8 @@ cargo test -p polaris-cli mcp_learner_feedback
 ## 回滚方式
 
 ## 交付记录（2026-06-17）
+
+提交：`ecee5fb feat(学习者反馈): 添加 P07E 语义反馈通道`
 
 ### 变更清单
 
