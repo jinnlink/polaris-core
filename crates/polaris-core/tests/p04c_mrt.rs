@@ -7,7 +7,7 @@ use serde_json::Value;
 fn next_task_writes_mrt_preregistration_audit() {
     let engine = rust_engine();
     set_meta(&engine, "mrt.epsilon", "0.0");
-    seed_mastery(&engine, "ownership", 0.72, "recall", "phantom");
+    seed_mastery(&engine, "ownership", 0.72, "recall", "undetermined");
 
     let task = engine.next_task().unwrap().expect("task");
 
@@ -18,7 +18,10 @@ fn next_task_writes_mrt_preregistration_audit() {
     assert!(!audit.prereg_id.is_empty());
     assert_eq!(audit.context["window"], "7d");
     assert_eq!(audit.context["epsilon"], 0.0);
-    assert_eq!(audit.context["context_hash"], "state:unknown|phase:phantom");
+    assert_eq!(
+        audit.context["context_hash"],
+        "state:unknown|phase:undetermined"
+    );
     assert_eq!(audit.context["candidate_set"][0], "explain");
     assert!(audit.context["main_effect_hypothesis"]
         .as_str()
@@ -27,10 +30,137 @@ fn next_task_writes_mrt_preregistration_audit() {
 }
 
 #[test]
+fn phase_action_loop_mrt_audit_context_records_phase_strategies() {
+    for (phase, max_depth, expected_strategy, expected_move, expected_reason) in [
+        (
+            "phantom",
+            "recall",
+            "phantom_challenge",
+            "transfer",
+            "迁移题确认是否真懂",
+        ),
+        (
+            "settling",
+            "apply",
+            "settling_probe",
+            "transfer",
+            "迁移题补新情境证据",
+        ),
+        (
+            "regression",
+            "create",
+            "regression_recovery",
+            "explain",
+            "先降到回忆或解释任务恢复证据",
+        ),
+    ] {
+        let engine = rust_engine();
+        set_meta(&engine, "mrt.epsilon", "0.0");
+        seed_mastery(&engine, "ownership", 0.72, max_depth, phase);
+
+        let task = engine.next_task().unwrap().expect("task");
+
+        assert_eq!(task.concept_id, "ownership");
+        assert_eq!(task.move_id, expected_move);
+        assert!(task.reason.contains(expected_reason));
+
+        let audit = latest_mrt_log(&engine);
+        assert_eq!(audit.randomized, 0);
+        assert_eq!(audit.move_id, expected_move);
+        assert_eq!(audit.context["selected_by"], "phase_action_loop");
+        assert_eq!(audit.context["phase_strategy"], expected_strategy);
+        assert_eq!(audit.context["phase"], phase);
+        assert_eq!(audit.context["candidate_set"][0], expected_move);
+        assert!(audit.context["main_effect_hypothesis"]
+            .as_str()
+            .unwrap()
+            .contains("7d success"));
+    }
+}
+
+#[test]
+fn phase_action_loop_next_task_easy_review_state_suppresses_phase_challenge() {
+    let engine = rust_engine();
+    set_meta(&engine, "mrt.epsilon", "0.0");
+    seed_mastery(&engine, "ownership", 0.72, "recall", "phantom");
+    seed_mental_state(&engine, "s1", "ownership", "fatigued");
+
+    let task = engine.next_task().unwrap().expect("task");
+
+    assert_eq!(task.concept_id, "ownership");
+    assert_eq!(task.move_id, "explain");
+    assert_eq!(task.task_type, "free_explain");
+    assert!(!task.reason.contains("迁移题确认是否真懂"));
+
+    let audit = latest_mrt_log(&engine);
+    assert_eq!(audit.move_id, "explain");
+    assert_eq!(audit.context["selected_by"], "signature_friction");
+    assert!(audit.context["phase_strategy"].is_null());
+}
+
+#[test]
+fn non_action_loop_phase_still_uses_signature_friction_mrt() {
+    let engine = rust_engine();
+    set_meta(&engine, "mrt.epsilon", "0.0");
+    seed_mastery(&engine, "ownership", 0.72, "recall", "fluctuation");
+
+    let task = engine.next_task().unwrap().expect("task");
+
+    assert_eq!(task.move_id, "explain");
+    let audit = latest_mrt_log(&engine);
+    assert_eq!(audit.context["selected_by"], "signature_friction");
+    assert!(audit.context["phase_strategy"].is_null());
+    assert_eq!(
+        audit.context["context_hash"],
+        "state:unknown|phase:fluctuation"
+    );
+}
+
+#[test]
+fn phase_action_loop_success_updates_preregistered_context() {
+    let mut engine = rust_engine();
+    set_meta(&engine, "mrt.epsilon", "0.0");
+    seed_mastery(&engine, "ownership", 0.72, "recall", "phantom");
+    let task = engine.next_task().unwrap().expect("task");
+    assert_eq!(task.move_id, "transfer");
+    engine.record_next_task_event("s1", &task).unwrap();
+
+    let receipt = engine
+        .submit_provisional(polaris_core::engine::SubmitInput {
+            session_id: "s1".to_owned(),
+            concept_id: "ownership".to_owned(),
+            task_type: task.task_type.clone(),
+            prompt_text: task.prompt_text.clone(),
+            response_text: "Ownership transfers to a moved value in a new API design.".to_owned(),
+            self_confidence: 4,
+            latency_ms: 1200,
+            hint_count: 0,
+        })
+        .unwrap();
+
+    engine.apply_final_score(&receipt.attempt_id, 0.82).unwrap();
+
+    let (alpha, beta, n): (f64, f64, i64) = engine
+        .conn()
+        .query_row(
+            "SELECT alpha, beta, n FROM moves_effects WHERE move=?1 AND context_hash=?2",
+            (task.move_id.as_str(), task.mrt_context_hash.as_str()),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!((alpha, beta, n), (2.0, 1.0, 1));
+
+    let outcome = outcome_log_for_prereg(&engine, &task.mrt_prereg_id);
+    assert_eq!(outcome.context["kind"], "outcome");
+    assert_eq!(outcome.context["outcome"], true);
+    assert_eq!(outcome.context["context_hash"], task.mrt_context_hash);
+}
+
+#[test]
 fn cold_start_mrt_randomization_can_replace_the_base_move() {
     let engine = rust_engine();
     set_meta(&engine, "mrt.epsilon", "1.0");
-    seed_mastery(&engine, "ownership", 0.72, "recall", "phantom");
+    seed_mastery(&engine, "ownership", 0.72, "recall", "undetermined");
 
     let task = engine.next_task().unwrap().expect("task");
 
@@ -46,11 +176,11 @@ fn signature_posterior_can_select_non_default_move_without_randomization() {
     let engine = rust_engine();
     set_meta(&engine, "mrt.epsilon", "0.0");
     set_meta(&engine, "friction.lambda", "0.5");
-    seed_mastery(&engine, "ownership", 0.72, "recall", "phantom");
+    seed_mastery(&engine, "ownership", 0.72, "recall", "undetermined");
     seed_move_effect(
         &engine,
         "explain",
-        "state:unknown|phase:phantom",
+        "state:unknown|phase:undetermined",
         1.0,
         9.0,
         8,
@@ -58,7 +188,7 @@ fn signature_posterior_can_select_non_default_move_without_randomization() {
     seed_move_effect(
         &engine,
         "apply",
-        "state:unknown|phase:phantom",
+        "state:unknown|phase:undetermined",
         12.0,
         1.0,
         11,
@@ -78,16 +208,23 @@ fn forced_mrt_randomization_replaces_selected_move_and_marks_audit() {
     let engine = rust_engine();
     set_meta(&engine, "mrt.epsilon", "1.0");
     set_meta(&engine, "friction.lambda", "0.0");
-    seed_mastery(&engine, "ownership", 0.72, "recall", "phantom");
+    seed_mastery(&engine, "ownership", 0.72, "recall", "undetermined");
     seed_move_effect(
         &engine,
         "explain",
-        "state:unknown|phase:phantom",
+        "state:unknown|phase:undetermined",
         12.0,
         1.0,
         11,
     );
-    seed_move_effect(&engine, "apply", "state:unknown|phase:phantom", 1.0, 9.0, 8);
+    seed_move_effect(
+        &engine,
+        "apply",
+        "state:unknown|phase:undetermined",
+        1.0,
+        9.0,
+        8,
+    );
 
     let task = engine.next_task().unwrap().expect("task");
 
@@ -102,7 +239,7 @@ fn forced_mrt_randomization_replaces_selected_move_and_marks_audit() {
 fn seven_day_success_updates_the_preregistered_context() {
     let mut engine = rust_engine();
     set_meta(&engine, "mrt.epsilon", "0.0");
-    seed_mastery(&engine, "ownership", 0.72, "explain", "phantom");
+    seed_mastery(&engine, "ownership", 0.72, "explain", "undetermined");
     let task = engine.next_task().unwrap().expect("task");
     assert_eq!(task.task_type, "apply");
     engine.record_next_task_event("s1", &task).unwrap();
@@ -152,7 +289,7 @@ fn seven_day_success_updates_the_preregistered_context() {
 fn later_same_concept_success_settles_pending_preregistration() {
     let mut engine = rust_engine();
     set_meta(&engine, "mrt.epsilon", "0.0");
-    seed_mastery(&engine, "ownership", 0.72, "explain", "phantom");
+    seed_mastery(&engine, "ownership", 0.72, "explain", "undetermined");
     let task = engine.next_task().unwrap().expect("task");
     engine.record_next_task_event("s1", &task).unwrap();
 
@@ -188,7 +325,7 @@ fn later_same_concept_success_settles_pending_preregistration() {
 fn failing_attempt_waits_for_the_seven_day_window_before_beta_update() {
     let mut engine = rust_engine();
     set_meta(&engine, "mrt.epsilon", "0.0");
-    seed_mastery(&engine, "ownership", 0.72, "explain", "phantom");
+    seed_mastery(&engine, "ownership", 0.72, "explain", "undetermined");
     let task = engine.next_task().unwrap().expect("task");
     engine.record_next_task_event("s1", &task).unwrap();
     let receipt = engine
@@ -221,7 +358,7 @@ fn failing_attempt_waits_for_the_seven_day_window_before_beta_update() {
 fn expired_window_without_success_records_failure() {
     let mut engine = rust_engine();
     set_meta(&engine, "mrt.epsilon", "0.0");
-    seed_mastery(&engine, "ownership", 0.72, "explain", "phantom");
+    seed_mastery(&engine, "ownership", 0.72, "explain", "undetermined");
     let task = engine.next_task().unwrap().expect("task");
     engine.record_next_task_event("s1", &task).unwrap();
     engine

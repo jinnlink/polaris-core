@@ -152,6 +152,9 @@ enum BatchStrategy {
     Default,
     EasyReviews,
     Flow,
+    PhantomChallenge,
+    SettlingProbe,
+    RegressionRecovery,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

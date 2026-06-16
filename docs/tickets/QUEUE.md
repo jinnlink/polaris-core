@@ -1,6 +1,6 @@
 # 票队列（单票制）
 
-状态：**P09C polaris doctor --diagnose 全面诊断已实现并通过验收**。任何时刻只允许 1 张票 In Progress。
+状态：**P07D 行动闭环（相 → 任务响应策略）已实现并通过验收，待用户确认 commit**。任何时刻只允许 1 张票 In Progress。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 **Phase 7+ 产品形态轴线见 `docs/PRODUCT_ROADMAP.md`**（轴 6 学习者形态 / 轴 7 多 Pack 承载 / 轴 8 工程演进 / 轴 9 信任面板）。
 新增票必须标注它服务主命题（验证真懂→定位模糊→针对性补缺）的哪一环。
@@ -63,6 +63,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 
 - [x] **P07A 相图产品化语义层**（`TICKET_P07A_PHASE_PRODUCT_SEMANTICS.md`）← 已实现并通过验收；8 个相图名加“产品名 + 一句话解读”映射，不改判据；服务环节：验证真懂 → 用户读懂
 - [x] **P07C 报告 top_signal + suggested_action**（`TICKET_P07C_REPORT_TOP_SIGNAL.md`）← 已实现并通过验收；镜像报告加“如果只看一句”顶部提示与每条断言对应的可选行动；服务环节：定位模糊 → 针对性补缺
+- [x] **P07D 行动闭环（相 → 任务响应策略）**（`TICKET_P07D_ACTION_LOOP.md`）← 已实现并通过验收，待用户确认 commit；相图 Phase 转任务响应策略，带 MRT 预登记审计；服务环节：针对性补缺
 - [x] **P09A engine.rs 模块化拆分**（`TICKET_P09A_ENGINE_MODULARIZATION.md`）← 已实现并通过验收；拆 `engine/task_selection.rs`、`engine/submit_pipeline.rs`、`engine/mental_state.rs`，保留 `engine.rs` 薄 facade 与 public API；服务环节：全环节（可演进）
 - [x] **P09B polaris config 浏览 CLI + 参数文档自动生成**（`TICKET_P09B_CONFIG_CLI_PARAMETERS.md`）← 已实现并通过验收；`polaris config list [--class A|B|C] [--tuning-route Replay|Mrt|Manual|Fit] [--json|--md]` + 参数文档同源生成/校验；服务环节：全环节（可治理）
 - [x] **P09C polaris doctor --diagnose 全面诊断**（`TICKET_P09C_DOCTOR_DIAGNOSE.md`）← 已实现并通过验收；最近 7 天 tuning/breeding/mental_fit/GU/consolidation/report 摘要；服务环节：全环节（运维）
@@ -86,7 +87,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
   - **P07A 相图产品化语义层**（S）→ 已转正式票 P07A：8 个相图名加"产品名 + 一句话解读"映射，不改判据；服务环节：验证真懂 → 用户读懂。
   - **P07B 学习者状态镜子 v1**（M）：复用 atlas 静态站基建扩出学习者实时面板（自信 vs 实际曲线、相分布、近期断言摘要）；服务环节：验证真懂 → 定位模糊。依赖 P07A。
   - **P07C 报告 top_signal + suggested_action**（S）→ 已转正式票 P07C 并完成：镜像报告加"如果你只看一句"顶部提示与每条断言对应的可选行动；服务环节：定位模糊 → 针对性补缺。依赖 P07A。
-  - **P07D 行动闭环（相 → 任务响应策略）**（M）：补 `BatchStrategy::PhantomChallenge` 等相专属调度分支，每条带留出验证门；服务环节：针对性补缺。依赖 P07A、P03F、P03G。
+  - **P07D 行动闭环（相 → 任务响应策略）**（M）→ 已转正式票 P07D 并通过验收，待用户确认 commit：补 `BatchStrategy::PhantomChallenge` 等相专属调度分支，每条带留出验证门；服务环节：针对性补缺。依赖 P07A、P03F、P03G。
   - **P07E 学习者反馈通道扩展**（S）：在"标不准"之外加"我现在状态是 / 我想暂停"等语义化触点；服务环节：验证真懂。依赖 P07B。
   - **P08A 多 Pack 切换 + 数据隔离开关**（M）：`polaris pack switch/list` + 每 pack 是否共享 θ 的开关；服务环节：全环节（通用性）。
   - **P08B LLM 调用隐私清单 + 纯 Tier 0 模式**（M）→ 已转正式票 P08B：`polaris privacy show` + `POLARIS_TIER0_ONLY=1`；服务环节：信任前提。Tauri/UI 大投入之前的必备。

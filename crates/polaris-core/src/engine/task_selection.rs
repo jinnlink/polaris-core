@@ -7,14 +7,21 @@ impl Engine {
             return Ok(None);
         };
 
+        let hmm_strategy = self.batch_strategy()?;
         let base_move = select_next_move_for_concept(&self.conn, &best.id)?;
+        let (planned_move, phase_strategy) = phase_adjusted_move(
+            base_move,
+            best.phase,
+            phase_adjustment_protected(hmm_strategy),
+        );
         let selection = select_move_for_concept(
             &self.conn,
             &best.id,
             &best.name,
-            base_move,
+            planned_move,
             best.p_known,
             best.phase,
+            phase_strategy,
         )?;
         let selected_move = selection.selected_move;
         let template = move_template_for_concept(&self.conn, &best.id, selected_move.id)?
@@ -26,10 +33,7 @@ impl Engine {
             move_id: selected_move.id.to_owned(),
             task_type: selected_move.task_type.to_owned(),
             prompt_text,
-            reason: format!(
-                "选它因为：当前效用最高。\n证据是：U={:.3}，并结合 p_known 与 max_depth 选择 {}。\n现在做什么：完成一个 {} 任务。",
-                best.utility, selected_move.target_depth, selected_move.id
-            ),
+            reason: next_task_reason(best, selected_move, phase_strategy),
             mrt_context_hash: selection.context_hash,
             mrt_prereg_id: selection.prereg_id,
             mrt_randomized: selection.randomized,
@@ -68,7 +72,12 @@ impl Engine {
             return self.single_next_task_assignment();
         }
 
-        let strategy = self.batch_strategy()?;
+        let hmm_strategy = self.batch_strategy()?;
+        let strategy = if matches!(hmm_strategy, BatchStrategy::Default) {
+            phase_batch_strategy(&ranked).unwrap_or(hmm_strategy)
+        } else {
+            hmm_strategy
+        };
         let mut selected = Vec::new();
         match strategy {
             BatchStrategy::Default => {
@@ -99,6 +108,18 @@ impl Engine {
                     candidate.p_known >= 0.6
                 });
             }
+            BatchStrategy::PhantomChallenge
+            | BatchStrategy::SettlingProbe
+            | BatchStrategy::RegressionRecovery => {
+                if let Some(phase) = strategy_target_phase(strategy) {
+                    self.push_first_matching(&mut selected, &ranked, |candidate| {
+                        candidate.phase == phase
+                    });
+                }
+                self.push_review_pair(&mut selected, &ranked, |candidate| {
+                    candidate.p_known >= 0.6
+                })?;
+            }
         }
 
         if !matches!(strategy, BatchStrategy::EasyReviews) {
@@ -111,9 +132,12 @@ impl Engine {
 
         selected.truncate(batch_size);
         self.adjust_expected_success(&mut selected, &ranked, strategy)?;
+        if is_phase_action_strategy(strategy) {
+            self.shrink_out_of_band_batch(&mut selected, strategy)?;
+        }
         selected
             .iter()
-            .map(|candidate| self.assignment_for_candidate(candidate))
+            .map(|candidate| self.assignment_for_candidate(candidate, strategy))
             .collect()
     }
 
@@ -126,7 +150,7 @@ impl Engine {
         if selected.len() < 3 {
             return Ok(());
         }
-        let mut current = self.assignment_mean(selected)?;
+        let mut current = self.assignment_mean(selected, strategy)?;
         if target_distance(current) == 0.0 {
             return Ok(());
         }
@@ -150,7 +174,7 @@ impl Engine {
                     if !self.review_slots_are_diverse(strategy, &proposal)? {
                         continue;
                     }
-                    let mean = self.assignment_mean(&proposal)?;
+                    let mean = self.assignment_mean(&proposal, strategy)?;
                     if target_distance(mean) < target_distance(current) {
                         match &best {
                             Some((_, _, best_mean))
@@ -173,20 +197,55 @@ impl Engine {
         Ok(())
     }
 
-    fn assignment_mean(&self, candidates: &[RankedTaskCandidate]) -> Result<f64> {
+    fn shrink_out_of_band_batch(
+        &self,
+        selected: &mut Vec<RankedTaskCandidate>,
+        strategy: BatchStrategy,
+    ) -> Result<()> {
+        while selected.len() >= 3 {
+            let mean = self.assignment_mean(selected, strategy)?;
+            if target_distance(mean) == 0.0 {
+                return Ok(());
+            }
+            selected.pop();
+        }
+        Ok(())
+    }
+
+    fn assignment_mean(
+        &self,
+        candidates: &[RankedTaskCandidate],
+        strategy: BatchStrategy,
+    ) -> Result<f64> {
         let mut total = 0.0;
         for candidate in candidates {
-            total += self.expected_success_for_candidate(candidate)?;
+            total += self.expected_success_for_candidate(candidate, strategy)?;
         }
         Ok(total / candidates.len() as f64)
     }
 
-    fn expected_success_for_candidate(&self, candidate: &RankedTaskCandidate) -> Result<f64> {
-        let mut selected_move = select_next_move_for_concept(&self.conn, &candidate.id)?;
+    fn expected_success_for_candidate(
+        &self,
+        candidate: &RankedTaskCandidate,
+        strategy: BatchStrategy,
+    ) -> Result<f64> {
+        let base_move = select_next_move_for_concept(&self.conn, &candidate.id)?;
+        let mut selected_move = phase_adjusted_move(
+            base_move,
+            candidate.phase,
+            phase_adjustment_protected(strategy),
+        )
+        .0;
         let mut expected =
             self.expected_success(&candidate.id, selected_move.task_type, candidate.p_known)?;
         if is_new_or_weak(candidate) && expected < 0.50 {
             selected_move = easier_move(selected_move);
+            selected_move = phase_adjusted_move(
+                selected_move,
+                candidate.phase,
+                phase_adjustment_protected(strategy),
+            )
+            .0;
             expected =
                 self.expected_success(&candidate.id, selected_move.task_type, candidate.p_known)?;
         }
@@ -202,6 +261,9 @@ impl Engine {
             BatchStrategy::Default => &[1, 2],
             BatchStrategy::EasyReviews => &[0, 1],
             BatchStrategy::Flow => &[],
+            BatchStrategy::PhantomChallenge
+            | BatchStrategy::SettlingProbe
+            | BatchStrategy::RegressionRecovery => &[1, 2],
         };
         if review_indexes
             .iter()
@@ -309,12 +371,28 @@ impl Engine {
         }])
     }
 
-    fn assignment_for_candidate(&self, candidate: &RankedTaskCandidate) -> Result<TaskAssignment> {
-        let mut selected_move = select_next_move_for_concept(&self.conn, &candidate.id)?;
+    fn assignment_for_candidate(
+        &self,
+        candidate: &RankedTaskCandidate,
+        strategy: BatchStrategy,
+    ) -> Result<TaskAssignment> {
+        let base_move = select_next_move_for_concept(&self.conn, &candidate.id)?;
+        let mut selected_move = phase_adjusted_move(
+            base_move,
+            candidate.phase,
+            phase_adjustment_protected(strategy),
+        )
+        .0;
         let mut expected =
             self.expected_success(&candidate.id, selected_move.task_type, candidate.p_known)?;
         if is_new_or_weak(candidate) && expected < 0.50 {
             selected_move = easier_move(selected_move);
+            selected_move = phase_adjusted_move(
+                selected_move,
+                candidate.phase,
+                phase_adjustment_protected(strategy),
+            )
+            .0;
             expected =
                 self.expected_success(&candidate.id, selected_move.task_type, candidate.p_known)?;
         }
@@ -556,7 +634,100 @@ fn role_allows_candidate(
                 candidate.p_known >= 0.6
             }
         }
+        BatchStrategy::PhantomChallenge
+        | BatchStrategy::SettlingProbe
+        | BatchStrategy::RegressionRecovery => {
+            if index == 0 {
+                strategy_target_phase(strategy) == Some(candidate.phase)
+            } else {
+                candidate.p_known >= 0.6
+            }
+        }
     }
+}
+
+fn phase_batch_strategy(ranked: &[RankedTaskCandidate]) -> Option<BatchStrategy> {
+    if ranked
+        .iter()
+        .any(|candidate| candidate.phase == Phase::Phantom)
+    {
+        return Some(BatchStrategy::PhantomChallenge);
+    }
+    if ranked
+        .iter()
+        .any(|candidate| candidate.phase == Phase::Settling)
+    {
+        return Some(BatchStrategy::SettlingProbe);
+    }
+    if ranked
+        .iter()
+        .any(|candidate| candidate.phase == Phase::Regression)
+    {
+        return Some(BatchStrategy::RegressionRecovery);
+    }
+    None
+}
+
+fn strategy_target_phase(strategy: BatchStrategy) -> Option<Phase> {
+    match strategy {
+        BatchStrategy::PhantomChallenge => Some(Phase::Phantom),
+        BatchStrategy::SettlingProbe => Some(Phase::Settling),
+        BatchStrategy::RegressionRecovery => Some(Phase::Regression),
+        _ => None,
+    }
+}
+
+fn phase_adjustment_protected(strategy: BatchStrategy) -> bool {
+    matches!(strategy, BatchStrategy::EasyReviews | BatchStrategy::Flow)
+}
+
+fn is_phase_action_strategy(strategy: BatchStrategy) -> bool {
+    matches!(
+        strategy,
+        BatchStrategy::PhantomChallenge
+            | BatchStrategy::SettlingProbe
+            | BatchStrategy::RegressionRecovery
+    )
+}
+
+fn phase_adjusted_move(
+    selected_move: SelectedMove,
+    phase: Phase,
+    protect_easy_review: bool,
+) -> (SelectedMove, Option<&'static str>) {
+    if protect_easy_review {
+        return (selected_move, None);
+    }
+    match phase {
+        Phase::Phantom => (bloom_move("transfer"), Some("phantom_challenge")),
+        Phase::Settling => (bloom_move("transfer"), Some("settling_probe")),
+        Phase::Regression => {
+            let move_id = if selected_move.id == "recall" {
+                "recall"
+            } else {
+                "explain"
+            };
+            (bloom_move(move_id), Some("regression_recovery"))
+        }
+        _ => (selected_move, None),
+    }
+}
+
+fn next_task_reason(
+    candidate: &RankedTaskCandidate,
+    selected_move: SelectedMove,
+    phase_strategy: Option<&str>,
+) -> String {
+    let phase_reason = match phase_strategy {
+        Some("phantom_challenge") => "\n相响应：用迁移题确认是否真懂。",
+        Some("settling_probe") => "\n相响应：用迁移题补新情境证据。",
+        Some("regression_recovery") => "\n相响应：先降到回忆或解释任务恢复证据。",
+        _ => "",
+    };
+    format!(
+        "选它因为：当前效用最高。\n证据是：U={:.3}，并结合 p_known 与 max_depth 选择 {}。{}\n现在做什么：完成一个 {} 任务。",
+        candidate.utility, selected_move.target_depth, phase_reason, selected_move.id
+    )
 }
 
 fn dominant_state_from_posterior(value: &serde_json::Value) -> Option<String> {

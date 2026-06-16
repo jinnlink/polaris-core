@@ -45,6 +45,7 @@ pub fn select_move_for_concept(
     base_move: SelectedMove,
     p_known: f64,
     phase: Phase,
+    phase_strategy: Option<&'static str>,
 ) -> Result<PedagogySelection> {
     let state = latest_strategy_state(conn)?;
     let context_hash = format!("state:{state}|phase:{}", phase.as_str());
@@ -60,7 +61,9 @@ pub fn select_move_for_concept(
         .find(|candidate| candidate.base)
         .map(|candidate| candidate.move_id)
         .unwrap_or(base_move.id);
-    let mut selected = if observed_samples {
+    let mut selected = if phase_strategy.is_some() {
+        base_move.id
+    } else if observed_samples {
         candidates
             .first()
             .map(|candidate| candidate.move_id)
@@ -76,7 +79,7 @@ pub fn select_move_for_concept(
         .filter(|candidate| candidate.move_id != selected)
         .map(|candidate| candidate.move_id)
         .collect::<Vec<_>>();
-    if !alternatives.is_empty() && random_unit() < epsilon {
+    if phase_strategy.is_none() && !alternatives.is_empty() && random_unit() < epsilon {
         let index = random_index(alternatives.len());
         selected = alternatives[index];
         randomized = true;
@@ -84,24 +87,35 @@ pub fn select_move_for_concept(
 
     let prereg_id = format!("mrt-{}", Uuid::new_v4());
     let mut candidate_set = vec![selected.to_owned()];
-    for candidate in &candidates {
-        if !candidate_set.iter().any(|item| item == candidate.move_id) {
-            candidate_set.push(candidate.move_id.to_owned());
+    if phase_strategy.is_none() {
+        for candidate in &candidates {
+            if !candidate_set.iter().any(|item| item == candidate.move_id) {
+                candidate_set.push(candidate.move_id.to_owned());
+            }
         }
     }
+    let selected_by = if phase_strategy.is_some() {
+        "phase_action_loop"
+    } else {
+        "signature_friction"
+    };
+    let main_effect_hypothesis = phase_strategy
+        .map(phase_strategy_hypothesis)
+        .unwrap_or("selected move improves 7d success under this state and phase context");
     let context_json = json!({
         "kind": "preregistration",
         "window": "7d",
         "epsilon": epsilon,
         "candidate_set": candidate_set,
         "incumbent": incumbent,
-        "selected_by": "signature_friction",
+        "selected_by": selected_by,
+        "phase_strategy": phase_strategy,
         "context_hash": context_hash,
         "concept_id": concept_id,
         "concept_name": concept_name,
         "state": state,
         "phase": phase.as_str(),
-        "main_effect_hypothesis": "selected move improves 7d success under this state and phase context",
+        "main_effect_hypothesis": main_effect_hypothesis,
         "min_n": meta_i64(conn, "sig.shrink_n0")?
     })
     .to_string();
@@ -620,6 +634,21 @@ fn move_rank(move_id: &str) -> i32 {
 fn literature_prior_mean(move_id: &str) -> f64 {
     let d_lit = 1.0 - (move_rank(move_id) as f64 / (MOVE_IDS.len() as f64 - 1.0));
     (0.5 + 0.1 * d_lit).clamp(0.2, 0.8)
+}
+
+fn phase_strategy_hypothesis(phase_strategy: &str) -> &'static str {
+    match phase_strategy {
+        "phantom_challenge" => {
+            "phantom challenge improves 7d success by confirming true understanding with transfer evidence"
+        }
+        "settling_probe" => {
+            "settling probe improves 7d success by collecting transfer evidence in a new context"
+        }
+        "regression_recovery" => {
+            "regression recovery improves 7d success by lowering friction before rebuilding depth"
+        }
+        _ => "phase action loop improves 7d success under this phase context",
+    }
 }
 
 fn random_unit() -> f64 {
