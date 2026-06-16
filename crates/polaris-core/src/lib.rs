@@ -25,6 +25,7 @@ pub mod pack;
 pub mod pack_state;
 pub mod pedagogy;
 pub mod phase;
+pub mod phase_dynamics;
 pub mod privacy;
 pub mod report;
 pub mod scheduler;

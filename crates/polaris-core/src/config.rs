@@ -730,6 +730,27 @@ pub fn default_registry() -> BTreeMap<&'static str, ParameterSpec> {
             TuningRoute::Manual,
         ),
         spec(
+            "phase_dynamics.min_shadow_ready_transitions",
+            "3",
+            ParameterClass::A,
+            Some("[1,1000]"),
+            TuningRoute::Manual,
+        ),
+        spec(
+            "phase_dynamics.min_validation_transitions",
+            "8",
+            ParameterClass::A,
+            Some("[2,1000]"),
+            TuningRoute::Manual,
+        ),
+        spec(
+            "phase_dynamics.holdout_frac",
+            "0.20",
+            ParameterClass::A,
+            Some("[0.05,0.50]"),
+            TuningRoute::Manual,
+        ),
+        spec(
             "hmm.transitions",
             "[]",
             ParameterClass::C,
@@ -975,6 +996,47 @@ mod tests {
             .expect("tuning.rotation_cursor");
         assert_eq!(cursor.default_value, "0");
         assert_eq!(cursor.class, ParameterClass::C);
+    }
+
+    #[test]
+    fn parameter_registry_contains_p06h_phase_dynamics_gates() {
+        let registry = default_registry();
+
+        for key in [
+            "phase_dynamics.min_shadow_ready_transitions",
+            "phase_dynamics.min_validation_transitions",
+            "phase_dynamics.holdout_frac",
+        ] {
+            let spec = registry.get(key).unwrap_or_else(|| panic!("missing {key}"));
+            assert_eq!(
+                spec.class,
+                ParameterClass::A,
+                "{key} is a shadow validation gate and must be class A"
+            );
+            assert_eq!(spec.tuning_route, TuningRoute::Manual);
+        }
+
+        assert_eq!(
+            registry
+                .get("phase_dynamics.min_shadow_ready_transitions")
+                .unwrap()
+                .default_value,
+            "3"
+        );
+        assert_eq!(
+            registry
+                .get("phase_dynamics.min_validation_transitions")
+                .unwrap()
+                .default_value,
+            "8"
+        );
+        assert_eq!(
+            registry
+                .get("phase_dynamics.holdout_frac")
+                .unwrap()
+                .default_value,
+            "0.20"
+        );
     }
 
     #[test]

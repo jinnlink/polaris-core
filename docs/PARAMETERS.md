@@ -79,6 +79,9 @@
 | `mirt.shrink` | `1e-4` | B | - | Replay |
 | `mirt.step_cap` | `0.05` | B | `[0.01,0.1]` | Replay |
 | `mrt.epsilon` | `0.20` | B | `[0.05,0.30]` | Manual |
+| `phase_dynamics.holdout_frac` | `0.20` | A | `[0.05,0.50]` | Manual |
+| `phase_dynamics.min_shadow_ready_transitions` | `3` | A | `[1,1000]` | Manual |
+| `phase_dynamics.min_validation_transitions` | `8` | A | `[2,1000]` | Manual |
 | `report.confidence_floor` | `0.6` | A | - | Manual |
 | `report.feedback_suppress_days` | `90` | B | `[30,365]` | Manual |
 | `report.min_evidence` | `3` | A | - | Manual |

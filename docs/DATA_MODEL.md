@@ -194,6 +194,14 @@ Brier 用二值结果（≥0.75→1，≤0.40→0，死区跳过）：`brier_ewm
 **误解语法 G_u**：pattern 枚举 8 类：`overgeneralization | boundary-blindness | symbol-referent-confusion | causal-inversion | fluency-illusion | procedural-conceptual-gap | granularity-mismatch | interference-confusion`。
 规则 = `{pattern, tag_scope, Beta 后验(precision), evidence_ids}`；预测命中窗口 30 天；Beta(1,1) 起步；`P(precision < 0.3) > 0.8` → 规则退役。
 
+### 9.1 P06H — 相变动力学 shadow gate
+
+- 数据源只读：`behavior_events(type='phase_transition')`，payload 使用 P03E 已记录的 `{from,to,concept_id,attempt_id}`；未知相名、缺字段或 malformed JSON 计入 ignored，不参与统计。
+- 相集合使用现有 `Phase::ALL` 的 8 相：`undetermined, phantom, fluctuation, settling, solidification, transfer, generation, regression`。路线图旧稿里的“7 相”不作为实现依据。
+- 输出 8x8 计数矩阵与行归一化转移概率；无观测行概率全 0，不做平滑伪造。
+- 目标集合 = `transfer|generation`。对每个起点相解 Markov hitting time；目标不可达、存在非目标吸收风险或线性方程奇异时返回 `None`。
+- 验证门：按时间序 holdout，把 Markov 下一相预测与“静态相不变”基线分别记录 accuracy/logloss；样本不足时 `skipped`。阈值走 `phase_dynamics.min_shadow_ready_transitions`、`phase_dynamics.min_validation_transitions`、`phase_dynamics.holdout_frac`，均为 A 类手动参数。未过门前只作为 shadow 统计，不改变相判据、调度、MRT、报告或默认产品行为。
+
 ## 10. 参数登记处（参数认识论——本节是"不僵硬"的结构保证）
 
 **三类参数制，严禁混淆**：
@@ -226,6 +234,9 @@ Brier 用二值结果（≥0.75→1，≤0.40→0，死区跳过）：`brier_ewm
 | hmm.em_min_n | 200 | B | [100,500] | 手动 | EM 启用 |
 | hmm.gate_auc_margin | 0.03 | **A** | — | 不调（验收标准） | 状态层门 |
 | hazard.auc_gate | 0.70 | **A** | — | 不调（验收标准） | hazard 门 |
+| phase_dynamics.min_shadow_ready_transitions | 3 | **A** | [1,1000] | 不调（shadow 验证门） | 相变动力学达到 shadow_ready 的最少有效迁移数 |
+| phase_dynamics.min_validation_transitions | 8 | **A** | [2,1000] | 不调（shadow 验证门） | 相变动力学 holdout 验证最少有效迁移数 |
+| phase_dynamics.holdout_frac | 0.20 | **A** | [0.05,0.50] | 不调（shadow 验证门） | 相变动力学时间序 holdout 比例 |
 | friction.w1..w4 | .4/.2/.2/.2 | **A** | — | 不调（φ 的指数定义） | 摩擦定义 |
 | friction.lambda | 1.0 | B | [0.5,3.0] | MRT/手动（个人风险厌恶度） | φ\* 取舍 |
 | mrt.epsilon | 0.20 | B | [0.05,0.30] | 手动/按计划随签名收窄而衰减 | 探索率 |

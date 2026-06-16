@@ -57,6 +57,7 @@ use crate::pack_state::{
 };
 use crate::pedagogy::{record_move_effect_for_attempt, select_move_for_concept};
 use crate::phase::{determine_phase, Depth, Phase, PhaseInput, PhaseParams};
+use crate::phase_dynamics::{phase_dynamics_summary, PhaseDynamicsSummary};
 use crate::report::{
     latest_mirror_report, record_report_feedback, run_mirror_report, run_mirror_report_with_config,
     run_mirror_report_with_static_narrative, MirrorReport,
@@ -222,6 +223,10 @@ impl Engine {
 
     pub fn trust_panel(&self) -> Result<TrustPanel> {
         trust_panel(&self.conn)
+    }
+
+    pub fn phase_dynamics(&self) -> Result<PhaseDynamicsSummary> {
+        phase_dynamics_summary(&self.conn)
     }
 
     pub fn create_goal(&self, input: GoalInput) -> Result<GoalRecord> {

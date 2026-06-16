@@ -1,6 +1,6 @@
 # 票队列（单票制）
 
-状态：**无 In Progress；P03O BKT-MIRT 融合不确定度传播 shadow gate 已通过验收（2026-06-17）**。任何时刻只允许 1 张票 In Progress。
+状态：**无 In Progress；P06H 相变动力学 shadow gate 已通过验收（2026-06-17）**。任何时刻只允许 1 张票 In Progress。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 **Phase 7+ 产品形态轴线见 `docs/PRODUCT_ROADMAP.md`**（轴 6 学习者形态 / 轴 7 多 Pack 承载 / 轴 8 工程演进 / 轴 9 信任面板）。
 新增票必须标注它服务主命题（验证真懂→定位模糊→针对性补缺）的哪一环。
@@ -59,6 +59,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 - [x] **P06E 性能预算回归**（`TICKET_P06E_PERFORMANCE_BUDGET_REGRESSION.md`）← 已实现并通过验收；把 DATA_MODEL §11 的 Tier 0 热路径预算做成可重复回归门；服务环节：全环节（Tier 0 预算铁律）
 - [x] **P06F 校准后验化**（`TICKET_P06F_CALIBRATION_POSTERIOR.md`）← 已实现并通过验收；把幻影相判据从纯 EWMA 硬阈值升级为 Beta-Binomial 后验概率门，并让镜像报告复用同一校准摘要；服务环节：验证真懂 → 定位模糊
 - [x] **P06G theta AdaGrad 步长**（`TICKET_P06G_THETA_ADAGRAD.md`）← 已实现并通过验收；把 MIRT θ 在线更新从固定步长改为每维 AdaGrad 自适应步长，仍保留 step cap 与在线梯度语义；服务环节：验证真懂 → 定位模糊
+- [x] **P06H 相变动力学 shadow gate**（`TICKET_P06H_PHASE_TRANSITION_DYNAMICS.md`）← 已实现并通过验收；用 `phase_transition` 事件构建 8x8 相迁移 shadow 统计、目标相期望步数与 holdout 验证摘要，不改变相判据、调度或默认产品行为；服务环节：定位模糊 → 针对性补缺
 
 ## Phase 7+ — 产品形态与工程演进
 
@@ -91,7 +92,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
   - `polaris backup`/完整性自检；服务环节：全环节（Local-persistent 铁律）。→ 已转正式票 P06B。
   - ~~MCP 工具面补全：相图/交错 batch/G_u/镜像报告暴露为 Tier 2 工具；服务环节：验证真懂 → 定位模糊 → 针对性补缺。~~ → 已转正式票 P06A 并完成。
   - 镜像报告 Tier 1 叙事润色（strict-citation 引断言原文，降级=现状断言列表）；服务环节：定位模糊。→ 已转正式票 P06D。
-  - 数学深化候选（全部带留出验证门）：校准后验化（分层 Beta-Binomial，复用 P03I 数学）→ 已转正式票 P06F；θ AdaGrad 步长 → 已转正式票 P06G；BKT-MIRT 逆方差加权融合、G_u 层级 Beta 超先验、相变马尔可夫动力学；不过门=假设，不进产品行为。
+  - 数学深化候选（全部带留出验证门）：校准后验化（分层 Beta-Binomial，复用 P03I 数学）→ 已转正式票 P06F；θ AdaGrad 步长 → 已转正式票 P06G；BKT-MIRT 逆方差加权融合 → 已转正式票 P03O；相变马尔可夫动力学 → 已转正式票 P06H；G_u 层级 Beta 超先验；不过门=假设，不进产品行为。
   - FSRS 个人参数拟合（`fsrs.w` C 类登记的预留票，FSRS-optimizer 思路 + 留出对拍门）。
 
 - 产品形态轴线候选（2026-06-15 产品经理审查沉淀；详见 `docs/PRODUCT_ROADMAP.md`，排序与建议执行序见该文 §5）：
