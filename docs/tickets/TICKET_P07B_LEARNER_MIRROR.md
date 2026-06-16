@@ -1,6 +1,6 @@
 # P07B 学习者状态镜子 v1
 
-状态：已实现并通过验收（待用户确认 commit）
+状态：已实现、通过验收并提交（a7e37f1）
 
 服务主命题环节：验证真懂 -> 定位模糊
 
@@ -114,7 +114,7 @@ python docs\visuals\learner-mirror\scripts\validate_learner_mirror.py
 
 ## AI 交付记录（2026-06-16）
 
-- 当前状态：已实现并通过验收；等待用户确认后 commit。
+- 当前状态：已实现、通过验收并提交（a7e37f1）。
 - 变更清单：
   - 新增 `polaris_core::learner_mirror` 只读聚合契约：`LearnerMirrorSnapshot`、自信/实际曲线、相分布、latest report 断言摘要。
   - `Engine::learner_mirror_snapshot()` 暴露同一快照；`polaris learner-mirror --json` 使用只读数据库打开；HTTP 新增 `GET /learner-mirror`。
