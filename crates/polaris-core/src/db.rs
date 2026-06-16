@@ -69,6 +69,7 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             grader_json TEXT,
             rating TEXT,
             theta_version INTEGER,
+            theta_scope TEXT DEFAULT 'shared',
             created_at TEXT,
             graded_at TEXT
         );
@@ -151,6 +152,22 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             version INTEGER PRIMARY KEY,
             vec BLOB,
             at TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS pack_theta(
+            pack TEXT PRIMARY KEY,
+            vec BLOB,
+            g2 BLOB,
+            version INTEGER,
+            updated_at TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS pack_theta_history(
+            pack TEXT,
+            version INTEGER,
+            vec BLOB,
+            at TEXT,
+            PRIMARY KEY(pack, version)
         );
 
         CREATE TABLE IF NOT EXISTS residual_stats(
@@ -313,6 +330,8 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             ON attempts(concept_id, created_at);
         CREATE INDEX IF NOT EXISTS idx_attempts_created
             ON attempts(created_at);
+        CREATE INDEX IF NOT EXISTS idx_concepts_pack
+            ON concepts(pack);
         CREATE INDEX IF NOT EXISTS idx_behavior_type_at
             ON behavior_events(type, at);
         CREATE INDEX IF NOT EXISTS idx_behavior_session_type_at
@@ -347,6 +366,7 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         "TEXT DEFAULT 'undetermined'",
     )?;
     ensure_column(conn, "theta", "g2", "BLOB")?;
+    ensure_column(conn, "attempts", "theta_scope", "TEXT DEFAULT 'shared'")?;
 
     let registry = default_registry();
     let mut stmt = conn.prepare("INSERT OR IGNORE INTO meta(key, value) VALUES (?1, ?2)")?;
@@ -400,6 +420,8 @@ mod tests {
             "grade_queue",
             "theta",
             "theta_history",
+            "pack_theta",
+            "pack_theta_history",
             "residual_stats",
             "consolidation_runs",
             "moves_effects",
@@ -486,6 +508,7 @@ mod tests {
         for index in [
             "idx_attempts_concept_created",
             "idx_attempts_created",
+            "idx_concepts_pack",
             "idx_behavior_type_at",
             "idx_behavior_session_type_at",
             "idx_behavior_attempt",

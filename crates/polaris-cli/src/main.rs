@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use polaris_core::config::{
     parameter_specs, parameters_markdown, ParameterClass, ParameterSpec, TuningRoute,
 };
@@ -13,6 +13,7 @@ use polaris_core::ops::{
     doctor_diagnostics, doctor_report, ActivitySummary, DoctorDiagnostics, DoctorReport,
 };
 use polaris_core::pack::validate_pack_path;
+use polaris_core::pack_state::{PackSummary, PackSwitchReceipt, ThetaMode};
 use polaris_core::privacy::PrivacyCallInventory;
 use polaris_core::status::StatusSnapshot;
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
@@ -170,7 +171,33 @@ enum FeedbackCommands {
 
 #[derive(Debug, Subcommand)]
 enum PackCommands {
-    Validate { path: PathBuf },
+    Validate {
+        path: PathBuf,
+    },
+    List {
+        #[arg(long)]
+        json: bool,
+    },
+    Switch {
+        pack: String,
+        #[arg(long = "theta-mode", value_enum)]
+        theta_mode: Option<ThetaModeArg>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum ThetaModeArg {
+    Shared,
+    Isolated,
+}
+
+impl From<ThetaModeArg> for ThetaMode {
+    fn from(value: ThetaModeArg) -> Self {
+        match value {
+            ThetaModeArg::Shared => Self::Shared,
+            ThetaModeArg::Isolated => Self::Isolated,
+        }
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -512,6 +539,23 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                         print!("{}", learner_feedback_text(&receipt));
                     }
                 }
+                Commands::Pack { command } => match command {
+                    PackCommands::List { json } => {
+                        let packs = engine.list_packs()?;
+                        if json {
+                            println!("{}", pack_list_json(&packs)?);
+                        } else {
+                            print!("{}", pack_list_text(&packs));
+                        }
+                    }
+                    PackCommands::Switch { pack, theta_mode } => {
+                        let receipt = engine.switch_pack(&pack, theta_mode.map(Into::into))?;
+                        print!("{}", pack_switch_text(&receipt));
+                    }
+                    PackCommands::Validate { .. } => {
+                        unreachable!("handled before database open")
+                    }
+                },
                 Commands::Diagnose { .. } => unreachable!("handled before writable database open"),
                 Commands::LearnerMirror { .. } => {
                     unreachable!("handled before writable database open")
@@ -519,7 +563,6 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 Commands::Mcp => unreachable!("handled before command dispatch"),
                 Commands::Backup { .. } => unreachable!("handled before writable database open"),
                 Commands::Doctor { .. } => unreachable!("handled before writable database open"),
-                Commands::Pack { .. } => unreachable!("handled before database open"),
                 Commands::Privacy { .. } => unreachable!("handled before database open"),
                 Commands::Config { .. } => unreachable!("handled before database open"),
             }
@@ -943,6 +986,33 @@ fn status_snapshot_json(snapshot: &StatusSnapshot) -> serde_json::Result<String>
     serde_json::to_string_pretty(snapshot)
 }
 
+fn pack_list_json(packs: &[PackSummary]) -> serde_json::Result<String> {
+    serde_json::to_string_pretty(packs)
+}
+
+fn pack_list_text(packs: &[PackSummary]) -> String {
+    if packs.is_empty() {
+        return "no packs installed\n".to_owned();
+    }
+
+    let mut text = String::new();
+    for pack in packs {
+        let marker = if pack.active { "*" } else { " " };
+        text.push_str(&format!(
+            "{marker} {}\t{}\tconcepts={}\ttheta_mode={}\n",
+            pack.id, pack.title, pack.concept_count, pack.theta_mode
+        ));
+    }
+    text
+}
+
+fn pack_switch_text(receipt: &PackSwitchReceipt) -> String {
+    format!(
+        "active_pack={}\ntheta_mode={}\n",
+        receipt.active_pack, receipt.theta_mode
+    )
+}
+
 fn learner_mirror_json(snapshot: &LearnerMirrorSnapshot) -> serde_json::Result<String> {
     serde_json::to_string_pretty(snapshot)
 }
@@ -973,7 +1043,27 @@ fn print_status_snapshot(snapshot: &StatusSnapshot) {
 }
 
 fn status_snapshot_text(snapshot: &StatusSnapshot) -> String {
-    let mut text = format!("due_today={}\n", snapshot.due_today);
+    let current_pack = snapshot.current_pack.as_deref().unwrap_or("-");
+    let theta_mode = snapshot.theta_mode.as_deref().unwrap_or("-");
+    let mut text = format!("current_pack={current_pack}\ntheta_mode={theta_mode}\n");
+    if snapshot.packs.is_empty() {
+        text.push_str("packs=-\n");
+    } else {
+        let packs = snapshot
+            .packs
+            .iter()
+            .map(|pack| {
+                let marker = if pack.active { "*" } else { "" };
+                format!(
+                    "{}{}:{}:concepts={}",
+                    marker, pack.id, pack.theta_mode, pack.concept_count
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("; ");
+        text.push_str(&format!("packs={packs}\n"));
+    }
+    text.push_str(&format!("due_today={}\n", snapshot.due_today));
     for concept in &snapshot.concepts {
         let retrieval = concept
             .retrieval
@@ -1228,11 +1318,56 @@ mod tests {
             ],
             vec!["polaris", "feedback", "pause", "--reason", "done_for_now"],
             vec!["polaris", "pack", "validate", "packs/rust"],
+            vec!["polaris", "pack", "list"],
+            vec!["polaris", "pack", "list", "--json"],
+            vec![
+                "polaris",
+                "pack",
+                "switch",
+                "algorithms",
+                "--theta-mode",
+                "isolated",
+            ],
             vec!["polaris", "privacy", "show"],
             vec!["polaris", "privacy", "show", "--json"],
         ] {
             Cli::try_parse_from(args).unwrap();
         }
+    }
+
+    #[test]
+    fn pack_list_flags_parse() {
+        let cli = Cli::try_parse_from(vec!["polaris", "pack", "list", "--json"]).unwrap();
+
+        assert!(matches!(
+            cli.command,
+            Commands::Pack {
+                command: PackCommands::List { json: true }
+            }
+        ));
+    }
+
+    #[test]
+    fn pack_switch_flags_parse() {
+        let cli = Cli::try_parse_from(vec![
+            "polaris",
+            "pack",
+            "switch",
+            "algorithms",
+            "--theta-mode",
+            "isolated",
+        ])
+        .unwrap();
+
+        assert!(matches!(
+            cli.command,
+            Commands::Pack {
+                command: PackCommands::Switch {
+                    ref pack,
+                    theta_mode: Some(ThetaModeArg::Isolated)
+                }
+            } if pack == "algorithms"
+        ));
     }
 
     #[test]
@@ -1644,9 +1779,18 @@ mod tests {
     }
 
     #[test]
-    fn status_json_serializes_desktop_mirror_fields() {
+    fn status_json_serializes_current_pack() {
         let snapshot = polaris_core::status::StatusSnapshot {
             generated_at: "2026-06-13T00:00:00Z".to_owned(),
+            current_pack: Some("algorithms".to_owned()),
+            theta_mode: Some("isolated".to_owned()),
+            packs: vec![pack_summary(
+                "algorithms",
+                "Algorithms",
+                17,
+                true,
+                "isolated",
+            )],
             due_today: 2,
             phase_counts: vec![polaris_core::status::PhaseCount {
                 phase: "phantom".to_owned(),
@@ -1668,6 +1812,10 @@ mod tests {
         let payload: serde_json::Value = serde_json::from_str(&text).unwrap();
 
         assert_eq!(payload["generated_at"], "2026-06-13T00:00:00Z");
+        assert_eq!(payload["current_pack"], "algorithms");
+        assert_eq!(payload["theta_mode"], "isolated");
+        assert_eq!(payload["packs"][0]["id"], "algorithms");
+        assert_eq!(payload["packs"][0]["active"], true);
         assert_eq!(payload["due_today"], 2);
         assert_eq!(payload["phase_counts"][0]["phase"], "phantom");
         assert_eq!(payload["phase_counts"][0]["count"], 1);
@@ -1720,9 +1868,15 @@ mod tests {
     }
 
     #[test]
-    fn status_text_keeps_existing_cli_shape() {
+    fn status_text_surfaces_current_pack() {
         let snapshot = polaris_core::status::StatusSnapshot {
             generated_at: "2026-06-13T00:00:00Z".to_owned(),
+            current_pack: Some("algorithms".to_owned()),
+            theta_mode: Some("isolated".to_owned()),
+            packs: vec![
+                pack_summary("algorithms", "Algorithms", 17, true, "isolated"),
+                pack_summary("rust", "Rust", 24, false, "shared"),
+            ],
             due_today: 2,
             phase_counts: Vec::new(),
             concepts: vec![polaris_core::status::ConceptStatus {
@@ -1741,8 +1895,31 @@ mod tests {
 
         assert_eq!(
             text,
-            "due_today=2\nownership\tOwnership\tR=-\tp_known=0.420\tcalib_gap=0.310\tphase=phantom\n"
+            "current_pack=algorithms\ntheta_mode=isolated\npacks=*algorithms:isolated:concepts=17; rust:shared:concepts=24\ndue_today=2\nownership\tOwnership\tR=-\tp_known=0.420\tcalib_gap=0.310\tphase=phantom\n"
         );
+    }
+
+    #[test]
+    fn pack_list_text_surfaces_active_pack_and_theta_mode() {
+        let text = pack_list_text(&[
+            pack_summary("algorithms", "Algorithms", 17, true, "isolated"),
+            pack_summary("rust", "Rust", 24, false, "shared"),
+        ]);
+
+        assert_eq!(
+            text,
+            "* algorithms\tAlgorithms\tconcepts=17\ttheta_mode=isolated\n  rust\tRust\tconcepts=24\ttheta_mode=shared\n"
+        );
+    }
+
+    #[test]
+    fn pack_switch_text_surfaces_resulting_context() {
+        let text = pack_switch_text(&polaris_core::pack_state::PackSwitchReceipt {
+            active_pack: "algorithms".to_owned(),
+            theta_mode: "isolated".to_owned(),
+        });
+
+        assert_eq!(text, "active_pack=algorithms\ntheta_mode=isolated\n");
     }
 
     #[test]
@@ -1926,6 +2103,22 @@ mod tests {
         let mut engine = Engine::new(conn);
         engine.init_pack(workspace_pack_path("packs/rust")).unwrap();
         engine
+    }
+
+    fn pack_summary(
+        id: &str,
+        title: &str,
+        concept_count: i64,
+        active: bool,
+        theta_mode: &str,
+    ) -> PackSummary {
+        PackSummary {
+            id: id.to_owned(),
+            title: title.to_owned(),
+            concept_count,
+            active,
+            theta_mode: theta_mode.to_owned(),
+        }
     }
 
     fn workspace_pack_path(path: &str) -> std::path::PathBuf {

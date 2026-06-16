@@ -22,6 +22,7 @@ pub mod mirt;
 pub mod moves;
 pub mod ops;
 pub mod pack;
+pub mod pack_state;
 pub mod pedagogy;
 pub mod phase;
 pub mod privacy;

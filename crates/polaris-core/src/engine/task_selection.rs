@@ -280,7 +280,8 @@ impl Engine {
     }
 
     fn ranked_task_candidates(&self) -> Result<Vec<RankedTaskCandidate>> {
-        let mut stmt = self.conn.prepare(
+        let active_pack = crate::pack_state::active_pack(&self.conn)?;
+        let sql = format!(
             "SELECT c.id, c.name, c.seed_order,
                     COALESCE(ms.p_known, c.p_init, CAST((SELECT value FROM meta WHERE key='bkt.p_init') AS REAL)) AS p_known,
                     ms.fsrs_json, COALESCE(ms.calib_gap, 0.0),
@@ -292,10 +293,21 @@ impl Engine {
                     COALESCE(ms.phase, 'undetermined')
              FROM concepts c
              LEFT JOIN mastery_states ms ON ms.concept_id=c.id
+             {}
              ORDER BY c.seed_order ASC, c.id ASC",
-        )?;
+            if active_pack.is_some() {
+                "WHERE c.pack=?1"
+            } else {
+                ""
+            }
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
 
-        let mut rows = stmt.query([])?;
+        let mut rows = if let Some(pack) = active_pack.as_deref() {
+            stmt.query([pack])?
+        } else {
+            stmt.query([])?
+        };
         let mut schedule_candidates = Vec::new();
         let mut details = BTreeMap::new();
         while let Some(row) = rows.next()? {

@@ -44,14 +44,17 @@ use crate::mental_state::{
     HmmObservation, StatePosterior, HAZARD_FEATURE_COUNT, STATE_COUNT,
 };
 use crate::mirt::{
-    ensure_theta, fused_p_known, initial_pack_q_blob, latent_prediction, update_theta_for_attempt,
-    FusedPKnown, LatentPrediction,
+    ensure_pack_theta, ensure_theta, fused_p_known, initial_pack_q_blob, latent_prediction,
+    update_theta_for_attempt, FusedPKnown, LatentPrediction,
 };
 use crate::moves::{
     bloom_move, fallback_template, move_template_for_concept, render_move_prompt,
     select_next_move_for_concept, task_type_target_depth, SelectedMove,
 };
 use crate::pack::load_pack;
+use crate::pack_state::{
+    list_packs as list_pack_state, switch_pack_metadata, PackSummary, PackSwitchReceipt, ThetaMode,
+};
 use crate::pedagogy::{record_move_effect_for_attempt, select_move_for_concept};
 use crate::phase::{determine_phase, Depth, Phase, PhaseInput, PhaseParams};
 use crate::report::{
@@ -194,6 +197,22 @@ impl Engine {
 
     pub fn status_snapshot(&self) -> Result<StatusSnapshot> {
         status_snapshot(&self.conn)
+    }
+
+    pub fn list_packs(&self) -> Result<Vec<PackSummary>> {
+        list_pack_state(&self.conn)
+    }
+
+    pub fn switch_pack(
+        &self,
+        pack_id: &str,
+        theta_mode: Option<ThetaMode>,
+    ) -> Result<PackSwitchReceipt> {
+        let receipt = switch_pack_metadata(&self.conn, pack_id, theta_mode)?;
+        if receipt.theta_mode == ThetaMode::Isolated.as_str() {
+            ensure_pack_theta(&self.conn, pack_id)?;
+        }
+        Ok(receipt)
     }
 
     pub fn learner_mirror_snapshot(&self) -> Result<LearnerMirrorSnapshot> {
@@ -353,9 +372,42 @@ impl Engine {
         let tx = self.conn.transaction()?;
         let initial_q = initial_pack_q_blob(&tx, &pack.id)?;
 
+        for concept in &pack.concepts {
+            let existing_pack: Option<String> = tx
+                .query_row(
+                    "SELECT pack FROM concepts WHERE id=?1",
+                    [concept.id.as_str()],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if let Some(existing_pack) = existing_pack {
+                if existing_pack != pack.id {
+                    return Err(PolarisError::InvalidParameter {
+                        key: "pack.concept_id".to_owned(),
+                        value: format!(
+                            "concept id collision: {} already belongs to {}",
+                            concept.id, existing_pack
+                        ),
+                    });
+                }
+            }
+        }
+
         tx.execute(
             "INSERT OR REPLACE INTO meta(key, value) VALUES (?1, ?2)",
             params![format!("pack.{}.rubric", pack.id), pack.rubric],
+        )?;
+        tx.execute(
+            "INSERT OR REPLACE INTO meta(key, value) VALUES (?1, ?2)",
+            params![format!("pack.{}.title", pack.id), pack.title],
+        )?;
+        tx.execute(
+            "INSERT OR IGNORE INTO meta(key, value) VALUES (?1, 'shared')",
+            [format!("pack.{}.theta_mode", pack.id)],
+        )?;
+        tx.execute(
+            "INSERT OR IGNORE INTO meta(key, value) VALUES ('active_pack', ?1)",
+            [pack.id.as_str()],
         )?;
         tx.execute(
             "INSERT OR REPLACE INTO meta(key, value) VALUES (?1, ?2)",

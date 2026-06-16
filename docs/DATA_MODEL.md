@@ -40,6 +40,7 @@ attempts(id TEXT PRIMARY KEY, session_id TEXT, concept_id TEXT NOT NULL, task_ty
        final_score REAL, depth TEXT,       -- recall|explain|apply|transfer
        misconception_id TEXT, grader_json TEXT, rating TEXT,
        theta_version INTEGER,              -- P03 填；P01 留 NULL
+       theta_scope TEXT DEFAULT 'shared',  -- P08A: shared | pack:<pack_id>；旧 NULL 视为 shared
        created_at TEXT, graded_at TEXT)
 
 concepts(id TEXT PRIMARY KEY, pack TEXT, name TEXT, kind TEXT DEFAULT 'concept',  -- 'concept'|'schema'
@@ -67,10 +68,13 @@ behavior_events(id TEXT PRIMARY KEY, session_id TEXT, at TEXT,
 grade_queue(attempt_id TEXT PRIMARY KEY, enqueued_at TEXT, retry_count INTEGER DEFAULT 0, last_error TEXT)
 ```
 
+P08A pack 状态放在 `meta`：`active_pack` 表示当前 pack；`pack.<id>.title` 保存显示名；`pack.<id>.theta_mode` 取 `shared|isolated`，默认 `shared`。
+
 ### 后续激活（建表即可，逻辑后置）
 
 - 图式 = `concepts.kind='schema'`（P02）。
-- `theta(id INTEGER PRIMARY KEY CHECK(id=1), vec BLOB, version INTEGER, updated_at TEXT)`、`theta_history(version INTEGER PRIMARY KEY, vec BLOB, at TEXT)`（P03）。
+- `theta(id INTEGER PRIMARY KEY CHECK(id=1), vec BLOB, g2 BLOB, version INTEGER, updated_at TEXT)`、`theta_history(version INTEGER PRIMARY KEY, vec BLOB, at TEXT)`（P03/P06G）。
+- `pack_theta(pack TEXT PRIMARY KEY, vec BLOB, g2 BLOB, version INTEGER, updated_at TEXT)`、`pack_theta_history(pack TEXT, version INTEGER, vec BLOB, at TEXT, PRIMARY KEY(pack, version))`（P08A；仅 `theta_mode=isolated` 的 pack 使用，shared pack 继续使用全局 `theta`）。
 - `residual_stats(concept_id TEXT, week TEXT, mean_resid REAL, n INTEGER, PRIMARY KEY(concept_id, week))`（P03）。
 - `consolidation_runs(id TEXT PRIMARY KEY, ran_at TEXT, proposals_json TEXT, holdout_delta REAL, status TEXT)`（accepted|rolled_back）。
 - `moves_effects(move TEXT, context_hash TEXT, alpha REAL, beta REAL, n INTEGER, PRIMARY KEY(move, context_hash))`（P04）。
@@ -113,7 +117,7 @@ Brier 用二值结果（≥0.75→1，≤0.40→0，死区跳过）：`brier_ewm
 - 任务难度 d_t（logit，meta 表 `mirt.d.<task_type>`）：`recall −0.30；choose −0.15；cloze 0.00；rewrite +0.15；apply/translate +0.30；transfer/free_produce +0.50`。
 - 软标签 `y = final_score`；预测 `p̂ = σ(q_c·θ − b_c − d_t)`。
 - 在线更新（P06G 后）：`gradient_k = (y − p̂)·q_ck`；每维累积 `g2_k ← g2_k + gradient_k²`；`Δθ_k = eta·gradient_k / sqrt(g2_k + adagrad_epsilon)`，逐元素帽 `|Δθ_k| ≤ step_cap`；每夜收缩 `θ ← θ·(1 − shrink)`（`g2` 不收缩，保留历史步长记忆）。
-- 每条 graded attempt 记 `attempts.theta_version = theta.version`；theta_history 每夜快照后 version+1。
+- 每条 graded attempt 记 `attempts.theta_version` 与 `attempts.theta_scope`：`shared` 使用全局 `theta.version`；`pack:<id>` 使用 `pack_theta.version`。`theta_history` / `pack_theta_history` 每夜快照后各自 version+1。
 - **BKT-MIRT 融合**：`p̂_known = λ·BKT + (1−λ)·σ(q·θ−b)`，`λ = n_c/(n_c + 5)`。
 - Q 初始化：pack 安装时 LLM 按图式先验产出 q0（维度命名表 meta('latent.dims') JSON）；LLM 不可用 → q0 = onehot(track 维)。
 
@@ -123,7 +127,7 @@ Brier 用二值结果（≥0.75→1，≤0.40→0，死区跳过）：`brier_ewm
 2. 概念两两相关：公共周 ≥4 才算；average-linkage 层次聚类，阈值 ρ ≥ 0.5，簇 ≥ 3 概念 → 候选新维。
 3. LLM 溯因命名（strict-citation 引 ≥3 条 attempts），拒收则丢弃该候选。
 4. 试装：K+1，簇成员新分量载荷 0.5、其余 0 → 重拟合受影响 q 行（步骤 5）→ **留出集 = 时间序最后 20% 的 graded attempts**；**接受当且仅当留出 logloss 改善 ≥ 0.01**，否则整体回滚。写 consolidation_runs。
-5. q 行重拟合（n_c ≥ 8 的概念）：`min Σ BCE(y_i, σ(q·θ̂_{v_i} − b_c − d_{t_i})) + 0.5·‖q − q0‖²`，θ̂ 按 attempts.theta_version 查 theta_history；优化 = 100 步梯度下降（lr 0.1）即可。
+5. q 行重拟合（n_c ≥ 8 的概念）：`min Σ BCE(y_i, σ(q·θ̂_{v_i} − b_c − d_{t_i})) + 0.5·‖q − q0‖²`，θ̂ 按 `attempts.theta_scope + attempts.theta_version` 查 `theta_history` 或 `pack_theta_history`；旧 `theta_scope` 缺失视为 `shared`。优化 = 100 步梯度下降（lr 0.1）即可。
 6. 维度合并：`|corr(q_·j, q_·k)| > 0.85` → 平均合并；K ≤ 64 硬帽。
 
 ## 6. P03C — 几何与结构

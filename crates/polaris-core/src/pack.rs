@@ -16,6 +16,7 @@ pub struct PackValidationReport {
 #[derive(Debug)]
 pub struct PackData {
     pub id: String,
+    pub title: String,
     pub concepts: Vec<ConceptToml>,
     pub edges: Vec<EdgeToml>,
     pub misconceptions: Vec<MisconceptionToml>,
@@ -225,6 +226,7 @@ pub fn load_pack(path: impl AsRef<Path>) -> Result<PackData, PackError> {
 
     Ok(PackData {
         id: pack.id,
+        title: pack.title,
         concepts: concepts.concept,
         edges: concepts.edge,
         misconceptions: misconceptions.misconception,

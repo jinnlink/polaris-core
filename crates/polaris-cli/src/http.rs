@@ -380,12 +380,16 @@ mod tests {
     }
 
     #[test]
-    fn http_status_reuses_p04a_status_snapshot() {
+    fn http_status_includes_current_pack() {
         let mut api = test_api();
 
         let response = api.handle("GET", "/status", "").unwrap();
 
         assert_eq!(response.status, 200);
+        assert_eq!(response.body["current_pack"], "rust");
+        assert_eq!(response.body["theta_mode"], "shared");
+        assert_eq!(response.body["packs"][0]["id"], "rust");
+        assert_eq!(response.body["packs"][0]["active"], true);
         assert_eq!(response.body["due_today"], 0);
         assert_eq!(
             response.body["phase_counts"][0]["phase"],

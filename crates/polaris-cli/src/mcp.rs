@@ -462,7 +462,7 @@ fn resource_definitions() -> Value {
         {
             "uri": "polaris://status",
             "name": "Polaris status",
-            "description": "Read-only status snapshot with due_today and concept states.",
+            "description": "Read-only status snapshot with current_pack, theta_mode, due_today, and concept states.",
             "mimeType": "application/json"
         }
     ])
@@ -644,7 +644,7 @@ mod tests {
     }
 
     #[test]
-    fn mcp_reads_status_resource() {
+    fn mcp_reads_status_resource_includes_current_pack() {
         let mut session = test_session();
 
         let response = session
@@ -659,6 +659,10 @@ mod tests {
         let text = response["result"]["contents"][0]["text"].as_str().unwrap();
         let payload: Value = serde_json::from_str(text).unwrap();
 
+        assert_eq!(payload["current_pack"], "rust");
+        assert_eq!(payload["theta_mode"], "shared");
+        assert_eq!(payload["packs"][0]["id"], "rust");
+        assert_eq!(payload["packs"][0]["active"], true);
         assert_eq!(payload["due_today"], 0);
         assert_eq!(payload["concepts"][0]["concept_id"], "ownership");
         assert_eq!(payload["concepts"][0]["phase"], "undetermined");

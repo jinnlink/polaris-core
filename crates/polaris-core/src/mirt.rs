@@ -2,6 +2,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::config::{meta_f64, meta_i64};
 use crate::error::{PolarisError, Result};
+use crate::pack_state::{concept_pack, theta_mode_for_pack, ThetaMode};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MirtParams {
@@ -147,13 +148,47 @@ pub fn ensure_theta(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+pub fn ensure_pack_theta(conn: &Connection, pack_id: &str) -> Result<()> {
+    let params = MirtParams::from_conn(conn)?;
+    let zero = vec![0.0; params.k];
+    let zero_blob = encode_vector(&zero);
+    conn.execute(
+        "INSERT OR IGNORE INTO pack_theta(pack, vec, g2, version, updated_at)
+         VALUES (?1, ?2, ?3, 1, strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
+        params![pack_id, zero_blob, encode_vector(&zero)],
+    )?;
+    let g2_blob = conn
+        .query_row(
+            "SELECT g2 FROM pack_theta WHERE pack=?1",
+            [pack_id],
+            |row| row.get::<_, Option<Vec<u8>>>(0),
+        )
+        .optional()?
+        .flatten();
+    let needs_g2 = match g2_blob {
+        Some(blob) => decode_vector(&blob)
+            .map(|values| values.len() != params.k)
+            .unwrap_or(true),
+        None => true,
+    };
+    if needs_g2 {
+        conn.execute(
+            "UPDATE pack_theta
+             SET g2=?1, updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now')
+             WHERE pack=?2",
+            params![encode_vector(&zero), pack_id],
+        )?;
+    }
+    Ok(())
+}
+
 pub fn latent_prediction(
     conn: &Connection,
     concept_id: &str,
     task_type: &str,
 ) -> Result<LatentPrediction> {
     let (q, b_difficulty) = concept_q_and_b(conn, concept_id)?;
-    let (theta, version) = theta(conn)?;
+    let (theta, version) = theta_for_concept(conn, concept_id)?;
     if q.len() != theta.len() {
         return Err(PolarisError::InvalidParameter {
             key: "q/theta".to_owned(),
@@ -172,7 +207,6 @@ pub fn latent_prediction(
 }
 
 pub fn update_theta_for_attempt(conn: &Connection, attempt_id: &str) -> Result<()> {
-    ensure_theta(conn)?;
     let attempt = conn
         .query_row(
             "SELECT concept_id, COALESCE(task_type, 'recall'), final_score
@@ -195,7 +229,17 @@ pub fn update_theta_for_attempt(conn: &Connection, attempt_id: &str) -> Result<(
 
     let params = MirtParams::from_conn(conn)?;
     let (q, b_difficulty) = concept_q_and_b(conn, &concept_id)?;
-    let (mut theta, mut g2, version) = theta_state(conn)?;
+    let scope = theta_scope_for_concept(conn, &concept_id)?;
+    let (mut theta, mut g2, version) = match &scope {
+        ThetaScope::Shared => {
+            ensure_theta(conn)?;
+            theta_state(conn)?
+        }
+        ThetaScope::Pack(pack_id) => {
+            ensure_pack_theta(conn, pack_id)?;
+            pack_theta_state(conn, pack_id)?
+        }
+    };
     if q.len() != theta.len() {
         return Err(PolarisError::InvalidParameter {
             key: "q/theta".to_owned(),
@@ -220,15 +264,27 @@ pub fn update_theta_for_attempt(conn: &Connection, attempt_id: &str) -> Result<(
         *theta_k += delta;
     }
 
+    match &scope {
+        ThetaScope::Shared => {
+            conn.execute(
+                "UPDATE theta
+                 SET vec=?1, g2=?2, updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now')
+                 WHERE id=1",
+                params![encode_vector(&theta), encode_vector(&g2)],
+            )?;
+        }
+        ThetaScope::Pack(pack_id) => {
+            conn.execute(
+                "UPDATE pack_theta
+                 SET vec=?1, g2=?2, updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now')
+                 WHERE pack=?3",
+                params![encode_vector(&theta), encode_vector(&g2), pack_id],
+            )?;
+        }
+    }
     conn.execute(
-        "UPDATE theta
-         SET vec=?1, g2=?2, updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now')
-         WHERE id=1",
-        params![encode_vector(&theta), encode_vector(&g2)],
-    )?;
-    conn.execute(
-        "UPDATE attempts SET theta_version=?1 WHERE id=?2",
-        params![version, attempt_id],
+        "UPDATE attempts SET theta_version=?1, theta_scope=?2 WHERE id=?3",
+        params![version, scope.storage_value(), attempt_id],
     )?;
     Ok(())
 }
@@ -312,11 +368,43 @@ fn concept_q_and_b(conn: &Connection, concept_id: &str) -> Result<(Vec<f64>, f64
     Ok((decode_vector(&q_blob)?, b_difficulty))
 }
 
+fn theta_scope_for_concept(conn: &Connection, concept_id: &str) -> Result<ThetaScope> {
+    let Some(pack_id) = concept_pack(conn, concept_id)? else {
+        return Ok(ThetaScope::Shared);
+    };
+    match theta_mode_for_pack(conn, &pack_id)? {
+        ThetaMode::Shared => Ok(ThetaScope::Shared),
+        ThetaMode::Isolated => Ok(ThetaScope::Pack(pack_id)),
+    }
+}
+
+fn theta_for_concept(conn: &Connection, concept_id: &str) -> Result<(Vec<f64>, i64)> {
+    match theta_scope_for_concept(conn, concept_id)? {
+        ThetaScope::Shared => {
+            ensure_theta(conn)?;
+            theta(conn)
+        }
+        ThetaScope::Pack(pack_id) => {
+            ensure_pack_theta(conn, &pack_id)?;
+            pack_theta(conn, &pack_id)
+        }
+    }
+}
+
 fn theta(conn: &Connection) -> Result<(Vec<f64>, i64)> {
     let (blob, version): (Vec<u8>, i64) =
         conn.query_row("SELECT vec, version FROM theta WHERE id=1", [], |row| {
             Ok((row.get(0)?, row.get(1)?))
         })?;
+    Ok((decode_vector(&blob)?, version))
+}
+
+pub fn pack_theta(conn: &Connection, pack_id: &str) -> Result<(Vec<f64>, i64)> {
+    let (blob, version): (Vec<u8>, i64) = conn.query_row(
+        "SELECT vec, version FROM pack_theta WHERE pack=?1",
+        [pack_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
     Ok((decode_vector(&blob)?, version))
 }
 
@@ -332,12 +420,40 @@ fn theta_state(conn: &Connection) -> Result<(Vec<f64>, Vec<f64>, i64)> {
     ))
 }
 
+pub fn pack_theta_state(conn: &Connection, pack_id: &str) -> Result<(Vec<f64>, Vec<f64>, i64)> {
+    let (theta_blob, g2_blob, version): (Vec<u8>, Vec<u8>, i64) = conn.query_row(
+        "SELECT vec, g2, version FROM pack_theta WHERE pack=?1",
+        [pack_id],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    )?;
+    Ok((
+        decode_vector(&theta_blob)?,
+        decode_vector(&g2_blob)?,
+        version,
+    ))
+}
+
 fn task_difficulty(conn: &Connection, task_type: &str) -> Result<f64> {
     let key = match task_type {
         "free_explain" | "explain" => "free_explain",
         other => other,
     };
     meta_f64(conn, &format!("mirt.d.{key}"))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ThetaScope {
+    Shared,
+    Pack(String),
+}
+
+impl ThetaScope {
+    fn storage_value(&self) -> String {
+        match self {
+            Self::Shared => "shared".to_owned(),
+            Self::Pack(pack_id) => format!("pack:{pack_id}"),
+        }
+    }
 }
 
 fn dot(left: &[f64], right: &[f64]) -> f64 {

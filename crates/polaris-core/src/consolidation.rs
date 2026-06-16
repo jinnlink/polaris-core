@@ -1,11 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 
 use crate::config::meta_f64;
 use crate::error::{PolarisError, Result};
-use crate::mirt::{decode_vector, encode_vector, ensure_theta};
+use crate::mirt::{decode_vector, encode_vector, ensure_pack_theta, ensure_theta};
 
 const MIN_COMMON_WEEKS: usize = 4;
 const CORRELATION_THRESHOLD: f64 = 0.5;
@@ -25,6 +25,7 @@ struct AttemptResidualSource {
     task_type: String,
     final_score: f64,
     theta_version: i64,
+    theta_scope: String,
     week: String,
 }
 
@@ -82,18 +83,27 @@ fn snapshot_and_shrink_theta(conn: &Connection) -> Result<()> {
          WHERE id=1",
         params![encode_vector(&shrunk), version + 1],
     )?;
+    snapshot_and_shrink_pack_theta(conn, shrink)?;
     Ok(())
 }
 
 fn refresh_residual_stats(conn: &Connection) -> Result<usize> {
     let theta_by_version = theta_history(conn)?;
+    let mut pack_theta_cache = BTreeMap::<String, BTreeMap<i64, Vec<f64>>>::new();
     let attempts = residual_sources(conn)?;
     let mut grouped = BTreeMap::<(String, String), Vec<f64>>::new();
     for attempt in attempts {
-        let Some(theta) = theta_by_version.get(&attempt.theta_version) else {
+        let Some(theta) = theta_for_scope(
+            conn,
+            &theta_by_version,
+            &mut pack_theta_cache,
+            &attempt.theta_scope,
+            attempt.theta_version,
+        )?
+        else {
             continue;
         };
-        let p_hat = predict_with_theta(conn, &attempt.concept_id, &attempt.task_type, theta)?;
+        let p_hat = predict_with_theta(conn, &attempt.concept_id, &attempt.task_type, &theta)?;
         grouped
             .entry((attempt.concept_id, attempt.week))
             .or_default()
@@ -115,6 +125,7 @@ fn refresh_residual_stats(conn: &Connection) -> Result<usize> {
 fn residual_sources(conn: &Connection) -> Result<Vec<AttemptResidualSource>> {
     let mut stmt = conn.prepare(
         "SELECT concept_id, COALESCE(task_type, 'recall'), final_score, theta_version,
+                COALESCE(theta_scope, 'shared'),
                 COALESCE(created_at, '1970-01-01T00:00:00Z') AS created_at
          FROM attempts
          WHERE final_score IS NOT NULL
@@ -125,12 +136,13 @@ fn residual_sources(conn: &Connection) -> Result<Vec<AttemptResidualSource>> {
     let mut rows = stmt.query([])?;
     let mut attempts = Vec::new();
     while let Some(row) = rows.next()? {
-        let created_at = row.get::<_, String>(4)?;
+        let created_at = row.get::<_, String>(5)?;
         attempts.push(AttemptResidualSource {
             concept_id: row.get(0)?,
             task_type: row.get(1)?,
             final_score: row.get(2)?,
             theta_version: row.get(3)?,
+            theta_scope: row.get(4)?,
             week: iso_week_label(&created_at)?,
         });
     }
@@ -149,6 +161,83 @@ fn theta_history(conn: &Connection) -> Result<BTreeMap<i64, Vec<f64>>> {
     }
     let (theta, version) = current_theta(conn)?;
     map.entry(version).or_insert(theta);
+    Ok(map)
+}
+
+fn snapshot_and_shrink_pack_theta(conn: &Connection, shrink: f64) -> Result<()> {
+    let rows = {
+        let mut stmt = conn.prepare("SELECT pack, vec, version FROM pack_theta ORDER BY pack")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Vec<u8>>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        })?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()?
+    };
+
+    for (pack, blob, version) in rows {
+        let theta = decode_vector(&blob)?;
+        conn.execute(
+            "INSERT OR REPLACE INTO pack_theta_history(pack, version, vec, at)
+             VALUES (?1, ?2, ?3, strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
+            params![pack, version, encode_vector(&theta)],
+        )?;
+        let shrunk = theta
+            .iter()
+            .map(|value| value * (1.0 - shrink))
+            .collect::<Vec<_>>();
+        conn.execute(
+            "UPDATE pack_theta
+             SET vec=?1, version=?2, updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now')
+             WHERE pack=?3",
+            params![encode_vector(&shrunk), version + 1, pack],
+        )?;
+    }
+    Ok(())
+}
+
+fn theta_for_scope(
+    conn: &Connection,
+    shared_theta_by_version: &BTreeMap<i64, Vec<f64>>,
+    pack_theta_cache: &mut BTreeMap<String, BTreeMap<i64, Vec<f64>>>,
+    theta_scope: &str,
+    version: i64,
+) -> Result<Option<Vec<f64>>> {
+    let Some(pack_id) = theta_scope.strip_prefix("pack:") else {
+        return Ok(shared_theta_by_version.get(&version).cloned());
+    };
+    if !pack_theta_cache.contains_key(pack_id) {
+        let history = pack_theta_history(conn, pack_id)?;
+        pack_theta_cache.insert(pack_id.to_owned(), history);
+    }
+    Ok(pack_theta_cache
+        .get(pack_id)
+        .and_then(|history| history.get(&version).cloned()))
+}
+
+fn pack_theta_history(conn: &Connection, pack_id: &str) -> Result<BTreeMap<i64, Vec<f64>>> {
+    ensure_pack_theta(conn, pack_id)?;
+    let mut map = BTreeMap::new();
+    let mut stmt = conn.prepare("SELECT version, vec FROM pack_theta_history WHERE pack=?1")?;
+    let rows = stmt.query_map([pack_id], |row| {
+        Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
+    })?;
+    for row in rows {
+        let (version, blob) = row?;
+        map.insert(version, decode_vector(&blob)?);
+    }
+    let current: Option<(Vec<u8>, i64)> = conn
+        .query_row(
+            "SELECT vec, version FROM pack_theta WHERE pack=?1",
+            [pack_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    if let Some((blob, version)) = current {
+        map.entry(version).or_insert(decode_vector(&blob)?);
+    }
     Ok(map)
 }
 
