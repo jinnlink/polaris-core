@@ -60,6 +60,18 @@ impl MentalState {
             MentalState::Fatigued => "fatigued",
         }
     }
+
+    pub fn from_id(value: &str) -> Option<Self> {
+        match value {
+            "flow" => Some(MentalState::Flow),
+            "productive_confusion" => Some(MentalState::ProductiveConfusion),
+            "frustrated" => Some(MentalState::Frustrated),
+            "bored" => Some(MentalState::Bored),
+            "anxious" => Some(MentalState::Anxious),
+            "fatigued" => Some(MentalState::Fatigued),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]

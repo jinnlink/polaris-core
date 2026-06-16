@@ -3,6 +3,7 @@ use std::net::{TcpListener, TcpStream};
 use std::time::Duration;
 
 use polaris_core::engine::{Engine, SubmitInput};
+use polaris_core::learner_feedback::LearnerFeedbackInput;
 use serde_json::{json, Value};
 
 const MAX_REQUEST_BYTES: usize = 1_048_576;
@@ -56,8 +57,10 @@ impl HttpApi {
             )),
             ("POST", "/next") => self.next(body),
             ("POST", "/evidence") => self.evidence(body),
+            ("POST", "/feedback") => self.feedback(body),
             ("GET", "/next")
             | ("GET", "/evidence")
+            | ("GET", "/feedback")
             | ("POST", "/status")
             | ("POST", "/learner-mirror") => {
                 Ok(response(405, json!({"error": "method not allowed"})))
@@ -152,6 +155,34 @@ impl HttpApi {
                 "degraded": receipt.degraded,
             }),
         ))
+    }
+
+    fn feedback(&mut self, body: &str) -> Result<HttpResponse, Box<dyn std::error::Error>> {
+        let arguments = match json_body(body) {
+            Ok(arguments) => arguments,
+            Err(error) => return Ok(response(400, json!({"error": error}))),
+        };
+        let Some(kind) = optional_str(&arguments, "kind") else {
+            return Ok(response(
+                400,
+                json!({"error": "missing string field: kind"}),
+            ));
+        };
+        let session = optional_str(&arguments, "session").unwrap_or("http");
+        let input = LearnerFeedbackInput {
+            session_id: session.to_owned(),
+            source: "http".to_owned(),
+            kind: kind.to_owned(),
+            concept_id: concept_id_argument(&arguments).map(str::to_owned),
+            state: optional_str(&arguments, "state").map(str::to_owned),
+            reason: optional_str(&arguments, "reason").map(str::to_owned),
+            note: optional_str(&arguments, "note").map(str::to_owned),
+        };
+
+        match self.engine.record_learner_feedback(input) {
+            Ok(receipt) => Ok(response(200, serde_json::to_value(receipt)?)),
+            Err(error) => Ok(response(400, json!({"error": error.to_string()}))),
+        }
     }
 }
 
@@ -380,6 +411,114 @@ mod tests {
             polaris_core::phase::Phase::ALL.len()
         );
         assert!(response.body["recent_assertions"].as_array().is_some());
+    }
+
+    #[test]
+    fn http_learner_feedback_records_state_report() {
+        let mut api = test_api();
+
+        let response = api
+            .handle(
+                "POST",
+                "/feedback",
+                &json!({
+                    "session": "http-flow",
+                    "kind": "state",
+                    "concept_id": "ownership",
+                    "state": "frustrated",
+                    "note": "transfer feels stuck"
+                })
+                .to_string(),
+            )
+            .unwrap();
+
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body["kind"], "state");
+        assert_eq!(response.body["state"], "frustrated");
+        assert_eq!(response.body["effect"], "recorded_only");
+        let events: i64 = api
+            .engine()
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM behavior_events
+                 WHERE session_id='http-flow'
+                   AND concept_id='ownership'
+                   AND type='learner_feedback'
+                   AND json_extract(payload_json, '$.kind')='state'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(events, 1);
+    }
+
+    #[test]
+    fn http_learner_feedback_records_pause_request() {
+        let mut api = test_api();
+
+        let response = api
+            .handle(
+                "POST",
+                "/feedback",
+                &json!({
+                    "kind": "pause",
+                    "reason": "today is enough"
+                })
+                .to_string(),
+            )
+            .unwrap();
+
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body["session_id"], "http");
+        assert_eq!(response.body["kind"], "pause");
+        assert_eq!(response.body["reason"], "today is enough");
+        assert_eq!(response.body["effect"], "recorded_only");
+        let abandon_events: i64 = api
+            .engine()
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM behavior_events WHERE type='abandon'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(abandon_events, 0);
+    }
+
+    #[test]
+    fn http_learner_feedback_rejects_invalid_kind() {
+        let mut api = test_api();
+
+        let response = api
+            .handle(
+                "POST",
+                "/feedback",
+                &json!({
+                    "kind": "mood",
+                    "state": "flow"
+                })
+                .to_string(),
+            )
+            .unwrap();
+
+        assert_eq!(response.status, 400);
+        assert!(response.body["error"]
+            .as_str()
+            .unwrap()
+            .contains("learner_feedback.kind"));
+    }
+
+    #[test]
+    fn http_learner_feedback_rejects_malformed_json_with_stable_error() {
+        let mut api = test_api();
+
+        let response = api.handle("POST", "/feedback", "{").unwrap();
+
+        assert_eq!(response.status, 400);
+        assert!(response.body["error"]
+            .as_str()
+            .unwrap()
+            .contains("invalid JSON"));
     }
 
     #[test]

@@ -7,6 +7,7 @@ use polaris_core::config::{
 };
 use polaris_core::db::{open_database, open_database_read_only};
 use polaris_core::engine::{Engine, SubmitInput};
+use polaris_core::learner_feedback::{LearnerFeedbackInput, LearnerFeedbackReceipt};
 use polaris_core::learner_mirror::LearnerMirrorSnapshot;
 use polaris_core::ops::{
     doctor_diagnostics, doctor_report, ActivitySummary, DoctorDiagnostics, DoctorReport,
@@ -113,12 +114,18 @@ enum Commands {
         assertion: String,
         #[arg(long)]
         report: Option<String>,
+        #[arg(long, default_value = "inaccurate")]
+        verdict: String,
     },
     Diagnose {
         #[arg(long)]
         concept: String,
     },
     Mcp,
+    Feedback {
+        #[command(subcommand)]
+        command: FeedbackCommands,
+    },
     Pack {
         #[command(subcommand)]
         command: PackCommands,
@@ -130,6 +137,34 @@ enum Commands {
     Config {
         #[command(subcommand)]
         command: ConfigCommands,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum FeedbackCommands {
+    State {
+        #[arg(long)]
+        state: String,
+        #[arg(long, default_value = "cli")]
+        session: String,
+        #[arg(long)]
+        concept: Option<String>,
+        #[arg(long)]
+        note: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    Pause {
+        #[arg(long)]
+        reason: String,
+        #[arg(long, default_value = "cli")]
+        session: String,
+        #[arg(long)]
+        concept: Option<String>,
+        #[arg(long)]
+        note: Option<String>,
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -407,10 +442,75 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                         println!("skipped {skip}");
                     }
                 }
-                Commands::ReportFeedback { assertion, report } => {
-                    let report_id = engine.record_report_feedback(report.as_deref(), &assertion)?;
-                    println!("已记录「不准」反馈：report={report_id} assertion={assertion}");
-                    println!("该断言将在抑制窗口内不再进入报告；这条反馈本身已成为校正数据。");
+                Commands::ReportFeedback {
+                    assertion,
+                    report,
+                    verdict,
+                } => {
+                    let verdict = verdict.trim().to_ascii_lowercase();
+                    let report_id = engine.record_report_feedback_with_verdict(
+                        report.as_deref(),
+                        &assertion,
+                        &verdict,
+                    )?;
+                    println!(
+                        "recorded report feedback: report={report_id} assertion={assertion} verdict={verdict}"
+                    );
+                    if verdict == "inaccurate" {
+                        println!(
+                            "effect=recorded_only; inaccurate assertions are suppressed in the report window."
+                        );
+                    } else {
+                        println!(
+                            "effect=recorded_only; accurate feedback does not directly change mastery or scheduling."
+                        );
+                    }
+                }
+                Commands::Feedback { command } => {
+                    let (input, json) = match command {
+                        FeedbackCommands::State {
+                            state,
+                            session,
+                            concept,
+                            note,
+                            json,
+                        } => (
+                            LearnerFeedbackInput {
+                                session_id: session,
+                                source: "cli".to_owned(),
+                                kind: "state".to_owned(),
+                                concept_id: concept,
+                                state: Some(state),
+                                reason: None,
+                                note,
+                            },
+                            json,
+                        ),
+                        FeedbackCommands::Pause {
+                            reason,
+                            session,
+                            concept,
+                            note,
+                            json,
+                        } => (
+                            LearnerFeedbackInput {
+                                session_id: session,
+                                source: "cli".to_owned(),
+                                kind: "pause".to_owned(),
+                                concept_id: concept,
+                                state: None,
+                                reason: Some(reason),
+                                note,
+                            },
+                            json,
+                        ),
+                    };
+                    let receipt = engine.record_learner_feedback(input)?;
+                    if json {
+                        println!("{}", learner_feedback_json(&receipt)?);
+                    } else {
+                        print!("{}", learner_feedback_text(&receipt));
+                    }
                 }
                 Commands::Diagnose { .. } => unreachable!("handled before writable database open"),
                 Commands::LearnerMirror { .. } => {
@@ -847,6 +947,27 @@ fn learner_mirror_json(snapshot: &LearnerMirrorSnapshot) -> serde_json::Result<S
     serde_json::to_string_pretty(snapshot)
 }
 
+fn learner_feedback_json(receipt: &LearnerFeedbackReceipt) -> serde_json::Result<String> {
+    serde_json::to_string_pretty(receipt)
+}
+
+fn learner_feedback_text(receipt: &LearnerFeedbackReceipt) -> String {
+    let concept = receipt.concept_id.as_deref().unwrap_or("-");
+    let state = receipt.state.as_deref().unwrap_or("-");
+    let reason = receipt.reason.as_deref().unwrap_or("-");
+    format!(
+        "learner_feedback recorded: event_id={} kind={} session={} concept={} state={} reason={} effect={}\n\
+         effect=recorded_only does not directly change mastery or scheduling.\n",
+        receipt.event_id,
+        receipt.kind,
+        receipt.session_id,
+        concept,
+        state,
+        reason,
+        receipt.effect
+    )
+}
+
 fn print_status_snapshot(snapshot: &StatusSnapshot) {
     print!("{}", status_snapshot_text(snapshot));
 }
@@ -1096,6 +1217,16 @@ mod tests {
             vec!["polaris", "grade-pending"],
             vec!["polaris", "diagnose", "--concept", "ownership"],
             vec!["polaris", "mcp"],
+            vec![
+                "polaris",
+                "feedback",
+                "state",
+                "--state",
+                "flow",
+                "--concept",
+                "ownership",
+            ],
+            vec!["polaris", "feedback", "pause", "--reason", "done_for_now"],
             vec!["polaris", "pack", "validate", "packs/rust"],
             vec!["polaris", "privacy", "show"],
             vec!["polaris", "privacy", "show", "--json"],
@@ -1112,6 +1243,28 @@ mod tests {
     }
 
     #[test]
+    fn report_feedback_verdict_flag_parses() {
+        let cli = Cli::try_parse_from(vec![
+            "polaris",
+            "report-feedback",
+            "--assertion",
+            "calibration_phantom:ownership",
+            "--verdict",
+            "accurate",
+        ])
+        .unwrap();
+
+        assert!(matches!(
+            cli.command,
+            Commands::ReportFeedback {
+                ref assertion,
+                report: None,
+                ref verdict,
+            } if assertion == "calibration_phantom:ownership" && verdict == "accurate"
+        ));
+    }
+
+    #[test]
     fn learner_mirror_json_flag_parses() {
         let cli = Cli::try_parse_from(vec!["polaris", "learner-mirror", "--json"]).unwrap();
 
@@ -1119,6 +1272,189 @@ mod tests {
             cli.command,
             Commands::LearnerMirror { json: true }
         ));
+    }
+
+    #[test]
+    fn learner_feedback_flags_parse() {
+        let state = Cli::try_parse_from(vec![
+            "polaris",
+            "feedback",
+            "state",
+            "--state",
+            "frustrated",
+            "--session",
+            "cli",
+            "--concept",
+            "ownership",
+            "--note",
+            "transfer feels stuck",
+            "--json",
+        ])
+        .unwrap();
+        assert!(matches!(
+            state.command,
+            Commands::Feedback {
+                command: FeedbackCommands::State {
+                    ref state,
+                    ref session,
+                    ref concept,
+                    ref note,
+                    json: true
+                }
+            } if state == "frustrated"
+                && session == "cli"
+                && concept.as_deref() == Some("ownership")
+                && note.as_deref() == Some("transfer feels stuck")
+        ));
+
+        let pause = Cli::try_parse_from(vec![
+            "polaris",
+            "feedback",
+            "pause",
+            "--reason",
+            "done_for_now",
+        ])
+        .unwrap();
+        assert!(matches!(
+            pause.command,
+            Commands::Feedback {
+                command: FeedbackCommands::Pause {
+                    ref reason,
+                    ref session,
+                    concept: None,
+                    note: None,
+                    json: false
+                }
+            } if reason == "done_for_now" && session == "cli"
+        ));
+    }
+
+    #[test]
+    fn learner_feedback_text_reports_recorded_receipt() {
+        let receipt = polaris_core::learner_feedback::LearnerFeedbackReceipt {
+            event_id: "event-1".to_owned(),
+            kind: "state".to_owned(),
+            session_id: "cli".to_owned(),
+            concept_id: Some("ownership".to_owned()),
+            state: Some("frustrated".to_owned()),
+            reason: None,
+            effect: "recorded_only".to_owned(),
+        };
+
+        let text = learner_feedback_text(&receipt);
+
+        assert!(text.contains("event_id=event-1"));
+        assert!(text.contains("kind=state"));
+        assert!(text.contains("state=frustrated"));
+        assert!(text.contains("effect=recorded_only"));
+        assert!(text.contains("does not directly change mastery or scheduling"));
+    }
+
+    #[test]
+    fn learner_feedback_commands_record_state_and_pause_events() {
+        let db_path = temp_db_path("learner-feedback");
+        cleanup_db_path(&db_path);
+
+        let state = Cli::try_parse_from(vec![
+            "polaris",
+            "--db",
+            db_path.to_str().unwrap(),
+            "feedback",
+            "state",
+            "--state",
+            "frustrated",
+            "--session",
+            "cli-flow",
+            "--concept",
+            "ownership",
+            "--note",
+            "transfer feels stuck",
+            "--json",
+        ])
+        .unwrap();
+        let pause = Cli::try_parse_from(vec![
+            "polaris",
+            "--db",
+            db_path.to_str().unwrap(),
+            "feedback",
+            "pause",
+            "--reason",
+            "today is enough",
+            "--session",
+            "cli-flow",
+        ])
+        .unwrap();
+
+        run(state).unwrap();
+        run(pause).unwrap();
+
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        let state_payload: String = conn
+            .query_row(
+                "SELECT payload_json FROM behavior_events
+                 WHERE type='learner_feedback'
+                   AND session_id='cli-flow'
+                   AND concept_id='ownership'
+                   AND json_extract(payload_json, '$.kind')='state'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let state_payload: serde_json::Value = serde_json::from_str(&state_payload).unwrap();
+        assert_eq!(state_payload["state"], "frustrated");
+        assert_eq!(state_payload["source"], "cli");
+        assert_eq!(state_payload["effect"], "recorded_only");
+
+        let pause_reason: String = conn
+            .query_row(
+                "SELECT json_extract(payload_json, '$.reason') FROM behavior_events
+                 WHERE type='learner_feedback'
+                   AND session_id='cli-flow'
+                   AND json_extract(payload_json, '$.kind')='pause'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let abandon_events: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM behavior_events WHERE type='abandon'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(pause_reason, "today is enough");
+        assert_eq!(abandon_events, 0);
+
+        drop(conn);
+        cleanup_db_path(&db_path);
+    }
+
+    #[test]
+    fn learner_feedback_command_rejects_invalid_state_without_event() {
+        let db_path = temp_db_path("learner-feedback-invalid");
+        cleanup_db_path(&db_path);
+        let cli = Cli::try_parse_from(vec![
+            "polaris",
+            "--db",
+            db_path.to_str().unwrap(),
+            "feedback",
+            "state",
+            "--state",
+            "sleepy",
+        ])
+        .unwrap();
+
+        let error = run(cli).unwrap_err().to_string();
+
+        assert!(error.contains("learner_feedback.state"));
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        let events: i64 = conn
+            .query_row("SELECT COUNT(*) FROM behavior_events", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(events, 0);
+
+        drop(conn);
+        cleanup_db_path(&db_path);
     }
 
     #[test]
@@ -1597,6 +1933,20 @@ mod tests {
             .join("..")
             .join("..")
             .join(path)
+    }
+
+    fn temp_db_path(prefix: &str) -> std::path::PathBuf {
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("polaris-core-{prefix}-{suffix}.db"))
+    }
+
+    fn cleanup_db_path(path: &std::path::Path) {
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(path.with_extension("db-wal"));
+        let _ = std::fs::remove_file(path.with_extension("db-shm"));
     }
 
     struct EnvGuard {

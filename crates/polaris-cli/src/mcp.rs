@@ -1,6 +1,7 @@
 use std::io::{self, BufRead, Write};
 
 use polaris_core::engine::{Engine, SubmitInput};
+use polaris_core::learner_feedback::LearnerFeedbackInput;
 use serde_json::{json, Value};
 
 pub struct McpSession {
@@ -63,6 +64,8 @@ impl McpSession {
                 "mark_report_assertion_inaccurate" => {
                     self.mark_report_assertion_inaccurate(arguments)
                 }
+                "mark_report_assertion_accurate" => self.mark_report_assertion_accurate(arguments),
+                "record_learner_feedback" => self.record_learner_feedback(arguments),
                 "submit_evidence" => self.submit_evidence(arguments),
                 "get_teaching_instruction" => self.get_teaching_instruction(arguments),
                 other => Err(format!("unknown tool: {other}")),
@@ -229,17 +232,48 @@ impl McpSession {
     }
 
     fn mark_report_assertion_inaccurate(&self, arguments: &Value) -> Result<Value, String> {
+        self.mark_report_assertion(arguments, "inaccurate")
+    }
+
+    fn mark_report_assertion_accurate(&self, arguments: &Value) -> Result<Value, String> {
+        self.mark_report_assertion(arguments, "accurate")
+    }
+
+    fn mark_report_assertion(&self, arguments: &Value, verdict: &str) -> Result<Value, String> {
         let assertion_id = required_str(arguments, "assertion_id")?;
         let report_id = optional_str(arguments, "report_id");
         let marked_report_id = self
             .engine
-            .record_report_feedback(report_id, assertion_id)
+            .record_report_feedback_with_verdict(report_id, assertion_id, verdict)
             .map_err(|error| error.to_string())?;
         Ok(json!({
             "report_id": marked_report_id,
             "assertion_id": assertion_id,
-            "verdict": "inaccurate",
+            "verdict": verdict,
+            "effect": "recorded_only",
         }))
+    }
+
+    fn record_learner_feedback(&self, arguments: &Value) -> Result<Value, String> {
+        let kind = required_str(arguments, "kind")?;
+        let session = optional_str(arguments, "session").unwrap_or("mcp");
+        let receipt = self
+            .engine
+            .record_learner_feedback(LearnerFeedbackInput {
+                session_id: session.to_owned(),
+                source: "mcp".to_owned(),
+                kind: kind.to_owned(),
+                concept_id: arguments
+                    .get("concept_id")
+                    .and_then(Value::as_str)
+                    .or_else(|| arguments.get("concept").and_then(Value::as_str))
+                    .map(str::to_owned),
+                state: optional_str(arguments, "state").map(str::to_owned),
+                reason: optional_str(arguments, "reason").map(str::to_owned),
+                note: optional_str(arguments, "note").map(str::to_owned),
+            })
+            .map_err(|error| error.to_string())?;
+        serde_json::to_value(receipt).map_err(|error| error.to_string())
     }
 
     fn get_teaching_instruction(&self, arguments: &Value) -> Result<Value, String> {
@@ -357,6 +391,35 @@ fn tool_definitions() -> Value {
                     "assertion_id": {"type": "string", "description": "Assertion, hypothesis, or suggestion id to mark inaccurate."}
                 },
                 "required": ["assertion_id"]
+            }
+        },
+        {
+            "name": "mark_report_assertion_accurate",
+            "description": "Record learner feedback that a mirror report assertion is accurate. The feedback is recorded only; it does not rewrite mastery state.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "report_id": {"type": "string", "description": "Optional report id. Defaults to the latest report."},
+                    "assertion_id": {"type": "string", "description": "Assertion, hypothesis, or suggestion id to mark accurate."}
+                },
+                "required": ["assertion_id"]
+            }
+        },
+        {
+            "name": "record_learner_feedback",
+            "description": "Record learner state or pause feedback as an auditable behavior event. This is recorded only and does not directly change mastery, HMM state, or scheduling.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "session": {"type": "string", "description": "Session id. Defaults to mcp."},
+                    "kind": {"type": "string", "enum": ["state", "pause"], "description": "Feedback kind."},
+                    "concept_id": {"type": "string", "description": "Optional related concept id."},
+                    "concept": {"type": "string", "description": "Deprecated alias for concept_id."},
+                    "state": {"type": "string", "enum": ["flow", "productive_confusion", "frustrated", "bored", "anxious", "fatigued"], "description": "Required when kind=state."},
+                    "reason": {"type": "string", "description": "Required when kind=pause. Free-text learner reason, trimmed before storage."},
+                    "note": {"type": "string", "description": "Optional learner note."}
+                },
+                "required": ["kind"]
             }
         },
         {
@@ -549,6 +612,8 @@ mod tests {
                 "run_mirror_report",
                 "get_latest_mirror_report",
                 "mark_report_assertion_inaccurate",
+                "mark_report_assertion_accurate",
+                "record_learner_feedback",
                 "submit_evidence",
                 "get_teaching_instruction"
             ]
@@ -731,6 +796,89 @@ mod tests {
     }
 
     #[test]
+    fn mcp_learner_feedback_records_state_and_pause() {
+        let mut session = test_session();
+
+        let state_response = session
+            .handle_request(json!({
+                "jsonrpc": "2.0",
+                "id": 33,
+                "method": "tools/call",
+                "params": {"name": "record_learner_feedback", "arguments": {
+                    "session": "mcp-flow",
+                    "kind": "state",
+                    "concept": "ownership",
+                    "state": "frustrated",
+                    "note": "transfer feels stuck"
+                }}
+            }))
+            .unwrap()
+            .unwrap();
+        let state_text = state_response["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap();
+        let state_payload: Value = serde_json::from_str(state_text).unwrap();
+        assert_eq!(state_payload["kind"], "state");
+        assert_eq!(state_payload["state"], "frustrated");
+        assert_eq!(state_payload["effect"], "recorded_only");
+
+        let pause_response = session
+            .handle_request(json!({
+                "jsonrpc": "2.0",
+                "id": 34,
+                "method": "tools/call",
+                "params": {"name": "record_learner_feedback", "arguments": {
+                    "kind": "pause",
+                    "reason": "done_for_now"
+                }}
+            }))
+            .unwrap()
+            .unwrap();
+        let pause_text = pause_response["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap();
+        let pause_payload: Value = serde_json::from_str(pause_text).unwrap();
+        assert_eq!(pause_payload["session_id"], "mcp");
+        assert_eq!(pause_payload["kind"], "pause");
+        assert_eq!(pause_payload["reason"], "done_for_now");
+
+        let feedback_events: i64 = session
+            .engine()
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM behavior_events WHERE type='learner_feedback'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(feedback_events, 2);
+    }
+
+    #[test]
+    fn mcp_learner_feedback_returns_tool_error_for_invalid_kind() {
+        let mut session = test_session();
+
+        let response = session
+            .handle_request(json!({
+                "jsonrpc": "2.0",
+                "id": 35,
+                "method": "tools/call",
+                "params": {"name": "record_learner_feedback", "arguments": {
+                    "kind": "mood",
+                    "state": "flow"
+                }}
+            }))
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(response["result"]["isError"], true);
+        assert!(response["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("learner_feedback.kind"));
+    }
+
+    #[test]
     fn mcp_phase_gu_and_mirror_report_tools() {
         let mut session = test_session();
 
@@ -908,6 +1056,27 @@ mod tests {
             )
             .unwrap();
 
+        let accurate_response = session
+            .handle_request(json!({
+                "jsonrpc": "2.0",
+                "id": 451,
+                "method": "tools/call",
+                "params": {"name": "mark_report_assertion_accurate", "arguments": {
+                    "report_id": "mcp-feedback-report",
+                    "assertion_id": "assertion:calibration"
+                }}
+            }))
+            .unwrap()
+            .unwrap();
+        let accurate_text = accurate_response["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap();
+        let accurate_payload: Value = serde_json::from_str(accurate_text).unwrap();
+        assert_eq!(accurate_payload["report_id"], "mcp-feedback-report");
+        assert_eq!(accurate_payload["assertion_id"], "assertion:calibration");
+        assert_eq!(accurate_payload["verdict"], "accurate");
+        assert_eq!(accurate_payload["effect"], "recorded_only");
+
         let feedback_response = session
             .handle_request(json!({
                 "jsonrpc": "2.0",
@@ -937,7 +1106,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(feedback_events, 1);
+        assert_eq!(feedback_events, 2);
     }
 
     #[test]

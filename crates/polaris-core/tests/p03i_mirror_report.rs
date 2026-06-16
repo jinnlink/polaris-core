@@ -410,7 +410,7 @@ fn legacy_report_json_without_p07c_fields_deserializes() {
 }
 
 #[test]
-fn inaccurate_feedback_suppresses_assertion_in_next_report() {
+fn report_feedback_inaccurate_suppresses_assertion_in_next_report() {
     let engine = seeded_engine();
     seed_phantom_concept(&engine, "ownership", 4);
 
@@ -443,7 +443,38 @@ fn inaccurate_feedback_suppresses_assertion_in_next_report() {
 }
 
 #[test]
-fn feedback_for_unknown_assertion_is_rejected() {
+fn report_feedback_accurate_records_without_suppressing_assertion() {
+    let engine = seeded_engine();
+    seed_phantom_concept(&engine, "ownership", 4);
+
+    let first = engine.run_mirror_report().unwrap();
+    assert!(find_item(&first.assertions, "calibration_phantom:ownership").is_some());
+
+    let report_id = engine
+        .record_report_feedback_with_verdict(None, "calibration_phantom:ownership", "accurate")
+        .unwrap();
+    assert_eq!(report_id, first.id);
+
+    let verdict: String = engine
+        .conn()
+        .query_row(
+            "SELECT json_extract(payload_json, '$.verdict')
+             FROM behavior_events WHERE type='report_feedback'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(verdict, "accurate");
+
+    let second = engine.run_mirror_report().unwrap();
+    assert!(
+        find_item(&second.assertions, "calibration_phantom:ownership").is_some(),
+        "accurate feedback is calibration data, not a suppression signal"
+    );
+}
+
+#[test]
+fn report_feedback_for_unknown_assertion_is_rejected() {
     let engine = seeded_engine();
     engine.run_mirror_report().unwrap();
 

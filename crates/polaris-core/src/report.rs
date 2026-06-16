@@ -376,7 +376,8 @@ pub fn record_report_feedback(
     assertion_id: &str,
     verdict: &str,
 ) -> Result<String> {
-    if verdict != "inaccurate" {
+    let verdict = verdict.trim().to_ascii_lowercase();
+    if !matches!(verdict.as_str(), "accurate" | "inaccurate") {
         return Err(PolarisError::InvalidParameter {
             key: "report.feedback_verdict".to_owned(),
             value: verdict.to_owned(),

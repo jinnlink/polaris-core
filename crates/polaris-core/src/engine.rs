@@ -33,6 +33,9 @@ use crate::gu::{
     active_gu_rules_for_concept, concept_has_active_gu_rule, run_gu_induction, ActiveGuRule,
     GuInductionSummary,
 };
+use crate::learner_feedback::{
+    record_learner_feedback, LearnerFeedbackInput, LearnerFeedbackReceipt,
+};
 use crate::learner_mirror::{learner_mirror_snapshot, LearnerMirrorSnapshot};
 use crate::mastery::{fold_all, fold_attempt, AttemptObservation, MasteryParams, MasteryState};
 use crate::mental_fit::{run_mental_dynamics_fit, transitions_from_meta, MentalFitSummary};
@@ -271,6 +274,22 @@ impl Engine {
         assertion_id: &str,
     ) -> Result<String> {
         record_report_feedback(&self.conn, report_id, assertion_id, "inaccurate")
+    }
+
+    pub fn record_report_feedback_with_verdict(
+        &self,
+        report_id: Option<&str>,
+        assertion_id: &str,
+        verdict: &str,
+    ) -> Result<String> {
+        record_report_feedback(&self.conn, report_id, assertion_id, verdict)
+    }
+
+    pub fn record_learner_feedback(
+        &self,
+        input: LearnerFeedbackInput,
+    ) -> Result<LearnerFeedbackReceipt> {
+        record_learner_feedback(&self.conn, input)
     }
 
     pub fn run_gu_induction(&self) -> Result<GuInductionSummary> {
