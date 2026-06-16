@@ -14,6 +14,55 @@ pub struct DoctorReport {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ActivitySummary {
+    pub count_7d: i64,
+    pub last_at: Option<String>,
+    pub last_status: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DoctorDiagnostics {
+    pub window_days: i64,
+    pub param_tuning_runs: ActivitySummary,
+    pub breeding_evaluated_7d: ActivitySummary,
+    pub breeding_admitted_7d: ActivitySummary,
+    pub breeding_retired_7d: ActivitySummary,
+    pub mental_fit_hazard: ActivitySummary,
+    pub mental_fit_state_gate: ActivitySummary,
+    pub gu_inductions: ActivitySummary,
+    pub consolidation_runs: ActivitySummary,
+    pub mirror_reports: ActivitySummary,
+}
+
+impl DoctorDiagnostics {
+    pub fn empty(window_days: i64) -> Self {
+        let empty = ActivitySummary::empty();
+        Self {
+            window_days,
+            param_tuning_runs: empty.clone(),
+            breeding_evaluated_7d: empty.clone(),
+            breeding_admitted_7d: empty.clone(),
+            breeding_retired_7d: empty.clone(),
+            mental_fit_hazard: empty.clone(),
+            mental_fit_state_gate: empty.clone(),
+            gu_inductions: empty.clone(),
+            consolidation_runs: empty.clone(),
+            mirror_reports: empty,
+        }
+    }
+}
+
+impl ActivitySummary {
+    pub fn empty() -> Self {
+        Self {
+            count_7d: 0,
+            last_at: None,
+            last_status: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ReplayMismatch {
     pub concept_id: String,
     pub field: String,
@@ -43,6 +92,145 @@ pub fn doctor_report(conn: &Connection) -> Result<DoctorReport> {
         integrity_messages,
         replay_checked,
         replay_mismatches,
+    })
+}
+
+pub fn doctor_diagnostics(conn: &Connection, window_days: i64) -> Result<DoctorDiagnostics> {
+    let window_days = window_days.max(1);
+    Ok(DoctorDiagnostics {
+        window_days,
+        param_tuning_runs: activity_summary(
+            conn,
+            "param_tuning_runs",
+            "ran_at",
+            "status",
+            window_days,
+        )?,
+        breeding_evaluated_7d: activity_summary(
+            conn,
+            "bred_moves",
+            "updated_at",
+            "status",
+            window_days,
+        )?,
+        breeding_admitted_7d: activity_summary(
+            conn,
+            "bred_moves",
+            "admitted_at",
+            "'admitted'",
+            window_days,
+        )?,
+        breeding_retired_7d: activity_summary(
+            conn,
+            "bred_moves",
+            "retired_at",
+            "'retired'",
+            window_days,
+        )?,
+        mental_fit_hazard: hazard_model_summary(conn, window_days)?,
+        mental_fit_state_gate: state_gate_summary(conn, window_days)?,
+        gu_inductions: activity_summary(conn, "gu_rules", "updated_at", "status", window_days)?,
+        consolidation_runs: activity_summary(
+            conn,
+            "consolidation_runs",
+            "ran_at",
+            "status",
+            window_days,
+        )?,
+        mirror_reports: activity_summary(
+            conn,
+            "mirror_reports",
+            "generated_at",
+            "CASE WHEN json_valid(report_json) THEN 'generated' ELSE 'parse_error' END",
+            window_days,
+        )?,
+    })
+}
+
+fn activity_summary(
+    conn: &Connection,
+    table: &str,
+    at_column: &str,
+    status_expr: &str,
+    window_days: i64,
+) -> Result<ActivitySummary> {
+    let count_sql = format!(
+        "SELECT COUNT(*) FROM {table}
+         WHERE {at_column} IS NOT NULL
+           AND julianday({at_column}) >= julianday('now') - ?1"
+    );
+    let count_7d = conn.query_row(&count_sql, [window_days as f64], |row| row.get(0))?;
+    let latest_sql = format!(
+        "SELECT {at_column}, {status_expr} FROM {table}
+         WHERE {at_column} IS NOT NULL
+           AND julianday({at_column}) >= julianday('now') - ?1
+         ORDER BY julianday({at_column}) DESC, id DESC
+         LIMIT 1"
+    );
+    let latest: Option<(String, String)> = conn
+        .query_row(&latest_sql, [window_days as f64], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .optional()?;
+    Ok(ActivitySummary {
+        count_7d,
+        last_at: latest.as_ref().map(|(at, _)| at.clone()),
+        last_status: latest.map(|(_, status)| status),
+    })
+}
+
+fn hazard_model_summary(conn: &Connection, window_days: i64) -> Result<ActivitySummary> {
+    let count_7d = conn.query_row(
+        "SELECT COUNT(*) FROM hazard_models
+         WHERE fitted_at IS NOT NULL
+           AND julianday(fitted_at) >= julianday('now') - ?1",
+        [window_days as f64],
+        |row| row.get(0),
+    )?;
+    let latest: Option<(String, f64)> = conn
+        .query_row(
+            "SELECT fitted_at, validation_auc FROM hazard_models
+             WHERE fitted_at IS NOT NULL
+               AND julianday(fitted_at) >= julianday('now') - ?1
+             ORDER BY julianday(fitted_at) DESC, id DESC
+             LIMIT 1",
+            [window_days as f64],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    Ok(ActivitySummary {
+        count_7d,
+        last_at: latest.as_ref().map(|(at, _)| at.clone()),
+        last_status: latest.map(|(_, auc)| format!("fitted (auc={auc:.2})")),
+    })
+}
+
+fn state_gate_summary(conn: &Connection, window_days: i64) -> Result<ActivitySummary> {
+    let count_7d = conn.query_row(
+        "SELECT COUNT(*) FROM state_gate_evals
+         WHERE evaluated_at IS NOT NULL
+           AND julianday(evaluated_at) >= julianday('now') - ?1",
+        [window_days as f64],
+        |row| row.get(0),
+    )?;
+    let latest: Option<(String, f64, i64)> = conn
+        .query_row(
+            "SELECT evaluated_at, margin, passes FROM state_gate_evals
+             WHERE evaluated_at IS NOT NULL
+               AND julianday(evaluated_at) >= julianday('now') - ?1
+             ORDER BY julianday(evaluated_at) DESC, id DESC
+             LIMIT 1",
+            [window_days as f64],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?;
+    Ok(ActivitySummary {
+        count_7d,
+        last_at: latest.as_ref().map(|(at, _, _)| at.clone()),
+        last_status: latest.map(|(_, margin, passes)| {
+            let status = if passes != 0 { "passed" } else { "failed_gate" };
+            format!("{status} (margin={margin:+.2})")
+        }),
     })
 }
 
@@ -314,6 +502,103 @@ mod tests {
             )
             .unwrap();
         assert_eq!(stored_p_known, 0.99);
+    }
+
+    #[test]
+    fn ops_doctor_diagnostics_summarizes_recent_activity() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        seed_diagnostic_activity(&conn);
+
+        let diagnostics = super::doctor_diagnostics(&conn, 7).unwrap();
+
+        assert_eq!(diagnostics.window_days, 7);
+        assert_eq!(diagnostics.param_tuning_runs.count_7d, 1);
+        assert_eq!(
+            diagnostics.param_tuning_runs.last_status.as_deref(),
+            Some("accepted")
+        );
+        assert_eq!(diagnostics.breeding_evaluated_7d.count_7d, 1);
+        assert_eq!(
+            diagnostics.breeding_evaluated_7d.last_status.as_deref(),
+            Some("admitted")
+        );
+        assert_eq!(diagnostics.breeding_admitted_7d.count_7d, 1);
+        assert_eq!(diagnostics.breeding_retired_7d.count_7d, 1);
+        assert_eq!(diagnostics.mental_fit_hazard.count_7d, 1);
+        assert_eq!(
+            diagnostics.mental_fit_hazard.last_status.as_deref(),
+            Some("fitted (auc=0.82)")
+        );
+        assert_eq!(diagnostics.mental_fit_state_gate.count_7d, 1);
+        assert_eq!(
+            diagnostics.mental_fit_state_gate.last_status.as_deref(),
+            Some("passed (margin=+0.05)")
+        );
+        assert_eq!(diagnostics.gu_inductions.count_7d, 1);
+        assert_eq!(diagnostics.consolidation_runs.count_7d, 1);
+        assert_eq!(diagnostics.mirror_reports.count_7d, 1);
+        assert_eq!(
+            diagnostics.mirror_reports.last_status.as_deref(),
+            Some("generated")
+        );
+    }
+
+    fn seed_diagnostic_activity(conn: &Connection) {
+        conn.execute(
+            "INSERT INTO param_tuning_runs(id, ran_at, param, old_value, new_value, metric, delta, status)
+             VALUES ('tune-1', strftime('%Y-%m-%dT%H:%M:%SZ','now','-1 day'), 'bkt.p_init', '0.20', '0.21', 'logloss', 0.01, 'accepted')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO bred_moves(id, candidate_move, incumbent_move, context_hash, task_type, template,
+                                    mechanisms_json, main_effect_hypothesis, prereg_json, status,
+                                    created_at, updated_at, admitted_at, retired_at)
+             VALUES ('breed-1', 'candidate', 'incumbent', 'ctx', 'recall', 'template',
+                     '[]', 'hypothesis', '{}', 'admitted',
+                     strftime('%Y-%m-%dT%H:%M:%SZ','now','-3 days'),
+                     strftime('%Y-%m-%dT%H:%M:%SZ','now','-2 days'),
+                     strftime('%Y-%m-%dT%H:%M:%SZ','now','-1 day'),
+                     strftime('%Y-%m-%dT%H:%M:%SZ','now','-1 day'))",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO hazard_models(id, fitted_at, beta_json, validation_auc, n_train, n_validation)
+             VALUES ('hazard-1', strftime('%Y-%m-%dT%H:%M:%SZ','now','-1 day'), '[]', 0.82, 80, 20)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO state_gate_evals(id, evaluated_at, baseline_auc, state_auc, margin, passes, n)
+             VALUES ('state-1', strftime('%Y-%m-%dT%H:%M:%SZ','now','-1 day'), 0.70, 0.75, 0.05, 1, 100)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO gu_rules(id, pattern, concept_ids_json, attempt_ids_json, first_seen, last_seen,
+                                  count, status, alpha, beta, updated_at)
+             VALUES ('gu-1', 'boundary-blindness', '[]', '[]',
+                     strftime('%Y-%m-%dT%H:%M:%SZ','now','-2 days'),
+                     strftime('%Y-%m-%dT%H:%M:%SZ','now','-1 day'),
+                     1, 'active', 2.0, 1.0,
+                     strftime('%Y-%m-%dT%H:%M:%SZ','now','-1 day'))",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO consolidation_runs(id, ran_at, proposals_json, holdout_delta, status)
+             VALUES ('consol-1', strftime('%Y-%m-%dT%H:%M:%SZ','now','-1 day'), '[]', 0.0, 'rejected')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO mirror_reports(id, week, generated_at, report_json, assertion_count, skipped_count)
+             VALUES ('report-1', '2026-W24', strftime('%Y-%m-%dT%H:%M:%SZ','now','-1 day'), '{}', 0, 0)",
+            [],
+        )
+        .unwrap();
     }
 
     struct EnvGuard {

@@ -7,7 +7,9 @@ use polaris_core::config::{
 };
 use polaris_core::db::{open_database, open_database_read_only};
 use polaris_core::engine::{Engine, SubmitInput};
-use polaris_core::ops::{doctor_report, DoctorReport};
+use polaris_core::ops::{
+    doctor_diagnostics, doctor_report, ActivitySummary, DoctorDiagnostics, DoctorReport,
+};
 use polaris_core::pack::validate_pack_path;
 use polaris_core::privacy::PrivacyCallInventory;
 use polaris_core::status::StatusSnapshot;
@@ -85,6 +87,8 @@ enum Commands {
     Doctor {
         #[arg(long)]
         json: bool,
+        #[arg(long)]
+        diagnose: bool,
     },
     ServeHttp {
         #[arg(long, default_value = "127.0.0.1")]
@@ -218,10 +222,18 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             backup_database(&conn, &output)?;
             println!("backup written: {}", output.display());
         }
-        Commands::Doctor { json } => {
+        Commands::Doctor { json, diagnose } => {
             let conn = open_database_read_only(cli.db.unwrap_or_else(default_db_path))?;
             let report = doctor_report(&conn)?;
-            if json {
+            if diagnose {
+                let diagnostics = doctor_diagnostics(&conn, 7)?;
+                if json {
+                    println!("{}", doctor_diagnose_json(&report, &diagnostics)?);
+                } else {
+                    print!("{}", doctor_report_text(&report));
+                    print!("{}", doctor_diagnostics_text(&diagnostics));
+                }
+            } else if json {
                 println!("{}", serde_json::to_string_pretty(&report)?);
             } else {
                 print!("{}", doctor_report_text(&report));
@@ -701,6 +713,43 @@ fn doctor_report_text(report: &DoctorReport) -> String {
         ));
     }
     text
+}
+
+fn doctor_diagnose_json(
+    report: &DoctorReport,
+    diagnostics: &DoctorDiagnostics,
+) -> serde_json::Result<String> {
+    serde_json::to_string_pretty(&serde_json::json!({
+        "doctor": report,
+        "diagnostics": diagnostics,
+    }))
+}
+
+fn doctor_diagnostics_text(diagnostics: &DoctorDiagnostics) -> String {
+    let mut text = format!("\ndiagnostics_window_days={}\n", diagnostics.window_days);
+    for (label, summary) in [
+        ("param_tuning_runs", &diagnostics.param_tuning_runs),
+        ("breeding.evaluated_7d", &diagnostics.breeding_evaluated_7d),
+        ("breeding.admitted_7d", &diagnostics.breeding_admitted_7d),
+        ("breeding.retired_7d", &diagnostics.breeding_retired_7d),
+        ("mental_fit.hazard", &diagnostics.mental_fit_hazard),
+        ("mental_fit.state_gate", &diagnostics.mental_fit_state_gate),
+        ("gu_inductions", &diagnostics.gu_inductions),
+        ("consolidation_runs", &diagnostics.consolidation_runs),
+        ("mirror_reports", &diagnostics.mirror_reports),
+    ] {
+        text.push_str(&activity_summary_text(label, summary));
+    }
+    text
+}
+
+fn activity_summary_text(label: &str, summary: &ActivitySummary) -> String {
+    format!(
+        "{label}\tcount_7d={}\tlast_at={}\tlast_status={}\n",
+        summary.count_7d,
+        summary.last_at.as_deref().unwrap_or("-"),
+        summary.last_status.as_deref().unwrap_or("-")
+    )
 }
 
 fn privacy_show_text(inventory: &PrivacyCallInventory, tier0_only: bool) -> String {
@@ -1188,6 +1237,41 @@ mod tests {
 
         assert_eq!(observation.latency_ms, 5000);
         assert_eq!(observation.hint_count, 1);
+    }
+
+    #[test]
+    fn doctor_diagnose_json_flags_parse() {
+        let cli = Cli::try_parse_from(vec!["polaris", "doctor", "--diagnose", "--json"]).unwrap();
+
+        assert!(matches!(
+            cli.command,
+            Commands::Doctor {
+                json: true,
+                diagnose: true,
+            }
+        ));
+    }
+
+    #[test]
+    fn doctor_diagnose_json_keeps_doctor_and_diagnostics_separate() {
+        let doctor = polaris_core::ops::DoctorReport {
+            ok: true,
+            integrity_ok: true,
+            integrity_messages: vec!["ok".to_owned()],
+            replay_checked: 0,
+            replay_mismatches: Vec::new(),
+        };
+        let diagnostics = polaris_core::ops::DoctorDiagnostics::empty(7);
+
+        let json = doctor_diagnose_json(&doctor, &diagnostics).unwrap();
+        let payload: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(payload["doctor"]["ok"], true);
+        assert_eq!(payload["diagnostics"]["window_days"], 7);
+        assert!(
+            payload.get("ok").is_none(),
+            "top-level doctor fields must not be merged"
+        );
     }
 
     #[test]

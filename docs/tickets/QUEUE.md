@@ -1,6 +1,6 @@
 # 票队列（单票制）
 
-状态：**P07C 报告 top_signal + suggested_action 已实现并通过验收**。任何时刻只允许 1 张票 In Progress。
+状态：**P09C polaris doctor --diagnose 全面诊断已实现并通过验收**。任何时刻只允许 1 张票 In Progress。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 **Phase 7+ 产品形态轴线见 `docs/PRODUCT_ROADMAP.md`**（轴 6 学习者形态 / 轴 7 多 Pack 承载 / 轴 8 工程演进 / 轴 9 信任面板）。
 新增票必须标注它服务主命题（验证真懂→定位模糊→针对性补缺）的哪一环。
@@ -65,6 +65,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 - [x] **P07C 报告 top_signal + suggested_action**（`TICKET_P07C_REPORT_TOP_SIGNAL.md`）← 已实现并通过验收；镜像报告加“如果只看一句”顶部提示与每条断言对应的可选行动；服务环节：定位模糊 → 针对性补缺
 - [x] **P09A engine.rs 模块化拆分**（`TICKET_P09A_ENGINE_MODULARIZATION.md`）← 已实现并通过验收；拆 `engine/task_selection.rs`、`engine/submit_pipeline.rs`、`engine/mental_state.rs`，保留 `engine.rs` 薄 facade 与 public API；服务环节：全环节（可演进）
 - [x] **P09B polaris config 浏览 CLI + 参数文档自动生成**（`TICKET_P09B_CONFIG_CLI_PARAMETERS.md`）← 已实现并通过验收；`polaris config list [--class A|B|C] [--tuning-route Replay|Mrt|Manual|Fit] [--json|--md]` + 参数文档同源生成/校验；服务环节：全环节（可治理）
+- [x] **P09C polaris doctor --diagnose 全面诊断**（`TICKET_P09C_DOCTOR_DIAGNOSE.md`）← 已实现并通过验收；最近 7 天 tuning/breeding/mental_fit/GU/consolidation/report 摘要；服务环节：全环节（运维）
 - [x] **P08B LLM 调用隐私清单 + 纯 Tier 0 模式**（`TICKET_P08B_LLM_PRIVACY_TIER0.md`）← 已实现并通过验收；新增外发调用清单、`polaris privacy show` 与 `POLARIS_TIER0_ONLY=1` 全禁外部模型调用；服务环节：信任前提
 
 ## Backlog（票外发现的问题记在这里，不顺手做）
@@ -92,5 +93,5 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
   - **P08C Pack 作者上手指南 + 模板 Pack**（S）：30 分钟上手文档 + 5 概念样板 pack；服务环节：生态。依赖 P05A0。
   - **P09A engine.rs 模块化拆分**（M）→ 已转正式票 P09A：拆 `engine/task_selection.rs`、`engine/submit_pipeline.rs`、`engine/mental_state.rs` + 测试搬到 `tests/`；服务环节：全环节（可演进）。
   - **P09B polaris config 浏览 CLI + 参数文档自动生成**（S）→ 已转正式票 P09B 并完成：`polaris config list [--class A|B|C]` + 自动生成 `docs/PARAMETERS.md`；服务环节：全环节（可治理）。
-  - **P09C polaris doctor --diagnose 全面诊断**（S）：最近 7 天 tuning/breeding/mental_fit/gu/consolidation/report 摘要；服务环节：全环节（运维）。依赖 P06B。
+  - **P09C polaris doctor --diagnose 全面诊断**（S）→ 已转正式票 P09C 并完成：最近 7 天 tuning/breeding/mental_fit/gu/consolidation/report 摘要；服务环节：全环节（运维）。依赖 P06B。
   - **P10A 五框架门状态面板 + 实验透明度**（M）：`polaris trust show` 暴露 F1-F5 门状态、当前 breeding/MRT 活跃实验；同时把 `breeding.min_n` 默认从 6 提到 20；服务环节：验证真懂（验证门可见）。依赖 P03I、P05B、P04C。
