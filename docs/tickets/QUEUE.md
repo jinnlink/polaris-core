@@ -1,6 +1,6 @@
 # 票队列（单票制）
 
-状态：**无 In Progress；P10A 五框架门状态面板 + 实验透明度已提交（2026-06-17）**。任何时刻只允许 1 张票 In Progress。
+状态：**无 In Progress；P11A 数据库 schema 版本化迁移已通过验收并提交（2026-06-17）**。任何时刻只允许 1 张票 In Progress。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 **Phase 7+ 产品形态轴线见 `docs/PRODUCT_ROADMAP.md`**（轴 6 学习者形态 / 轴 7 多 Pack 承载 / 轴 8 工程演进 / 轴 9 信任面板）。
 新增票必须标注它服务主命题（验证真懂→定位模糊→针对性补缺）的哪一环。
@@ -74,6 +74,10 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 - [x] **P08C Pack 作者上手指南 + 模板 Pack**（`TICKET_P08C_PACK_AUTHOR_GUIDE_TEMPLATE.md`）← 已实现并通过验收；30 分钟上手文档 + `packs/template/` 最小可验证样板；服务环节：生态可用性
 - [x] **P10A 五框架门状态面板 + 实验透明度**（`TICKET_P10A_TRUST_PANEL.md`）← 已实现、通过验收并提交；`polaris trust show` + 只读 HTTP/MCP 出口暴露 F1-F5 门状态、active breeding/MRT 实验与最近关键后台摘要；`breeding.min_n` 默认 6→20；服务环节：验证真懂（验证门可见）
 
+## Phase 11 — 版本化与发布前硬化
+
+- [x] **P11A 数据库 schema 版本化迁移**（`TICKET_P11A_SCHEMA_VERSIONED_MIGRATIONS.md`）← 已实现、通过验收并提交；为 SQLite schema 建立版本号、迁移账本与 doctor 可见性，保留既有数据和用户参数；服务环节：全环节（Local-persistent / 可演进底座）
+
 ## Backlog（票外发现的问题记在这里，不顺手做）
 
 - P03A 审查后续：当前 Q 降级初始化在单 Rust pack 下使用 `q[0]=1.0` 作为 deterministic one-hot track 维；多 pack/多 track 前需补 `latent.dims` 或 pack/track→维度映射，避免所有概念共用同一潜因子。→ 已转正式票 P03M。
@@ -100,4 +104,5 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
   - **P09A engine.rs 模块化拆分**（M）→ 已转正式票 P09A：拆 `engine/task_selection.rs`、`engine/submit_pipeline.rs`、`engine/mental_state.rs` + 测试搬到 `tests/`；服务环节：全环节（可演进）。
   - **P09B polaris config 浏览 CLI + 参数文档自动生成**（S）→ 已转正式票 P09B 并完成：`polaris config list [--class A|B|C]` + 自动生成 `docs/PARAMETERS.md`；服务环节：全环节（可治理）。
   - **P09C polaris doctor --diagnose 全面诊断**（S）→ 已转正式票 P09C 并完成：最近 7 天 tuning/breeding/mental_fit/gu/consolidation/report 摘要；服务环节：全环节（运维）。依赖 P06B。
-  - **P10A 五框架门状态面板 + 实验透明度**（M）：`polaris trust show` 暴露 F1-F5 门状态、当前 breeding/MRT 活跃实验；同时把 `breeding.min_n` 默认从 6 提到 20；服务环节：验证真懂（验证门可见）。依赖 P03I、P05B、P04C。
+  - **P10A 五框架门状态面板 + 实验透明度**（M）：`polaris trust show` 暴露 F1-F5 门状态、当前 breeding/MRT 活跃实验；同时把 `breeding.min_n` 默认从 6 提到 20；服务环节：验证真懂（验证门可见）。依赖 P03I、P05B、P04C。→ 已转正式票 P10A 并提交。
+  - **P11A 数据库 schema 版本化迁移**（S）：为当前一次性 schema 建表路径补版本号、迁移账本和 doctor 可见性，作为后续 schema 演进底座。→ 已转正式票 P11A。

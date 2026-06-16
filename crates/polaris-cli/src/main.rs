@@ -5,8 +5,11 @@ use clap::{Parser, Subcommand, ValueEnum};
 use polaris_core::config::{
     parameter_specs, parameters_markdown, ParameterClass, ParameterSpec, TuningRoute,
 };
-use polaris_core::db::{open_database, open_database_read_only};
+use polaris_core::db::{
+    open_database, open_database_read_only, schema_version, CURRENT_SCHEMA_VERSION,
+};
 use polaris_core::engine::{Engine, SubmitInput};
+use polaris_core::error::PolarisError;
 use polaris_core::learner_feedback::{LearnerFeedbackInput, LearnerFeedbackReceipt};
 use polaris_core::learner_mirror::LearnerMirrorSnapshot;
 use polaris_core::ops::{
@@ -858,11 +861,18 @@ fn open_existing_database(path: &Path) -> Result<Connection, Box<dyn std::error:
             path.display()
         )));
     }
-    Connection::open_with_flags(
+    let conn = Connection::open_with_flags(
         path,
         OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_URI,
-    )
-    .map_err(Into::into)
+    )?;
+    let user_version = schema_version(&conn)?;
+    if user_version > CURRENT_SCHEMA_VERSION {
+        return Err(Box::new(PolarisError::UnsupportedSchemaVersion {
+            found: user_version,
+            current: CURRENT_SCHEMA_VERSION,
+        }));
+    }
+    Ok(conn)
 }
 
 fn backup_database(conn: &Connection, output: &Path) -> Result<(), Box<dyn std::error::Error>> {
@@ -882,6 +892,8 @@ fn backup_database(conn: &Connection, output: &Path) -> Result<(), Box<dyn std::
 fn doctor_report_text(report: &DoctorReport) -> String {
     let mut text = String::new();
     text.push_str(&format!("ok={}\n", report.ok));
+    text.push_str(&format!("schema_version={}\n", report.schema_version));
+    text.push_str(&format!("migration_count={}\n", report.migration_count));
     text.push_str(&format!(
         "integrity={}\n",
         if report.integrity_ok { "ok" } else { "failed" }
@@ -1926,6 +1938,8 @@ mod tests {
     fn doctor_diagnose_json_keeps_doctor_and_diagnostics_separate() {
         let doctor = polaris_core::ops::DoctorReport {
             ok: true,
+            schema_version: 1,
+            migration_count: 1,
             integrity_ok: true,
             integrity_messages: vec!["ok".to_owned()],
             replay_checked: 0,
@@ -1937,11 +1951,54 @@ mod tests {
         let payload: serde_json::Value = serde_json::from_str(&json).unwrap();
 
         assert_eq!(payload["doctor"]["ok"], true);
+        assert_eq!(payload["doctor"]["schema_version"], 1);
+        assert_eq!(payload["doctor"]["migration_count"], 1);
         assert_eq!(payload["diagnostics"]["window_days"], 7);
         assert!(
             payload.get("ok").is_none(),
             "top-level doctor fields must not be merged"
         );
+    }
+
+    #[test]
+    fn init_creates_schema_version_and_migration_ledger() {
+        let db_path = temp_db_path("init-schema");
+        cleanup_db_path(&db_path);
+        let cli = Cli::try_parse_from(vec![
+            "polaris",
+            "--db",
+            db_path.to_str().unwrap(),
+            "init",
+            "--pack",
+            workspace_pack_path("packs/rust").to_str().unwrap(),
+        ])
+        .unwrap();
+
+        run(cli).unwrap();
+
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        let user_version: i64 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        let migration_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        let active_pack: String = conn
+            .query_row(
+                "SELECT value FROM meta WHERE key='active_pack'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        drop(conn);
+        cleanup_db_path(&db_path);
+
+        assert_eq!(user_version, polaris_core::db::CURRENT_SCHEMA_VERSION);
+        assert_eq!(migration_count, 1);
+        assert_eq!(active_pack, "rust");
     }
 
     #[test]
@@ -2202,11 +2259,20 @@ mod tests {
         let evidence_count: i64 = backup_conn
             .query_row("SELECT COUNT(*) FROM evidence_items", [], |row| row.get(0))
             .unwrap();
+        let backup_schema_version: i64 = backup_conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
         assert_eq!(evidence_count, 1);
+        assert_eq!(
+            backup_schema_version,
+            polaris_core::db::CURRENT_SCHEMA_VERSION
+        );
 
         let report = polaris_core::ops::doctor_report(&conn).unwrap();
         assert!(report.ok);
         let text = doctor_report_text(&report);
+        assert!(text.contains("schema_version="));
+        assert!(text.contains("migration_count=1"));
         assert!(text.contains("integrity=ok"));
         assert!(text.contains("replay_checked=0"));
 
@@ -2233,6 +2299,33 @@ mod tests {
 
         assert!(error.contains("database does not exist"));
         assert!(!path.exists(), "missing backup source must not be created");
+    }
+
+    #[test]
+    fn backup_rejects_newer_schema_source_without_enabling_wal() {
+        let path = temp_db_path("backup-newer-schema");
+        cleanup_db_path(&path);
+        {
+            let conn = rusqlite::Connection::open(&path).unwrap();
+            conn.pragma_update(None, "journal_mode", "DELETE").unwrap();
+            conn.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION + 1)
+                .unwrap();
+        }
+
+        let error = open_existing_database(&path).unwrap_err().to_string();
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        let journal_mode: String = conn
+            .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+            .unwrap();
+        drop(conn);
+        let wal_exists = path.with_extension("db-wal").exists();
+        let shm_exists = path.with_extension("db-shm").exists();
+        cleanup_db_path(&path);
+
+        assert!(error.contains("unsupported database schema version"));
+        assert_eq!(journal_mode.to_lowercase(), "delete");
+        assert!(!wal_exists);
+        assert!(!shm_exists);
     }
 
     #[test]

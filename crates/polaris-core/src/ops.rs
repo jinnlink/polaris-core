@@ -1,12 +1,15 @@
 use rusqlite::{Connection, OptionalExtension};
 use serde::Serialize;
 
+use crate::db::{schema_migration_count, schema_version};
 use crate::error::Result;
 use crate::mastery::{fold_all, AttemptObservation, MasteryParams};
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DoctorReport {
     pub ok: bool,
+    pub schema_version: i64,
+    pub migration_count: i64,
     pub integrity_ok: bool,
     pub integrity_messages: Vec<String>,
     pub replay_checked: usize,
@@ -83,11 +86,15 @@ struct StoredMasteryFold {
 }
 
 pub fn doctor_report(conn: &Connection) -> Result<DoctorReport> {
+    let schema_version = schema_version(conn)?;
+    let migration_count = schema_migration_count(conn)?;
     let integrity_messages = integrity_check(conn)?;
     let integrity_ok = integrity_messages.len() == 1 && integrity_messages[0] == "ok";
     let (replay_checked, replay_mismatches) = replay_self_check(conn)?;
     Ok(DoctorReport {
         ok: integrity_ok && replay_mismatches.is_empty(),
+        schema_version,
+        migration_count,
         integrity_ok,
         integrity_messages,
         replay_checked,
@@ -476,6 +483,8 @@ mod tests {
 
         let clean = super::doctor_report(engine.conn()).unwrap();
         assert!(clean.ok);
+        assert_eq!(clean.schema_version, crate::db::CURRENT_SCHEMA_VERSION);
+        assert_eq!(clean.migration_count, 1);
         assert_eq!(clean.replay_checked, 1);
         assert!(clean.replay_mismatches.is_empty());
 

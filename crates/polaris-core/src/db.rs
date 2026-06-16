@@ -3,7 +3,12 @@ use std::path::Path;
 use rusqlite::{Connection, OpenFlags};
 
 use crate::config::default_registry;
-use crate::error::Result;
+use crate::error::{PolarisError, Result};
+
+pub const CURRENT_SCHEMA_VERSION: i64 = 1;
+
+const BASELINE_SCHEMA_VERSION: i64 = 1;
+const BASELINE_MIGRATION_NAME: &str = "baseline_current_schema";
 
 pub fn open_database(path: impl AsRef<Path>) -> Result<Connection> {
     let path = path.as_ref();
@@ -12,6 +17,7 @@ pub fn open_database(path: impl AsRef<Path>) -> Result<Connection> {
     }
 
     let conn = Connection::open(path)?;
+    ensure_supported_schema_version(&conn)?;
     conn.pragma_update(None, "journal_mode", "WAL")?;
     migrate(&conn)?;
     Ok(conn)
@@ -22,6 +28,8 @@ pub fn open_database_read_only(path: impl AsRef<Path>) -> Result<Connection> {
 }
 
 pub fn migrate(conn: &Connection) -> Result<()> {
+    ensure_supported_schema_version(conn)?;
+
     conn.execute_batch(
         r#"
         CREATE TABLE IF NOT EXISTS meta(
@@ -326,6 +334,12 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             UNIQUE(goal_id, sort_order)
         );
 
+        CREATE TABLE IF NOT EXISTS schema_migrations(
+            version INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            applied_at TEXT NOT NULL
+        );
+
         CREATE INDEX IF NOT EXISTS idx_attempts_concept_created
             ON attempts(concept_id, created_at);
         CREATE INDEX IF NOT EXISTS idx_attempts_created
@@ -374,7 +388,59 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         stmt.execute((spec.key, spec.default_value))?;
     }
 
+    record_schema_migration(conn, BASELINE_SCHEMA_VERSION, BASELINE_MIGRATION_NAME)?;
+    set_schema_version(conn, CURRENT_SCHEMA_VERSION)?;
+
     Ok(())
+}
+
+pub fn schema_version(conn: &Connection) -> Result<i64> {
+    conn.pragma_query_value(None, "user_version", |row| row.get(0))
+        .map_err(Into::into)
+}
+
+pub fn schema_migration_count(conn: &Connection) -> Result<i64> {
+    if !table_exists(conn, "schema_migrations")? {
+        return Ok(0);
+    }
+    conn.query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| {
+        row.get(0)
+    })
+    .map_err(Into::into)
+}
+
+fn ensure_supported_schema_version(conn: &Connection) -> Result<()> {
+    let user_version = schema_version(conn)?;
+    if user_version > CURRENT_SCHEMA_VERSION {
+        return Err(PolarisError::UnsupportedSchemaVersion {
+            found: user_version,
+            current: CURRENT_SCHEMA_VERSION,
+        });
+    }
+    Ok(())
+}
+
+fn set_schema_version(conn: &Connection, version: i64) -> Result<()> {
+    conn.pragma_update(None, "user_version", version)?;
+    Ok(())
+}
+
+fn record_schema_migration(conn: &Connection, version: i64, name: &str) -> Result<()> {
+    conn.execute(
+        "INSERT OR IGNORE INTO schema_migrations(version, name, applied_at)
+         VALUES (?1, ?2, strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
+        (version, name),
+    )?;
+    Ok(())
+}
+
+fn table_exists(conn: &Connection, table: &str) -> Result<bool> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+        [table],
+        |row| row.get(0),
+    )?;
+    Ok(count > 0)
 }
 
 fn ensure_column(conn: &Connection, table: &str, column: &str, definition: &str) -> Result<()> {
@@ -435,6 +501,7 @@ mod tests {
             "goals",
             "goal_dimensions",
             "goal_milestones",
+            "schema_migrations",
         ] {
             let exists: i64 = conn
                 .query_row(
@@ -461,6 +528,179 @@ mod tests {
             )
             .unwrap();
         assert_eq!(quote_min, "8");
+
+        let user_version: i64 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(user_version, CURRENT_SCHEMA_VERSION);
+
+        let migration_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM schema_migrations WHERE version=?1",
+                [CURRENT_SCHEMA_VERSION],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(migration_count, 1);
+    }
+
+    #[test]
+    fn migration_is_idempotent_and_preserves_user_meta() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            r#"
+            CREATE TABLE meta(
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+            INSERT INTO meta(key, value) VALUES ('bkt.p_init', '0.33');
+            "#,
+        )
+        .unwrap();
+
+        migrate(&conn).unwrap();
+        let first_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        migrate(&conn).unwrap();
+
+        let p_init: String = conn
+            .query_row("SELECT value FROM meta WHERE key='bkt.p_init'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        let second_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(p_init, "0.33");
+        assert_eq!(first_count, 1);
+        assert_eq!(second_count, first_count);
+    }
+
+    #[test]
+    fn migration_baselines_unversioned_existing_database_without_losing_data() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            r#"
+            CREATE TABLE evidence_items(
+                id TEXT PRIMARY KEY,
+                session_id TEXT,
+                source TEXT,
+                content_type TEXT,
+                text TEXT NOT NULL,
+                lang TEXT,
+                concept_ids_json TEXT,
+                created_at TEXT
+            );
+            INSERT INTO evidence_items(id, session_id, source, content_type, text, lang, concept_ids_json, created_at)
+            VALUES ('e1', 's1', 'legacy', 'text/plain', 'keep this evidence', 'en', '[]', '2026-01-01T00:00:00Z');
+            "#,
+        )
+        .unwrap();
+
+        migrate(&conn).unwrap();
+
+        let evidence_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM evidence_items WHERE id='e1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let user_version: i64 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(evidence_count, 1);
+        assert_eq!(user_version, CURRENT_SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn migration_rejects_newer_database_version() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION + 1)
+            .unwrap();
+
+        let error = migrate(&conn).unwrap_err().to_string();
+
+        assert!(error.contains("unsupported database schema version"));
+    }
+
+    #[test]
+    fn open_database_rejects_newer_file_database_before_wal_write() {
+        let path = temp_db_path("newer-schema");
+        let _ = std::fs::remove_file(&path);
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.pragma_update(None, "journal_mode", "DELETE").unwrap();
+            conn.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION + 1)
+                .unwrap();
+        }
+
+        let error = open_database(&path).unwrap_err().to_string();
+        let conn = Connection::open(&path).unwrap();
+        let journal_mode: String = conn
+            .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+            .unwrap();
+        drop(conn);
+
+        let wal_exists = path.with_extension("db-wal").exists();
+        let shm_exists = path.with_extension("db-shm").exists();
+        cleanup_db_path(&path);
+
+        assert!(error.contains("unsupported database schema version"));
+        assert_eq!(journal_mode.to_lowercase(), "delete");
+        assert!(!wal_exists);
+        assert!(!shm_exists);
+    }
+
+    #[test]
+    fn open_database_migrates_existing_file_database_to_current_schema_version() {
+        let path = temp_db_path("legacy-schema");
+        let _ = std::fs::remove_file(&path);
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                r#"
+                CREATE TABLE meta(
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
+                INSERT INTO meta(key, value) VALUES ('bkt.p_init', '0.33');
+                "#,
+            )
+            .unwrap();
+        }
+
+        let conn = open_database(&path).unwrap();
+
+        let user_version: i64 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        let p_init: String = conn
+            .query_row("SELECT value FROM meta WHERE key='bkt.p_init'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        let migration_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        let journal_mode: String = conn
+            .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+            .unwrap();
+
+        drop(conn);
+        cleanup_db_path(&path);
+
+        assert_eq!(user_version, CURRENT_SCHEMA_VERSION);
+        assert_eq!(p_init, "0.33");
+        assert_eq!(migration_count, 1);
+        assert_eq!(journal_mode.to_lowercase(), "wal");
     }
 
     #[test]
@@ -582,13 +822,7 @@ mod tests {
 
     #[test]
     fn file_database_uses_wal() {
-        let path = std::env::temp_dir().join(format!(
-            "polaris-core-wal-{}.db",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let path = temp_db_path("wal");
         let conn = open_database(&path).unwrap();
 
         let journal_mode: String = conn
@@ -596,8 +830,22 @@ mod tests {
             .unwrap();
 
         drop(conn);
-        let _ = std::fs::remove_file(path);
+        cleanup_db_path(&path);
 
         assert_eq!(journal_mode.to_lowercase(), "wal");
+    }
+
+    fn temp_db_path(prefix: &str) -> std::path::PathBuf {
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("polaris-core-{prefix}-{suffix}.db"))
+    }
+
+    fn cleanup_db_path(path: &std::path::Path) {
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(path.with_extension("db-wal"));
+        let _ = std::fs::remove_file(path.with_extension("db-shm"));
     }
 }

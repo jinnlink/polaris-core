@@ -19,12 +19,23 @@
 - attempts 不可变：修正写 `final_*`，不覆盖 provisional。
 - **一切常数从 meta 读**（见 §9 参数登记处），代码不写死；读取经单一 config 模块。
 
+### 1.1 Schema 版本与迁移账本
+
+- SQLite schema 版本权威源 = `PRAGMA user_version`，当前由 `db::CURRENT_SCHEMA_VERSION` 定义。
+- `schema_migrations(version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)` 是迁移账本；当前一次性完整 schema 作为 baseline 迁移记录。
+- `migrate()` 对空库和旧的未版本化库都必须幂等：先补齐当前 schema，再写 baseline 账本并设置 `user_version`。
+- 旧库已有业务行和用户手动 `meta` 参数不得被迁移覆盖；默认参数继续使用 `INSERT OR IGNORE`。
+- 若数据库 `user_version` 高于当前二进制支持版本，写路径必须拒绝打开并提示版本不支持，避免旧程序误写新库。
+- 只读入口（doctor / diagnose / trust / learner mirror）不得为了检查版本而创建库或执行迁移。
+
 ## 2. 表
 
 ### P01 激活
 
 ```sql
 meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)
+
+schema_migrations(version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)
 
 op_log(op_id TEXT PRIMARY KEY, ts TEXT, entity TEXT, entity_id TEXT, type TEXT,
        payload_json TEXT, evidence_refs_json TEXT, actor TEXT, lamport INTEGER)

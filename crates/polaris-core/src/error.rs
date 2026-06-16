@@ -22,6 +22,8 @@ pub enum PolarisError {
     InvalidGraderResponse(String),
     #[error("invalid parameter {key}: {value}")]
     InvalidParameter { key: String, value: String },
+    #[error("unsupported database schema version {found}; current binary supports {current}")]
+    UnsupportedSchemaVersion { found: i64, current: i64 },
 }
 
 pub type Result<T> = std::result::Result<T, PolarisError>;
