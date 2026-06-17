@@ -112,6 +112,16 @@ impl FsrsParams {
             r_good: meta_f64(conn, "fsrs.r_good")?,
         })
     }
+
+    pub fn weights(&self) -> &[f64; 17] {
+        &self.w
+    }
+
+    pub fn with_weights(&self, w: [f64; 17]) -> Self {
+        let mut params = self.clone();
+        params.w = w;
+        params
+    }
 }
 
 pub fn create_initial_state() -> FsrsState {

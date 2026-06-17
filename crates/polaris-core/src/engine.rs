@@ -15,6 +15,7 @@ use crate::consolidation::{run_nightly_consolidation, ConsolidationSummary};
 use crate::diagnosis::{diagnose_concept, GraphDiagnosis};
 use crate::error::{PolarisError, Result};
 use crate::fsrs::{retrievability, FsrsParams, FsrsState, Rating};
+use crate::fsrs_fit::{apply_fsrs_fit_summary, evaluate_fsrs_personal_params, FsrsFitSummary};
 use crate::geometry::{
     geometry_candidates, refresh_missing_embeddings, refresh_missing_embeddings_with_provider,
     upsert_geometry_maps_to_candidates, EmbeddingProvider, EmbeddingRefreshSummary,
@@ -277,6 +278,39 @@ impl Engine {
 
     pub fn run_param_tuning(&self) -> Result<TuningSummary> {
         run_param_tuning(&self.conn)
+    }
+
+    pub fn fit_fsrs_personal_params(&self) -> Result<FsrsFitSummary> {
+        self.conn.execute_batch("BEGIN IMMEDIATE")?;
+        let fit_result = (|| -> Result<FsrsFitSummary> {
+            let mut summary = evaluate_fsrs_personal_params(&self.conn)?;
+            if summary.status == crate::fsrs_fit::FsrsFitStatus::Skipped {
+                return Ok(summary);
+            }
+
+            let concept_ids = if summary.accepted {
+                self.scored_concept_ids()?
+            } else {
+                Vec::new()
+            };
+            apply_fsrs_fit_summary(&self.conn, &summary)?;
+            for concept_id in &concept_ids {
+                self.replay_concept_after(concept_id, None)?;
+            }
+            summary.replayed_concepts = concept_ids.len();
+            Ok(summary)
+        })();
+
+        match fit_result {
+            Ok(summary) => {
+                self.conn.execute_batch("COMMIT")?;
+                Ok(summary)
+            }
+            Err(error) => {
+                let _ = self.conn.execute_batch("ROLLBACK");
+                Err(error)
+            }
+        }
     }
 
     pub fn run_mental_dynamics_fit(&self) -> Result<MentalFitSummary> {

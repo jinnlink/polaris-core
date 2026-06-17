@@ -433,7 +433,7 @@ impl Engine {
         Ok(())
     }
 
-    fn replay_concept_after(
+    pub(crate) fn replay_concept_after(
         &self,
         concept_id: &str,
         trigger_attempt_id: Option<&str>,
@@ -530,6 +530,19 @@ impl Engine {
             }
         }
         Ok(())
+    }
+
+    pub(crate) fn scored_concept_ids(&self) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT concept_id
+             FROM attempts
+             WHERE COALESCE(final_score, provisional_score) IS NOT NULL
+             ORDER BY concept_id ASC",
+        )?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
     }
 
     fn process_queued_attempts<F>(&mut self, mut grade: F) -> Result<GradePendingSummary>

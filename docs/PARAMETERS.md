@@ -36,6 +36,10 @@
 | `fsrs.r_hard` | `0.7` | B | `[0.6,0.8]` | Mrt |
 | `fsrs.request_retention` | `0.9` | B | `[0.70,0.98]` | Mrt |
 | `fsrs.w` | `[0.4,0.6,2.4,5.8,4.93,0.94,0.86,0.01,1.49,0.14,0.94,2.18,0.05,0.34,1.26,0.29,2.61]` | C | - | Fit |
+| `fsrs_fit.accept_margin` | `0.005` | A | - | Manual |
+| `fsrs_fit.holdout_frac` | `0.20` | A | `[0.05,0.50]` | Manual |
+| `fsrs_fit.min_attempts` | `100` | A | `[1,100000]` | Manual |
+| `fsrs_fit.min_holdout_predictions` | `20` | A | `[1,100000]` | Manual |
 | `geometry.ef_search` | `64` | B | `[8,512]` | Manual |
 | `geometry.hnsw_m` | `16` | B | `[4,64]` | Manual |
 | `grade.provisional_base` | `0.10` | B | - | Replay |

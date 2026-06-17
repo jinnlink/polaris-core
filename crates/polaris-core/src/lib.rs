@@ -8,6 +8,7 @@ pub mod diagnosis;
 pub mod engine;
 pub mod error;
 pub mod fsrs;
+pub mod fsrs_fit;
 pub mod geometry;
 pub mod goals;
 pub mod grader;

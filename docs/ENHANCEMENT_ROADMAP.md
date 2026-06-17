@@ -99,7 +99,7 @@ P05A0 (课程接入协议)
 |---|---|---|---|
 | P03J（已排队） | 参数自调优 v1：B 类·重放途径参数的夜间反事实重放 + param_tuning_runs 审计（DATA_MODEL §12） | 事件溯源 fold（已有） | M |
 | P03K 心智动力学拟合层激活 | hazard 周拟合 job（`fit_hazard_model` 已有纯函数，引擎从未拟合/持久化，恒为 unfit）→ 持久化 β + validation_auc；HMM 状态层门控评估（`hmm.gate_auc_margin` 已登记但 `strategy_enabled` 恒 false、observed_auc_margin 恒 null）→ 周评估"下一动作"预测 AUC margin，过门才允许状态调策略；HMM EM 重估（graded ≥ `hmm.em_min_n` 启用，DATA_MODEL §7） | P03D；解锁镜像报告 hazard 类断言与 P03G 状态感知的实证依据 | L |
-| FSRS 个人参数拟合 | `fsrs.w`（C 类，登记"个人复习史拟合，预留未来票"）：FSRS-optimizer 思路按人拟合遗忘曲线，留出对拍门 | 复习史样本量 | M |
+| FSRS 个人参数拟合（已转 P06J） | `fsrs.w`（C 类，登记"个人复习史拟合"）：FSRS-optimizer 思路按人拟合遗忘曲线，留出对拍门 | 复习史样本量 | M |
 
 ### 轴 2 性能
 

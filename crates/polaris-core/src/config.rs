@@ -296,6 +296,34 @@ pub fn default_registry() -> BTreeMap<&'static str, ParameterSpec> {
             TuningRoute::Replay,
         ),
         spec(
+            "fsrs_fit.min_attempts",
+            "100",
+            ParameterClass::A,
+            Some("[1,100000]"),
+            TuningRoute::Manual,
+        ),
+        spec(
+            "fsrs_fit.min_holdout_predictions",
+            "20",
+            ParameterClass::A,
+            Some("[1,100000]"),
+            TuningRoute::Manual,
+        ),
+        spec(
+            "fsrs_fit.holdout_frac",
+            "0.20",
+            ParameterClass::A,
+            Some("[0.05,0.50]"),
+            TuningRoute::Manual,
+        ),
+        spec(
+            "fsrs_fit.accept_margin",
+            "0.005",
+            ParameterClass::A,
+            None,
+            TuningRoute::Manual,
+        ),
+        spec(
             "latent.k",
             "32",
             ParameterClass::B,
@@ -1020,6 +1048,25 @@ mod tests {
             .expect("tuning.rotation_cursor");
         assert_eq!(cursor.default_value, "0");
         assert_eq!(cursor.class, ParameterClass::C);
+    }
+
+    #[test]
+    fn parameter_registry_contains_fsrs_fit_gates() {
+        let registry = default_registry();
+        for key in [
+            "fsrs_fit.min_attempts",
+            "fsrs_fit.min_holdout_predictions",
+            "fsrs_fit.holdout_frac",
+            "fsrs_fit.accept_margin",
+        ] {
+            let spec = registry.get(key).unwrap_or_else(|| panic!("missing {key}"));
+            assert_eq!(
+                spec.class,
+                ParameterClass::A,
+                "{key} is a fit validation gate and must be class A"
+            );
+            assert_eq!(spec.tuning_route, TuningRoute::Manual);
+        }
     }
 
     #[test]

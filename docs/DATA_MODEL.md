@@ -232,7 +232,8 @@ Brier 用二值结果（≥0.75→1，≤0.40→0，死区跳过）：`brier_ewm
 | grade.provisional_base / slope | 0.10/0.80 | B | — | **重放**（直接回归历史 (conf, final) 对） | 乐观落账 |
 | grade.quote_min / quote_max | 8 / 220 | A | — | 不调 | strict-citation 校验语义 |
 | fsrs.r_again / r_hard / r_good | .5/.7/.9 | B | ±0.1 | MRT/手动 | score→rating |
-| fsrs.w[0..16] | Polaris 移植值 | C | — | 个人复习史拟合（预留未来票，FSRS optimizer 思路） | 遗忘曲线 |
+| fsrs.w[0..16] | Polaris 移植值 | C | — | 个人复习史拟合（P06J，显式 Fit + 留出对拍门） | 遗忘曲线 |
+| fsrs_fit.min_attempts / min_holdout_predictions / holdout_frac / accept_margin | 100/20/0.20/0.005 | **A** | [1,100000]/[1,100000]/[0.05,0.50]/— | 不调（FSRS Fit 验证门） | `fsrs.w` 个人拟合的样本量、留出与接受门 |
 | latent.k | 32 | B | [8,64] | 巩固过程实际管理 | 初始维数 |
 | latent.k_max | 64 | A | — | 不调 | 硬帽 |
 | mirt.eta / step_cap / shrink / adagrad_epsilon / fuse_n0 | .05/.05/1e−3/1e−8/5 | B | [.01,.2]/[.01,.1]/—/[1e−12,1e−3]/[2,20] | 重放(P03H，目标=留出 logloss) | θ AdaGrad 更新与融合 |
@@ -257,6 +258,8 @@ Brier 用二值结果（≥0.75→1，≤0.40→0，死区跳过）：`brier_ewm
 | consol.accept_margin / holdout_frac | 0.01/0.20 | **A** | — | 不调（验收标准） | 巩固门 |
 
 **实现要求**：config 模块为每个参数携带（默认值, 边界, 类型标签, 调优途径）四元组——后续自调优不改代码、只读登记处。
+
+**FSRS Fit 规则（P06J）**：`fsrs.w` 是 C 类 Fit 参数，不进入 P03J 的 B 类夜间自调优白名单。显式运行个人拟合时，只读取 `final_score IS NOT NULL` 的复习史，按时间序 prequential replay：每条可预测复习先用此前 FSRS state 预测 `R`，再 fold 当前结果；最后 `fsrs_fit.holdout_frac` 的可预测复习作为 holdout。候选 `fsrs.w` 的 holdout logloss 相比当前值改善 ≥ `fsrs_fit.accept_margin` 才写入 `meta('fsrs.w')`，并写 `param_tuning_runs(param='fsrs.w', metric='fsrs_holdout_logloss')`；接受后必须重放相关概念，刷新 `mastery_states.fsrs_json` 与 `next_due_at`。样本不足或不过门不得改变默认调度。
 
 ## 11. 性能预算（"高效"的保证）
 

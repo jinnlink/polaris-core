@@ -113,6 +113,10 @@ enum Commands {
         narrative: bool,
     },
     Tune,
+    FsrsFit {
+        #[arg(long)]
+        json: bool,
+    },
     MentalFit,
     ReportFeedback {
         #[arg(long)]
@@ -495,6 +499,14 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     }
                     for skip in &summary.skipped {
                         println!("skipped {skip}");
+                    }
+                }
+                Commands::FsrsFit { json } => {
+                    let summary = engine.fit_fsrs_personal_params()?;
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&summary)?);
+                    } else {
+                        print!("{}", fsrs_fit_text(&summary));
                     }
                 }
                 Commands::ReportFeedback {
@@ -1078,6 +1090,41 @@ fn trust_parameter_text(parameter: &TrustParameter) -> String {
     )
 }
 
+fn fsrs_fit_text(summary: &polaris_core::fsrs_fit::FsrsFitSummary) -> String {
+    if summary.status == polaris_core::fsrs_fit::FsrsFitStatus::Skipped {
+        return format!(
+            "skipped {}\treason={}\tfinal_attempts={}\n",
+            summary.param,
+            summary.reason.as_deref().unwrap_or("-"),
+            summary.total_final_attempts
+        );
+    }
+    if summary.accepted {
+        return format!(
+            "accepted {}: {} -> {} ({} improvement {:+.4}, train_predictions={}, holdout_predictions={}, replayed_concepts={})\n",
+            summary.param,
+            summary.old_value,
+            summary.new_value,
+            summary.metric,
+            summary.delta,
+            summary.train_predictions,
+            summary.holdout_predictions,
+            summary.replayed_concepts,
+        );
+    }
+    format!(
+        "rejected {}: kept={} candidate={} ({} improvement {:+.4}, train_predictions={}, holdout_predictions={}, replayed_concepts={})\n",
+        summary.param,
+        summary.old_value,
+        summary.new_value,
+        summary.metric,
+        summary.delta,
+        summary.train_predictions,
+        summary.holdout_predictions,
+        summary.replayed_concepts,
+    )
+}
+
 fn privacy_show_text(inventory: &PrivacyCallInventory, tier0_only: bool) -> String {
     let mut text = String::new();
     text.push_str(&format!(
@@ -1469,6 +1516,8 @@ mod tests {
                 "0",
             ],
             vec!["polaris", "grade-pending"],
+            vec!["polaris", "fsrs-fit"],
+            vec!["polaris", "fsrs-fit", "--json"],
             vec!["polaris", "diagnose", "--concept", "ownership"],
             vec!["polaris", "mcp"],
             vec![
@@ -1541,6 +1590,41 @@ mod tests {
         let cli = Cli::try_parse_from(vec!["polaris", "report", "--narrative"]).unwrap();
 
         assert!(matches!(cli.command, Commands::Report { narrative: true }));
+    }
+
+    #[test]
+    fn fsrs_fit_json_flag_parses() {
+        let cli = Cli::try_parse_from(vec!["polaris", "fsrs-fit", "--json"]).unwrap();
+
+        assert!(matches!(cli.command, Commands::FsrsFit { json: true }));
+    }
+
+    #[test]
+    fn fsrs_fit_text_marks_rejected_value_as_candidate() {
+        let summary = polaris_core::fsrs_fit::FsrsFitSummary {
+            param: "fsrs.w".to_owned(),
+            status: polaris_core::fsrs_fit::FsrsFitStatus::Rejected,
+            old_value: "[1.0;17]".to_owned(),
+            new_value: "[2.0;17]".to_owned(),
+            old_weights: vec![1.0; 17],
+            candidate_weights: vec![2.0; 17],
+            metric: "fsrs_holdout_logloss".to_owned(),
+            current_metric: Some(1.0),
+            candidate_metric: Some(0.9),
+            delta: 0.1,
+            accepted: false,
+            reason: None,
+            total_final_attempts: 100,
+            train_predictions: 80,
+            holdout_predictions: 20,
+            candidates_evaluated: 2,
+            replayed_concepts: 0,
+        };
+
+        let text = fsrs_fit_text(&summary);
+
+        assert!(text.starts_with("rejected fsrs.w: kept=[1.0;17] candidate=[2.0;17]"));
+        assert!(!text.contains(" -> "));
     }
 
     #[test]
