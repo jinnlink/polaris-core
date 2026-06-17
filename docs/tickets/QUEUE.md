@@ -1,6 +1,7 @@
 # 票队列（单票制）
 
-状态：**无 In Progress；P11C 已实现并通过验收（2026-06-17）**。任何时刻只允许 1 张票 In Progress。
+状态：**无 In Progress；P11D 已实现并通过验收（2026-06-17）**。任何时刻只允许 1 张票 In Progress。
+当前无可自动认领下一票；后续如需继续开发，需用户裁决或新开规划票。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 **Phase 7+ 产品形态轴线见 `docs/PRODUCT_ROADMAP.md`**（轴 6 学习者形态 / 轴 7 多 Pack 承载 / 轴 8 工程演进 / 轴 9 信任面板）。
 新增票必须标注它服务主命题（验证真懂→定位模糊→针对性补缺）的哪一环。
@@ -83,12 +84,13 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 - [x] **P11A 数据库 schema 版本化迁移**（`TICKET_P11A_SCHEMA_VERSIONED_MIGRATIONS.md`）← 已实现、通过验收并提交；为 SQLite schema 建立版本号、迁移账本与 doctor 可见性，保留既有数据和用户参数；服务环节：全环节（Local-persistent / 可演进底座）
 - [x] **P11B MCP/HTTP API 稳定性合约**（`TICKET_P11B_API_CONTRACT_STABILITY.md`）← 已实现并通过验收；建立 HTTP/MCP 当前公开面契约、兼容/废弃规则和结构化 contract tests；服务环节：全环节（外部接口可演进底座）
 - [x] **P11C Pack 作者沙箱模拟**（`TICKET_P11C_PACK_SANDBOX.md`）← 已实现并通过验收；复用 P04E simulation 与 P08C Pack 作者入口，提供不污染真实库的 `polaris pack sandbox <dir>`；服务环节：全环节（Pack 作者发布前验证）
+- [x] **P11D 交接状态收敛**（`TICKET_P11D_HANDOFF_STATE_CONVERGENCE.md`）← 已实现并通过验收；清理旧路线图中的下一票误导，不改代码；服务环节：全环节（AI 协作可持续）
 
 ## Backlog（票外发现的问题记在这里，不顺手做）
 
 - P03A 审查后续：当前 Q 降级初始化在单 Rust pack 下使用 `q[0]=1.0` 作为 deterministic one-hot track 维；多 pack/多 track 前需补 `latent.dims` 或 pack/track→维度映射，避免所有概念共用同一潜因子。→ 已转正式票 P03M。
 - P05A 验收观察：`cargo test --workspace` 首次在 `p03c_geometry::geometry_candidates_use_hnsw_and_combined_scores` 偶发缺少 `schema:raii` 候选，导致同文件后续用例因 `ENV_LOCK` PoisonError 连锁失败；单跑 `cargo test -p polaris-core --test p03c_geometry` 通过，重跑 `cargo test --workspace` 通过。建议后续单独开票把 HNSW 候选测试改成确定性夹具或扩大候选池；服务环节：全环节（验证稳定性）。→ 已转正式票 P03N。
-- 强化轴线候选（详见 `docs/ENHANCEMENT_ROADMAP.md` 2026-06-12 提案，排序待用户裁决）：
+- 历史强化轴线候选（已转正或归档；来源见 `docs/ENHANCEMENT_ROADMAP.md` 2026-06-12 提案）：
   - ~~P03K 心智动力学拟合层激活~~ ← 已转正式票（见 Phase 3 列表）。
   - 索引审计（全库无 CREATE INDEX；json_extract 热路径）+ DATA_MODEL §11 性能预算回归基准；服务环节：全环节（Tier 0 预算铁律）。→ 索引审计已转 P03L 并完成；性能预算已转正式票 P06E。
   - 属性测试扩面（G_u 生命周期决定性、镜像报告决定性、HMM 数值稳定）；服务环节：全环节（验证稳定性）。→ 已转正式票 P06C。
@@ -98,7 +100,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
   - 数学深化候选（全部带留出验证门）：校准后验化（分层 Beta-Binomial，复用 P03I 数学）→ 已转正式票 P06F；θ AdaGrad 步长 → 已转正式票 P06G；BKT-MIRT 逆方差加权融合 → 已转正式票 P03O；相变马尔可夫动力学 → 已转正式票 P06H；G_u 层级 Beta 超先验 → 已转正式票 P06I；不过门=假设，不进产品行为。
   - FSRS 个人参数拟合（`fsrs.w` C 类登记的预留票，FSRS-optimizer 思路 + 留出对拍门）。→ 已转正式票 P06J。
 
-- 产品形态轴线候选（2026-06-15 产品经理审查沉淀；详见 `docs/PRODUCT_ROADMAP.md`，排序与建议执行序见该文 §5）：
+- 历史产品形态轴线候选（已转正或完成；来源见 `docs/PRODUCT_ROADMAP.md`，历史排序与依赖背景见该文 §5）：
   - **P07A 相图产品化语义层**（S）→ 已转正式票 P07A：8 个相图名加"产品名 + 一句话解读"映射，不改判据；服务环节：验证真懂 → 用户读懂。
   - **P07B 学习者状态镜子 v1**（M）→ 已转正式票 P07B 并提交（`a7e37f1`）：复用 atlas 静态站基建扩出学习者实时面板（自信 vs 实际曲线、相分布、近期断言摘要）；服务环节：验证真懂 → 定位模糊。依赖 P07A。
   - **P07C 报告 top_signal + suggested_action**（S）→ 已转正式票 P07C 并完成：镜像报告加"如果你只看一句"顶部提示与每条断言对应的可选行动；服务环节：定位模糊 → 针对性补缺。依赖 P07A。
