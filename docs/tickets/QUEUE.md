@@ -1,6 +1,6 @@
 # 票队列（单票制）
 
-状态：**无 In Progress；P06J FSRS 个人参数拟合已通过验收（2026-06-17）**。任何时刻只允许 1 张票 In Progress。
+状态：**无 In Progress；截至 2026-06-17，当前正式队列均已通过验收并提交**。任何时刻只允许 1 张票 In Progress。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 **Phase 7+ 产品形态轴线见 `docs/PRODUCT_ROADMAP.md`**（轴 6 学习者形态 / 轴 7 多 Pack 承载 / 轴 8 工程演进 / 轴 9 信任面板）。
 新增票必须标注它服务主命题（验证真懂→定位模糊→针对性补缺）的哪一环。

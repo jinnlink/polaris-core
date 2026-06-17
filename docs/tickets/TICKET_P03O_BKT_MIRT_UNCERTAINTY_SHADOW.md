@@ -1,6 +1,6 @@
 # P03O BKT-MIRT 融合不确定度传播 shadow gate
 
-状态：In Progress（2026-06-17）
+状态：已通过验收并提交（2026-06-17，commit 8e1f264）
 服务主命题环节：定位模糊（抽象引擎 p_known 的可信度表达）
 
 ## 背景
