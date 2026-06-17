@@ -173,9 +173,9 @@ P09A (engine 拆分)
 
 - **跨设备/多用户**：当前是单 SQLite 单设备。多设备同步是大票，建议等学习者层稳定（即 P07 全做完）后再立项；不进 1.0。
 - **数据可读导出**（JSON/Markdown）：用户主动诉求出现时立项。
-- **MCP/HTTP API 稳定性合约**：1.0 release 时强制做版本化与 deprecation 政策；之前先保持当前形态。
-- **数据库 schema 版本化迁移**：当前 db/migrate.rs 是一次性建表，schema 演进时再立 P11A。
-- **沙箱模式**（用 P04E 的 simulation 给 Pack 作者试自己的 pack）：等 P08C Pack 作者指南交付后再考虑。
+- **MCP/HTTP API 稳定性合约**：已转正式票 P11B 并完成。
+- **数据库 schema 版本化迁移**：已转正式票 P11A 并完成。
+- **沙箱模式**（用 P04E 的 simulation 给 Pack 作者试自己的 pack）：已转正式票 P11C 并完成。
 
 ## 8. 与现有 ROADMAP 的关系
 

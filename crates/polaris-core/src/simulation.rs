@@ -11,7 +11,7 @@ use crate::error::{PolarisError, Result};
 use crate::mirt::{decode_vector, encode_vector};
 use crate::phase::Phase;
 
-static LLM_ENV_LOCK: Mutex<()> = Mutex::new(());
+static MODEL_ENV_LOCK: Mutex<()> = Mutex::new(());
 
 const LLM_ENV_KEYS: [&str; 6] = [
     "POLARIS_LLM_FAST_BASE_URL",
@@ -20,6 +20,19 @@ const LLM_ENV_KEYS: [&str; 6] = [
     "POLARIS_LLM_STRONG_BASE_URL",
     "POLARIS_LLM_STRONG_MODEL",
     "POLARIS_LLM_STRONG_API_KEY",
+];
+
+const SANDBOX_ENV_KEYS: [&str; 10] = [
+    "POLARIS_TIER0_ONLY",
+    "POLARIS_LLM_FAST_BASE_URL",
+    "POLARIS_LLM_FAST_MODEL",
+    "POLARIS_LLM_FAST_API_KEY",
+    "POLARIS_LLM_STRONG_BASE_URL",
+    "POLARIS_LLM_STRONG_MODEL",
+    "POLARIS_LLM_STRONG_API_KEY",
+    "POLARIS_EMBED_BASE_URL",
+    "POLARIS_EMBED_MODEL",
+    "POLARIS_EMBED_API_KEY",
 ];
 
 #[derive(Debug, Clone, PartialEq)]
@@ -205,14 +218,32 @@ pub fn simulate_learning(
     days: usize,
     engine: &mut Engine,
 ) -> Result<SimulationReport> {
-    let _env_guard = LlmEnvGuard::acquire();
-    simulate_learning_inner(learner, days, engine)
+    let _env_guard = ExternalModelEnvGuard::llm_only();
+    simulate_learning_inner(learner, days, engine, true)
+}
+
+pub fn simulate_learning_quiet(
+    learner: &VirtualLearner,
+    days: usize,
+    engine: &mut Engine,
+) -> Result<SimulationReport> {
+    let _env_guard = ExternalModelEnvGuard::llm_only();
+    simulate_learning_inner(learner, days, engine, false)
+}
+
+pub(crate) fn simulate_learning_quiet_under_env_guard(
+    learner: &VirtualLearner,
+    days: usize,
+    engine: &mut Engine,
+) -> Result<SimulationReport> {
+    simulate_learning_inner(learner, days, engine, false)
 }
 
 fn simulate_learning_inner(
     learner: &VirtualLearner,
     days: usize,
     engine: &mut Engine,
+    emit_daily_summary: bool,
 ) -> Result<SimulationReport> {
     validate_learner(learner, engine)?;
     seed_simulation_latent_surface(learner.ability.len(), engine)?;
@@ -274,14 +305,16 @@ fn simulate_learning_inner(
         if initial_abs_calib_gap.is_none() && summary.active_concepts > 0 {
             initial_abs_calib_gap = Some(abs_calib_gap(engine)?);
         }
-        println!(
-            "day {:02}: mean_p_known={:.3} active_concepts={} dominant_hmm={} phase_distribution={:?}",
-            summary.day,
-            summary.mean_p_known,
-            summary.active_concepts,
-            summary.dominant_hmm_state,
-            summary.phase_distribution
-        );
+        if emit_daily_summary {
+            println!(
+                "day {:02}: mean_p_known={:.3} active_concepts={} dominant_hmm={} phase_distribution={:?}",
+                summary.day,
+                summary.mean_p_known,
+                summary.active_concepts,
+                summary.dominant_hmm_state,
+                summary.phase_distribution
+            );
+        }
         daily_summaries.push(summary);
     }
 
@@ -611,26 +644,38 @@ impl DeterministicRng {
     }
 }
 
-struct LlmEnvGuard {
+pub(crate) struct ExternalModelEnvGuard {
     _lock: MutexGuard<'static, ()>,
     saved: Vec<(&'static str, Option<String>)>,
 }
 
-impl LlmEnvGuard {
-    fn acquire() -> Self {
-        let lock = LLM_ENV_LOCK.lock().expect("simulation env lock poisoned");
-        let saved = LLM_ENV_KEYS
+impl ExternalModelEnvGuard {
+    fn llm_only() -> Self {
+        Self::acquire(&LLM_ENV_KEYS, false)
+    }
+
+    pub(crate) fn sandbox() -> Self {
+        Self::acquire(&SANDBOX_ENV_KEYS, true)
+    }
+
+    fn acquire(keys: &'static [&'static str], tier0_only: bool) -> Self {
+        let lock = MODEL_ENV_LOCK.lock().expect("model env lock poisoned");
+        let saved = keys
             .iter()
             .map(|key| (*key, env::var(key).ok()))
             .collect::<Vec<_>>();
-        for key in LLM_ENV_KEYS {
-            env::remove_var(key);
+        for key in keys {
+            if tier0_only && *key == "POLARIS_TIER0_ONLY" {
+                env::set_var(key, "1");
+            } else {
+                env::remove_var(key);
+            }
         }
         Self { _lock: lock, saved }
     }
 }
 
-impl Drop for LlmEnvGuard {
+impl Drop for ExternalModelEnvGuard {
     fn drop(&mut self) {
         for (key, value) in &self.saved {
             match value {

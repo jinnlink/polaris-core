@@ -72,16 +72,22 @@ cargo run -p polaris-cli -- pack validate packs/template
 cargo run -p polaris-cli -- pack validate packs/my_course
 ```
 
-9. 用临时数据库跑完整闭环，避免污染默认库：
+9. 用内存沙箱跑完整闭环，避免污染默认库：
+
+```powershell
+cargo run -p polaris-cli -- pack sandbox packs/my_course --days 7
+cargo run -p polaris-cli -- pack sandbox packs/my_course --profile all --days 7
+```
+
+`pack sandbox` 会先 validate，再在内存 SQLite 中 init/switch/simulate。它不会读取或写入默认 `polaris.sqlite`，也不会调用外部 LLM。`status=pass` 表示虚拟学习者闭环能跑通且没有死锁；`status=warn` 表示能跑通但提升信号偏弱；`status=fail` 需要先修 pack 结构或教学闭环。
+
+如果你还想人工查看具体 `next` 任务文本，再用临时数据库做一次手动检查：
 
 ```powershell
 cargo run -p polaris-cli -- --db target/my-course.sqlite init --pack packs/my_course
-cargo run -p polaris-cli -- --db target/my-course.sqlite pack list
 cargo run -p polaris-cli -- --db target/my-course.sqlite pack switch my_course --theta-mode isolated
 cargo run -p polaris-cli -- --db target/my-course.sqlite next
 ```
-
-`pack list` 应该能看到 `my_course`。`next` 返回的任务应该来自你刚初始化的 pack。
 
 ## 当前 validator 检查什么
 
@@ -127,4 +133,4 @@ cargo run -p polaris-cli -- --db target/my-course.sqlite next
 - 只有真正前置才写 `prerequisite`。
 - rubric 明确写了评分边界和证据要求。
 - 7 个 move 都能生成一个清晰任务。
-- 所有命令都用临时 `--db target/...sqlite` 跑通过。
+- `pack sandbox packs/my_course --profile all --days 7` 能跑完，并且你理解每个 profile 的 `status` 和提示。

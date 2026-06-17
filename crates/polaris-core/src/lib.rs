@@ -30,6 +30,7 @@ pub mod phase;
 pub mod phase_dynamics;
 pub mod privacy;
 pub mod report;
+pub mod sandbox;
 pub mod scheduler;
 pub mod simulation;
 pub mod status;

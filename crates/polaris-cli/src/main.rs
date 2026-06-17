@@ -18,6 +18,7 @@ use polaris_core::ops::{
 use polaris_core::pack::validate_pack_path;
 use polaris_core::pack_state::{PackSummary, PackSwitchReceipt, ThetaMode};
 use polaris_core::privacy::PrivacyCallInventory;
+use polaris_core::sandbox::{run_pack_sandbox, SandboxLearner, SandboxOptions, SandboxReport};
 use polaris_core::status::StatusSnapshot;
 use polaris_core::trust::{TrustPanel, TrustParameter};
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
@@ -195,6 +196,23 @@ enum PackCommands {
         #[arg(long = "theta-mode", value_enum)]
         theta_mode: Option<ThetaModeArg>,
     },
+    Sandbox {
+        path: PathBuf,
+        #[arg(long, value_enum, default_value = "mixed")]
+        profile: SandboxProfileArg,
+        #[arg(long, default_value_t = 7)]
+        days: usize,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum SandboxProfileArg {
+    Strong,
+    Weak,
+    Mixed,
+    All,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -257,6 +275,27 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 "pack ok: concepts={} prerequisites={} misconceptions={}",
                 report.concept_count, report.prerequisite_count, report.misconception_count
             );
+        }
+        Commands::Pack {
+            command:
+                PackCommands::Sandbox {
+                    path,
+                    profile,
+                    days,
+                    json,
+                },
+        } => {
+            if cli.db.is_some() {
+                return Err(adapter_error(
+                    "pack sandbox uses an in-memory database and does not accept --db",
+                ));
+            }
+            let reports = run_pack_sandbox_profiles(&path, profile, days)?;
+            if json {
+                println!("{}", sandbox_reports_json(&reports)?);
+            } else {
+                print!("{}", sandbox_reports_text(&reports));
+            }
         }
         Commands::Privacy {
             command: PrivacyCommands::Show { json },
@@ -593,6 +632,9 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                         print!("{}", pack_switch_text(&receipt));
                     }
                     PackCommands::Validate { .. } => {
+                        unreachable!("handled before database open")
+                    }
+                    PackCommands::Sandbox { .. } => {
                         unreachable!("handled before database open")
                     }
                 },
@@ -1224,6 +1266,102 @@ fn pack_switch_text(receipt: &PackSwitchReceipt) -> String {
     )
 }
 
+fn run_pack_sandbox_profiles(
+    path: &Path,
+    profile: SandboxProfileArg,
+    days: usize,
+) -> Result<Vec<SandboxReport>, Box<dyn std::error::Error>> {
+    let learners = sandbox_profile_learners(profile);
+    let mut reports = Vec::with_capacity(learners.len());
+    for learner in learners {
+        reports.push(run_pack_sandbox(
+            SandboxOptions::new(path)
+                .with_learner(learner)
+                .with_days(days),
+        )?);
+    }
+    Ok(reports)
+}
+
+fn sandbox_profile_learners(profile: SandboxProfileArg) -> Vec<SandboxLearner> {
+    match profile {
+        SandboxProfileArg::Strong => vec![SandboxLearner::Strong],
+        SandboxProfileArg::Weak => vec![SandboxLearner::Weak],
+        SandboxProfileArg::Mixed => vec![SandboxLearner::Mixed],
+        SandboxProfileArg::All => vec![
+            SandboxLearner::Strong,
+            SandboxLearner::Weak,
+            SandboxLearner::Mixed,
+        ],
+    }
+}
+
+fn sandbox_reports_json(reports: &[SandboxReport]) -> serde_json::Result<String> {
+    if let [report] = reports {
+        serde_json::to_string_pretty(report)
+    } else {
+        serde_json::to_string_pretty(reports)
+    }
+}
+
+fn sandbox_reports_text(reports: &[SandboxReport]) -> String {
+    let mut text = String::new();
+    for report in reports {
+        if !text.is_empty() {
+            text.push('\n');
+        }
+        text.push_str(&format!(
+            "sandbox status={}\n\
+             pack={} title={}\n\
+             profile={} days={} theta_mode={}\n\
+             mode={} writes_user_db={} tier0_only={} llm_used={} score_source={}\n\
+             validation: concepts={} prerequisites={} misconceptions={}\n\
+             mean_p_known: {:.3} -> {:.3} slope={:.3}\n\
+             calibration_gap: {:.3} -> {:.3} theta_cosine={:.3}\n\
+             deadlock_days={:?} hmm_state_lock={} early_transfer_violations={}\n\
+             final_phase_counts={}\n\
+             note=virtual learner simulation; not a real learner mastery estimate\n\
+             summary={}\n",
+            report.status.as_str(),
+            report.pack_id,
+            report.pack_title,
+            report.learner.as_str(),
+            report.days,
+            report.theta_mode,
+            report.mode,
+            report.writes_user_db,
+            report.tier0_only,
+            report.llm_used,
+            report.score_source,
+            report.validation.concept_count,
+            report.validation.prerequisite_count,
+            report.validation.misconception_count,
+            report.initial_mean_p_known,
+            report.final_mean_p_known,
+            report.mean_p_known_slope,
+            report.initial_abs_calib_gap,
+            report.final_abs_calib_gap,
+            report.final_theta_cosine,
+            report.deadlock_days,
+            report.hmm_state_lock,
+            report.early_transfer_violations.len(),
+            phase_counts_inline(report),
+            report.summary
+        ));
+        for violation in &report.early_transfer_violations {
+            text.push_str(&format!(
+                "early_transfer: concept={} attempts={} phase={}\n",
+                violation.concept_id, violation.attempt_count, violation.phase
+            ));
+        }
+    }
+    text
+}
+
+fn phase_counts_inline(report: &SandboxReport) -> String {
+    serde_json::to_string(&report.final_phase_counts).unwrap_or_else(|_| "{}".to_owned())
+}
+
 fn learner_mirror_json(snapshot: &LearnerMirrorSnapshot) -> serde_json::Result<String> {
     serde_json::to_string_pretty(snapshot)
 }
@@ -1669,6 +1807,74 @@ mod tests {
                 command: TrustCommands::Show { json: true }
             }
         ));
+    }
+
+    #[test]
+    fn pack_sandbox_flags_parse() {
+        let cli = Cli::try_parse_from(vec![
+            "polaris",
+            "pack",
+            "sandbox",
+            "packs/template",
+            "--profile",
+            "strong",
+            "--days",
+            "7",
+            "--json",
+        ])
+        .unwrap();
+
+        assert!(matches!(
+            cli.command,
+            Commands::Pack {
+                command: PackCommands::Sandbox {
+                    profile: SandboxProfileArg::Strong,
+                    days: 7,
+                    json: true,
+                    ..
+                }
+            }
+        ));
+    }
+
+    #[test]
+    fn pack_sandbox_rejects_user_database_path() {
+        let db_path = temp_db_path("sandbox-ignored-db");
+        let cli = Cli::try_parse_from(vec![
+            "polaris",
+            "--db",
+            db_path.to_str().unwrap(),
+            "pack",
+            "sandbox",
+            workspace_pack_path("packs/template").to_str().unwrap(),
+        ])
+        .unwrap();
+
+        let err = run(cli).unwrap_err().to_string();
+
+        assert!(
+            err.contains("in-memory") || err.contains("sandbox"),
+            "error should explain that sandbox does not use --db: {err}"
+        );
+        assert!(
+            !db_path.exists(),
+            "sandbox must not create or write the user-provided database path"
+        );
+    }
+
+    #[test]
+    fn pack_sandbox_json_uses_profile_contract_field() {
+        let reports = run_pack_sandbox_profiles(
+            &workspace_pack_path("packs/template"),
+            SandboxProfileArg::Strong,
+            1,
+        )
+        .unwrap();
+        let value: Value = serde_json::from_str(&sandbox_reports_json(&reports).unwrap()).unwrap();
+
+        assert_eq!(value["mode"], "sandbox");
+        assert_eq!(value["profile"], "strong");
+        assert!(value.get("learner").is_none(), "{value:#}");
     }
 
     #[test]
