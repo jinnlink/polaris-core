@@ -1,7 +1,7 @@
 # 票队列（单票制）
 
-状态：**无 In Progress；P11D 已实现并通过验收（2026-06-17）**。任何时刻只允许 1 张票 In Progress。
-当前无可自动认领下一票；后续如需继续开发，需用户裁决或新开规划票。
+状态：**无 In Progress；P12A 已实现并通过验收（2026-06-18）**。任何时刻只允许 1 张票 In Progress。
+当前无可自动认领下一票；P12B-P12G 仅是 `docs/LEARNER_CAPTURE_ROADMAP.md` 与 P12 实施计划中的候选拆分，并非可直接认领的正式票，需用户裁决或新开正式票后才能认领。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 **Phase 7+ 产品形态轴线见 `docs/PRODUCT_ROADMAP.md`**（轴 6 学习者形态 / 轴 7 多 Pack 承载 / 轴 8 工程演进 / 轴 9 信任面板）。
 新增票必须标注它服务主命题（验证真懂→定位模糊→针对性补缺）的哪一环。
@@ -86,7 +86,13 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 - [x] **P11C Pack 作者沙箱模拟**（`TICKET_P11C_PACK_SANDBOX.md`）← 已实现并通过验收；复用 P04E simulation 与 P08C Pack 作者入口，提供不污染真实库的 `polaris pack sandbox <dir>`；服务环节：全环节（Pack 作者发布前验证）
 - [x] **P11D 交接状态收敛**（`TICKET_P11D_HANDOFF_STATE_CONVERGENCE.md`）← 已实现并通过验收；清理旧路线图中的下一票误导，不改代码；服务环节：全环节（AI 协作可持续）
 
+## Phase 12 — 无感学习入口与外部知识入库
+
+- [x] **P12A 无感学习入口与外部知识入库规划**（`TICKET_P12A_LEARNING_CAPTURE_ROADMAP.md`）← 已实现并通过验收；落地产品路线图、P12 实施计划和后续票边界，不改代码；服务环节：验证真懂 → 定位模糊 → 针对性补缺
+
 ## Backlog（票外发现的问题记在这里，不顺手做）
+
+- **P12B-P12G 候选实现拆分**：详见 `docs/LEARNER_CAPTURE_ROADMAP.md` 与 `docs/superpowers/plans/2026-06-18-p12-learner-capture-inbox.md`。这些不是可直接认领的正式票；必须由用户裁决后逐张转成正式票，并遵守单票制。
 
 - P03A 审查后续：当前 Q 降级初始化在单 Rust pack 下使用 `q[0]=1.0` 作为 deterministic one-hot track 维；多 pack/多 track 前需补 `latent.dims` 或 pack/track→维度映射，避免所有概念共用同一潜因子。→ 已转正式票 P03M。
 - P05A 验收观察：`cargo test --workspace` 首次在 `p03c_geometry::geometry_candidates_use_hnsw_and_combined_scores` 偶发缺少 `schema:raii` 候选，导致同文件后续用例因 `ENV_LOCK` PoisonError 连锁失败；单跑 `cargo test -p polaris-core --test p03c_geometry` 通过，重跑 `cargo test --workspace` 通过。建议后续单独开票把 HNSW 候选测试改成确定性夹具或扩大候选池；服务环节：全环节（验证稳定性）。→ 已转正式票 P03N。

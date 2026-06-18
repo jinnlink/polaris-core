@@ -197,6 +197,19 @@ P09A (engine 拆分)
 4. 如果 QUEUE 没有未完成正式票，向用户报告当前无可自动认领下一票，并等待用户裁决或新开规划票。
 5. 实现任何新票前，都要按 `docs/AI_RUNBOOK.md` 写清范围、禁区、验收和回滚方式。
 
+## 10. 2026-06-18 补充：无感学习入口
+
+用户裁决后新增一条产品轴线：**学生不围着仓库转，学习发生在哪里都能先入库**。
+
+完整路线图见 `docs/LEARNER_CAPTURE_ROADMAP.md`。本节只记录它与现有产品路线图的关系：
+
+- `Learned` 是课程教室，不是学习边界。Rust Book、视频、AI 对话、终端报错、Git diff、线下笔记都可以成为 raw evidence。
+- 每个学习项目应有自己的 `p-os.toml` 接入声明。学生在 Rust、英语、生物等项目里说「开工」，入口先按当前项目声明解析，不要求回到 `polaris-core`。
+- Raw evidence 只记录事实，不直接影响掌握度。只有学生自己的解释、预测、代码修改、测试修复或 teach-back，且采集了反馈前 `self_confidence`，才可能进入 `Engine::submit`。
+- 学生入口只暴露 3 个动作：继续今天、记录我刚学到的、我卡住了。pack、SQLite、MCP、HTTP、θ、HMM、`concept_id` 等内部词不出现在零基础入口。
+- Learning Aura 是学生 UI 的优先承接面；`docs/visuals/learner-mirror` 是状态镜子参考；`docs/visuals/atlas` 仍然面向开发者，不作为学生入口。
+- 后续实现拆成 P12B-P12G。它们必须先经 QUEUE 正式登记，不能从本文直接自行认领。
+
 ---
 
 **本路线图状态**：v1，2026-06-15 产品经理交付；2026-06-17 经 P11D 标注历史执行序已完成。当前可执行状态以 `docs/tickets/QUEUE.md` 为准。
