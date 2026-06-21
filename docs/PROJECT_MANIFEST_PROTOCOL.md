@@ -74,6 +74,8 @@ default_pack: rust
 entry: today
 ```
 
+完整的 AI IDE 接入流程见 [AI IDE 使用 Polaris 学习指南](AI_IDE_USAGE.md)。
+
 ## 边界
 
 - 项目声明不写数据库。

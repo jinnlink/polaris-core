@@ -8,8 +8,87 @@
 
 - Phase 0（设计与交接包）：**完成** —— 设计冻结于 `docs/MASTER_PLAN.md`，宪法在 `SPEC.md`。
 - Phase 1（walking skeleton）：**P01 已实现并完成子 agent 审查补修** —— 票在 `docs/tickets/TICKET_P01_WALKING_SKELETON.md`。
+- Phase 12/13（学习入口）：**项目声明、Capture Queue、AI IDE MCP 入口已实现** —— 课程仓库通过 `p-os.toml` 声明自己，AI IDE 连接同一个 Polaris MCP 即可辅助学习。
 
-## 快速开始（P01）
+## 学生 / AI IDE 怎么用
+
+你不需要为每门课程各写一个 MCP。推荐用法是：
+
+1. 在课程仓库放一个 `p-os.toml`，声明这是学习项目。
+2. 在 AI IDE（Codex、Claude Code、Cursor 等支持 MCP 的工具）里打开课程仓库。
+3. AI IDE 连接 `polaris-core` 的 MCP server。
+4. AI 先调用 `detect_project_manifest` 理解当前课程，再用 Polaris tools 记录证据、安排练习、读取学习镜像。
+
+最短可用流程见 [AI IDE 使用指南](docs/AI_IDE_USAGE.md)。
+
+## 5 分钟本地试跑
+
+以下命令在 `C:\MyProject\polaris-core` 运行：
+
+```powershell
+cargo build -p polaris-cli
+New-Item -ItemType Directory -Force C:\MyProject\polaris-data
+.\target\debug\polaris.exe --db C:\MyProject\polaris-data\polaris.sqlite init --pack packs\rust
+.\target\debug\polaris.exe project detect --path examples\project-manifests\rust-mastery-lab
+.\target\debug\polaris.exe --db C:\MyProject\polaris-data\polaris.sqlite capture --text "我刚看了一段所有权解释，先存下来。" --source paste
+.\target\debug\polaris.exe --db C:\MyProject\polaris-data\polaris.sqlite learner-mirror --json
+```
+
+你应该看到：
+
+- `project detect` 输出 `project_id`、`default_pack`、`today_command`。
+- `capture` 输出 `recorded_only: true`，表示资料已保存，但不会直接算作掌握。
+- `learner-mirror --json` 输出学习者镜像字段。
+
+## AI IDE MCP 配置示例
+
+先构建二进制：
+
+```powershell
+cargo build -p polaris-cli
+```
+
+然后在 AI IDE 的 MCP 配置中加入类似配置。字段名会因客户端不同而略有差异，但核心是启动 `polaris.exe --db <数据库> mcp`。
+
+```json
+{
+  "mcpServers": {
+    "polaris-core": {
+      "command": "C:\\MyProject\\polaris-core\\target\\debug\\polaris.exe",
+      "args": [
+        "--db",
+        "C:\\MyProject\\polaris-data\\polaris.sqlite",
+        "mcp"
+      ],
+      "cwd": "C:\\MyProject\\Learned\\rust-mastery-lab"
+    }
+  }
+}
+```
+
+如果你的 AI IDE 不支持给 MCP server 设置 `cwd`，也可以让 AI 调用：
+
+```json
+{
+  "path": "C:\\MyProject\\Learned\\rust-mastery-lab"
+}
+```
+
+对应 tool：`detect_project_manifest`。
+
+## AI 应该怎么配合学生
+
+给 AI 的开场提示可以直接复制：
+
+```text
+你现在是我的学习助手。请先调用 Polaris MCP 的 detect_project_manifest，确认当前课程项目。
+学习过程中，不要直接判断我“掌握了”。如果我只是贴资料、笔记、错误日志或代码片段，请用 capture_evidence 保存为学习资料。
+只有在我回答了题目或解释了概念之后，才用 submit_evidence 提交作答证据。
+需要了解我当前状态时，用 get_learner_mirror；需要安排下一步练习时，用 get_next_task。
+课程怎么教以当前仓库为主，Polaris 负责记录证据、调度和学习者镜像。
+```
+
+## 命令行闭环自测
 
 ```powershell
 cargo run -p polaris-cli -- pack validate packs/rust
@@ -52,4 +131,7 @@ cargo run -p polaris-cli -- --db target\p01-quickstart.db grade-pending
 | `docs/ENHANCEMENT_ROADMAP.md` | P03E+ 增强优先级；姊妹文档见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md` |
 | `docs/MASTER_PLAN.md` | 完整设计蓝图（含抽象引擎、心智动力学引擎、五个原创框架、教学法纲要 v3、分阶段与验证门） |
 | `docs/DATA_MODEL.md` | 表结构 DDL 与全部公式（实现的直接依据） |
+| `docs/AI_IDE_USAGE.md` | AI IDE 接入 Polaris MCP 的使用指南：课程仓库、`p-os.toml`、MCP 配置和学习流程 |
+| `docs/PROJECT_MANIFEST_PROTOCOL.md` | `p-os.toml` 学习项目声明协议 |
+| `docs/API_CONTRACT.md` | HTTP 与 MCP 对外稳定契约 |
 | `docs/tickets/QUEUE.md` | 票队列（单票制，P01→P05 对应 Phase 1→5） |
