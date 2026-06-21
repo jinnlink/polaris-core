@@ -10,6 +10,7 @@ use crate::breeding::{
     BredMove, BredMoveInput, BreedingEvaluationSummary,
 };
 use crate::calibration::{calibration_samples, posterior_from_samples};
+use crate::capture_queue::{capture_learning_evidence, CaptureInput, CaptureRecord};
 use crate::config::meta_f64;
 use crate::consolidation::{run_nightly_consolidation, ConsolidationSummary};
 use crate::diagnosis::{diagnose_concept, GraphDiagnosis};
@@ -358,6 +359,10 @@ impl Engine {
         input: LearnerFeedbackInput,
     ) -> Result<LearnerFeedbackReceipt> {
         record_learner_feedback(&self.conn, input)
+    }
+
+    pub fn capture_learning_evidence(&self, input: CaptureInput) -> Result<CaptureRecord> {
+        capture_learning_evidence(&self.conn, input)
     }
 
     pub fn run_gu_induction(&self) -> Result<GuInductionSummary> {

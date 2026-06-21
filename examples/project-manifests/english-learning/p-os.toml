@@ -1,0 +1,19 @@
+schema_version = 1
+project_id = "english-learning"
+title = "英语表达与阅读训练"
+kind = "course"
+default_pack = "english"
+default_entry = "today"
+
+[entry]
+start_label = "继续今天"
+capture_label = "记录我刚学到的"
+stuck_label = "我卡住了"
+today_command = "english-lab today --date {today}"
+
+[evidence]
+include = ["lessons/**", "reading-notes/**", "speaking-journal/**", "writing/**"]
+ignore = [".git/**", "node_modules/**", "exports/**"]
+
+[ui]
+preferred_shell = "aura"

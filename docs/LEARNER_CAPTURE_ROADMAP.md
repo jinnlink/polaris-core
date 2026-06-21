@@ -356,6 +356,8 @@ raw evidence
 
 目标：让每个学习项目显式声明已接入 P-OS，避免学生必须回到 `polaris-core` 开工。
 
+状态：已转正式票 `docs/tickets/TICKET_P12B_PROJECT_MANIFEST.md`，本票交付 `docs/PROJECT_MANIFEST_PROTOCOL.md`、`examples/project-manifests/*/p-os.toml` 与 `polaris project detect`。
+
 范围：
 
 - 定义 `p-os.toml` 最小协议。
@@ -372,6 +374,8 @@ raw evidence
 ### P12C：Capture Queue v1
 
 目标：让外部知识可以先入库，不生成 attempt。
+
+状态：已实现并通过验收，正式票见 `docs/tickets/TICKET_P12C_CAPTURE_QUEUE.md`；本票交付 `capture_queue` schema v2、`polaris capture` 与 HTTP `POST /capture`，返回 `recorded_only`。
 
 范围：
 

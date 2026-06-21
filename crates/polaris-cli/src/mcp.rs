@@ -1,7 +1,9 @@
 use std::io::{self, BufRead, Write};
 
+use polaris_core::capture_queue::{CaptureEffect, CaptureInput, LearnerCaptureKind};
 use polaris_core::engine::{Engine, SubmitInput};
 use polaris_core::learner_feedback::LearnerFeedbackInput;
+use polaris_core::project_manifest::discover_project_manifest;
 use serde_json::{json, Value};
 
 pub struct McpSession {
@@ -67,6 +69,9 @@ impl McpSession {
                 "mark_report_assertion_accurate" => self.mark_report_assertion_accurate(arguments),
                 "record_learner_feedback" => self.record_learner_feedback(arguments),
                 "get_trust_panel" => self.get_trust_panel(),
+                "detect_project_manifest" => self.detect_project_manifest(arguments),
+                "capture_evidence" => self.capture_evidence(arguments),
+                "get_learner_mirror" => self.get_learner_mirror(),
                 "submit_evidence" => self.submit_evidence(arguments),
                 "get_teaching_instruction" => self.get_teaching_instruction(arguments),
                 other => Err(format!("unknown tool: {other}")),
@@ -247,6 +252,67 @@ impl McpSession {
             .trust_panel()
             .map_err(|error| error.to_string())?;
         serde_json::to_value(panel).map_err(|error| error.to_string())
+    }
+
+    fn detect_project_manifest(&self, arguments: &Value) -> Result<Value, String> {
+        let path = optional_str(arguments, "path").unwrap_or(".");
+        let Some(discovered) =
+            discover_project_manifest(path).map_err(|error| error.to_string())?
+        else {
+            return Ok(json!({
+                "found": false,
+                "path": path,
+            }));
+        };
+
+        Ok(json!({
+            "found": true,
+            "project_root": discovered.project_root.display().to_string(),
+            "manifest_path": discovered.manifest_path.display().to_string(),
+            "manifest": discovered.manifest,
+        }))
+    }
+
+    fn capture_evidence(&self, arguments: &Value) -> Result<Value, String> {
+        let text = required_str(arguments, "text")?;
+        let source = optional_str(arguments, "source").unwrap_or("paste");
+        let content_type = optional_str(arguments, "content_type").unwrap_or("text/plain");
+        let learner_kind_text = optional_str(arguments, "learner_kind").unwrap_or("reference");
+        let learner_kind = LearnerCaptureKind::parse(learner_kind_text).ok_or_else(|| {
+            "learner_kind must be one of reference, own_answer, error_log, code_change, chat_excerpt, unknown".to_owned()
+        })?;
+        let candidate_concept_ids = optional_string_array(arguments, "candidate_concept_ids")?;
+
+        let record = self
+            .engine
+            .capture_learning_evidence(CaptureInput {
+                session_id: optional_str(arguments, "session").map(str::to_owned),
+                source: source.to_owned(),
+                content_type: content_type.to_owned(),
+                text: text.to_owned(),
+                learner_kind,
+                candidate_concept_ids,
+                note: optional_str(arguments, "note").map(str::to_owned),
+            })
+            .map_err(|error| error.to_string())?;
+
+        Ok(json!({
+            "capture_id": record.capture_id,
+            "evidence_id": record.evidence_id,
+            "status": record.status.as_str(),
+            "learner_kind": record.learner_kind.as_str(),
+            "recorded_only": record.effect == CaptureEffect::RecordedOnly,
+            "message": record.message,
+        }))
+    }
+
+    fn get_learner_mirror(&self) -> Result<Value, String> {
+        serde_json::to_value(
+            self.engine
+                .learner_mirror_snapshot()
+                .map_err(|error| error.to_string())?,
+        )
+        .map_err(|error| error.to_string())
     }
 
     fn mark_report_assertion_inaccurate(&self, arguments: &Value) -> Result<Value, String> {
@@ -449,6 +515,45 @@ fn tool_definitions() -> Value {
             }
         },
         {
+            "name": "detect_project_manifest",
+            "description": "Discover a p-os.toml learning project manifest by walking upward from a path. Returns found=false when no manifest exists.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "File or directory path to start discovery from. Defaults to the MCP server current directory."}
+                }
+            }
+        },
+        {
+            "name": "capture_evidence",
+            "description": "Record external learning material into evidence_items and capture_queue as pending raw capture. This is recorded only and never changes mastery or creates attempts.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "Learning material, note, answer, error log, code excerpt, or chat excerpt to store."},
+                    "session": {"type": "string", "description": "Optional session id to attach to the evidence."},
+                    "source": {"type": "string", "description": "Evidence source. Defaults to paste."},
+                    "content_type": {"type": "string", "description": "Content type. Defaults to text/plain."},
+                    "learner_kind": {"type": "string", "enum": ["reference", "own_answer", "error_log", "code_change", "chat_excerpt", "unknown"], "description": "Kind of captured material. Defaults to reference."},
+                    "candidate_concept_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional candidate concept ids. Stored as hints only; no mastery fold is triggered."
+                    },
+                    "note": {"type": "string", "description": "Optional learner or AI IDE note."}
+                },
+                "required": ["text"]
+            }
+        },
+        {
+            "name": "get_learner_mirror",
+            "description": "Return the read-only learner mirror static panel with confidence curve, phase distribution, and recent assertions.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {}
+            }
+        },
+        {
             "name": "submit_evidence",
             "description": "Submit learner evidence for engine-owned scoring and optimistic mastery update. External AI judgement is not accepted as mastery state.",
             "inputSchema": {
@@ -562,6 +667,23 @@ fn optional_bool(value: &Value, key: &str) -> Option<bool> {
     value.get(key).and_then(Value::as_bool)
 }
 
+fn optional_string_array(value: &Value, key: &str) -> Result<Vec<String>, String> {
+    let Some(items) = value.get(key) else {
+        return Ok(Vec::new());
+    };
+    let Some(items) = items.as_array() else {
+        return Err(format!("{key} must be an array of strings"));
+    };
+    items
+        .iter()
+        .map(|item| {
+            item.as_str()
+                .map(str::to_owned)
+                .ok_or_else(|| format!("{key} must be an array of strings"))
+        })
+        .collect()
+}
+
 fn error_response(id: Value, code: i64, message: &str) -> Value {
     json!({
         "jsonrpc": "2.0",
@@ -616,7 +738,10 @@ mod tests {
     use polaris_core::engine::Engine;
     use rusqlite::{params, Connection};
     use serde_json::{json, Value};
+    use std::fs;
     use std::io::Cursor;
+    use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
 
@@ -644,6 +769,9 @@ mod tests {
                 "mark_report_assertion_accurate",
                 "record_learner_feedback",
                 "get_trust_panel",
+                "detect_project_manifest",
+                "capture_evidence",
+                "get_learner_mirror",
                 "submit_evidence",
                 "get_teaching_instruction",
             ],
@@ -682,6 +810,9 @@ mod tests {
             "submit_evidence",
             "record_learner_feedback",
             "get_trust_panel",
+            "detect_project_manifest",
+            "capture_evidence",
+            "get_learner_mirror",
         ] {
             assert!(
                 API_CONTRACT_DOC.contains(required),
@@ -732,6 +863,9 @@ mod tests {
                 "mark_report_assertion_accurate",
                 "record_learner_feedback",
                 "get_trust_panel",
+                "detect_project_manifest",
+                "capture_evidence",
+                "get_learner_mirror",
                 "submit_evidence",
                 "get_teaching_instruction",
             ],
@@ -906,6 +1040,117 @@ mod tests {
             assert!(payload["recent_activity"].as_object().is_some());
             assert!(payload["governance"].as_object().is_some());
         }
+    }
+
+    #[test]
+    fn mcp_detect_project_manifest_returns_project_contract() {
+        let mut session = test_session();
+        let root = TestDir::new("mcp-project");
+        write_test_manifest(root.path());
+        let nested = root.path().join("course/day01/src");
+        fs::create_dir_all(&nested).unwrap();
+
+        let payload = call_tool_json(
+            &mut session,
+            "detect_project_manifest",
+            json!({"path": nested.display().to_string()}),
+        );
+
+        assert_eq!(payload["found"], true);
+        assert_eq!(payload["project_root"], root.path().display().to_string());
+        assert_eq!(
+            payload["manifest_path"],
+            root.path().join("p-os.toml").display().to_string()
+        );
+        assert_eq!(payload["manifest"]["project_id"], "rust-mastery-lab");
+        assert_eq!(payload["manifest"]["default_pack"], "rust");
+        assert_eq!(
+            payload["manifest"]["entry"]["today_command"],
+            "cargo run -p labctl -- today --date {today}"
+        );
+        assert_eq!(payload["manifest"]["evidence"]["include"][0], "course/**");
+        assert_eq!(payload["manifest"]["ui"]["preferred_shell"], "aura");
+    }
+
+    #[test]
+    fn mcp_capture_evidence_records_pending_without_mastery() {
+        let mut session = test_session();
+        let before_attempts = count_rows(session.engine().conn(), "attempts");
+        let before_mastery = count_rows(session.engine().conn(), "mastery_states");
+        let before_grade_queue = count_rows(session.engine().conn(), "grade_queue");
+
+        let payload = call_tool_json(
+            &mut session,
+            "capture_evidence",
+            json!({
+                "session": "mcp-capture",
+                "source": "ai-ide",
+                "content_type": "text/plain",
+                "text": "我刚看完 Rust 所有权解释，先保存下来，之后再练。",
+                "learner_kind": "reference",
+                "candidate_concept_ids": ["ownership"],
+                "note": "from AI IDE"
+            }),
+        );
+
+        assert!(payload["capture_id"].as_str().unwrap().len() > 10);
+        assert!(payload["evidence_id"].as_str().unwrap().len() > 10);
+        assert_eq!(payload["status"], "pending");
+        assert_eq!(payload["learner_kind"], "reference");
+        assert_eq!(payload["recorded_only"], true);
+        assert!(payload["message"]
+            .as_str()
+            .unwrap()
+            .contains("不会直接算作掌握"));
+        assert_eq!(
+            count_rows(session.engine().conn(), "attempts"),
+            before_attempts
+        );
+        assert_eq!(
+            count_rows(session.engine().conn(), "mastery_states"),
+            before_mastery
+        );
+        assert_eq!(
+            count_rows(session.engine().conn(), "grade_queue"),
+            before_grade_queue
+        );
+
+        let (status, learner_kind, note, candidates): (String, String, Option<String>, String) =
+            session
+                .engine()
+                .conn()
+                .query_row(
+                    "SELECT status, learner_kind, note, candidate_concept_ids_json
+                     FROM capture_queue
+                     WHERE id=?1 AND evidence_id=?2",
+                    [
+                        payload["capture_id"].as_str().unwrap(),
+                        payload["evidence_id"].as_str().unwrap(),
+                    ],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                )
+                .unwrap();
+        assert_eq!(status, "pending");
+        assert_eq!(learner_kind, "reference");
+        assert_eq!(note.as_deref(), Some("from AI IDE"));
+        assert_eq!(candidates, "[\"ownership\"]");
+    }
+
+    #[test]
+    fn mcp_get_learner_mirror_returns_static_panel_fields() {
+        let mut session = test_session();
+
+        let payload = call_tool_json(&mut session, "get_learner_mirror", json!({}));
+
+        assert_fields(
+            &payload,
+            &[
+                "generated_at",
+                "confidence_curve",
+                "phase_distribution",
+                "recent_assertions",
+            ],
+        );
     }
 
     #[test]
@@ -1490,6 +1735,25 @@ mod tests {
             .join(path)
     }
 
+    fn call_tool_json(session: &mut McpSession, name: &str, arguments: Value) -> Value {
+        let response = session
+            .handle_request(json!({
+                "jsonrpc": "2.0",
+                "id": 300,
+                "method": "tools/call",
+                "params": {"name": name, "arguments": arguments}
+            }))
+            .unwrap()
+            .unwrap();
+        assert_ne!(
+            response["result"]["isError"], true,
+            "tool returned error: {}",
+            response["result"]["content"][0]["text"]
+        );
+        let text = response["result"]["content"][0]["text"].as_str().unwrap();
+        serde_json::from_str(text).unwrap()
+    }
+
     fn read_json_resource(session: &mut McpSession, uri: &str) -> Value {
         let response = session
             .handle_request(json!({
@@ -1502,6 +1766,71 @@ mod tests {
             .unwrap();
         let text = response["result"]["contents"][0]["text"].as_str().unwrap();
         serde_json::from_str(text).unwrap()
+    }
+
+    fn count_rows(conn: &Connection, table: &str) -> i64 {
+        conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+            row.get(0)
+        })
+        .unwrap()
+    }
+
+    fn write_test_manifest(root: &Path) {
+        fs::write(
+            root.join("p-os.toml"),
+            r#"
+schema_version = 1
+project_id = "rust-mastery-lab"
+title = "Rust 与软件工程训练"
+kind = "course"
+default_pack = "rust"
+default_entry = "today"
+
+[entry]
+start_label = "继续今天"
+capture_label = "记录我刚学到的"
+stuck_label = "我卡住了"
+today_command = "cargo run -p labctl -- today --date {today}"
+
+[evidence]
+include = ["course/**", "exercises/**"]
+ignore = ["target/**", ".git/**"]
+
+[ui]
+preferred_shell = "aura"
+"#
+            .trim_start(),
+        )
+        .unwrap();
+    }
+
+    struct TestDir {
+        path: PathBuf,
+    }
+
+    impl TestDir {
+        fn new(name: &str) -> Self {
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!(
+                "polaris-p13a-{name}-{}-{nanos}",
+                std::process::id()
+            ));
+            fs::create_dir_all(&path).unwrap();
+            Self { path }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TestDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
     }
 
     fn assert_fields(value: &Value, fields: &[&str]) {

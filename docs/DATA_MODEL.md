@@ -5,7 +5,8 @@
 
 ## 0. 核心架构语义：事件溯源（先读这个）
 
-- **事实源** = `attempts`（含 final 回填）+ `behavior_events` + pack 种子。**`mastery_states` 是确定性折叠（fold）出的物化视图。**
+- **掌握度事实源** = `attempts`（含 final 回填）+ `behavior_events` + pack 种子。**`mastery_states` 是确定性折叠（fold）出的物化视图。**
+- **raw capture** = `evidence_items` + `capture_queue`，只表示“资料已入库”；在学生产生可评分作答并进入 `attempts` 前，不参与掌握度 fold。
 - fold 顺序：`created_at` 升序，同刻按 `id` 字典序。每条 attempt 用 `final_score`（若有）否则 `provisional_score`。
 - provisional 落账时增量 fold 一次；**final 到达时对该概念全量重放**（重新 fold 该概念全部 attempts）。重放预算：≤1ms/百条。
 - 推论：任何掌握度数字都可审计、可复现；崩溃恢复 = 重放；属性测试 = 增量结果必须等于全量重放结果。
@@ -21,9 +22,9 @@
 
 ### 1.1 Schema 版本与迁移账本
 
-- SQLite schema 版本权威源 = `PRAGMA user_version`，当前由 `db::CURRENT_SCHEMA_VERSION` 定义。
-- `schema_migrations(version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)` 是迁移账本；当前一次性完整 schema 作为 baseline 迁移记录。
-- `migrate()` 对空库和旧的未版本化库都必须幂等：先补齐当前 schema，再写 baseline 账本并设置 `user_version`。
+- SQLite schema 版本权威源 = `PRAGMA user_version`，当前由 `db::CURRENT_SCHEMA_VERSION` 定义（P12C 后为 2）。
+- `schema_migrations(version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)` 是迁移账本；version 1 为 baseline，version 2 为 `capture_queue`。
+- `migrate()` 对空库和旧的未版本化库都必须幂等：先补齐当前 schema，再写 baseline 与后续迁移账本并设置 `user_version`。
 - 旧库已有业务行和用户手动 `meta` 参数不得被迁移覆盖；默认参数继续使用 `INSERT OR IGNORE`。
 - 若数据库 `user_version` 高于当前二进制支持版本，写路径必须拒绝打开并提示版本不支持，避免旧程序误写新库。
 - 只读入口（doctor / diagnose / trust / learner mirror）不得为了检查版本而创建库或执行迁移。
@@ -80,6 +81,25 @@ grade_queue(attempt_id TEXT PRIMARY KEY, enqueued_at TEXT, retry_count INTEGER D
 ```
 
 P08A pack 状态放在 `meta`：`active_pack` 表示当前 pack；`pack.<id>.title` 保存显示名；`pack.<id>.theta_mode` 取 `shared|isolated`，默认 `shared`。
+
+### P12C 激活
+
+```sql
+capture_queue(id TEXT PRIMARY KEY,
+       evidence_id TEXT NOT NULL REFERENCES evidence_items(id),
+       status TEXT NOT NULL,              -- pending|mapped|practice_ready|practiced|ignored|archived；P12C 只写 pending
+       learner_kind TEXT NOT NULL,        -- reference|own_answer|error_log|code_change|chat_excerpt|unknown
+       candidate_concept_ids_json TEXT NOT NULL DEFAULT '[]',
+       note TEXT,
+       created_at TEXT NOT NULL,
+       updated_at TEXT NOT NULL)
+```
+
+P12C 写入规则：
+
+- `polaris capture` 与 `POST /capture` 只写 `evidence_items` + `capture_queue(status='pending')`。
+- 返回 `recorded_only=true`；不得写 `attempts`、`mastery_states` 或 `grade_queue`。
+- `external_score`、`final_score`、外部 AI 判断等字段即使出现在请求中也必须忽略，不能成为掌握度权威。
 
 ### 后续激活（建表即可，逻辑后置）
 

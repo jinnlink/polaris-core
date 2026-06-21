@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use clap::{Parser, Subcommand, ValueEnum};
+use polaris_core::capture_queue::{CaptureInput, CaptureRecord, LearnerCaptureKind};
 use polaris_core::config::{
     parameter_specs, parameters_markdown, ParameterClass, ParameterSpec, TuningRoute,
 };
@@ -18,6 +19,7 @@ use polaris_core::ops::{
 use polaris_core::pack::validate_pack_path;
 use polaris_core::pack_state::{PackSummary, PackSwitchReceipt, ThetaMode};
 use polaris_core::privacy::PrivacyCallInventory;
+use polaris_core::project_manifest::{discover_project_manifest, DiscoveredProjectManifest};
 use polaris_core::sandbox::{run_pack_sandbox, SandboxLearner, SandboxOptions, SandboxReport};
 use polaris_core::status::StatusSnapshot;
 use polaris_core::trust::{TrustPanel, TrustParameter};
@@ -53,6 +55,24 @@ enum Commands {
         adapter_command: Option<String>,
         #[arg(long = "adapter-arg", allow_hyphen_values = true)]
         adapter_args: Vec<String>,
+    },
+    Capture {
+        #[arg(long)]
+        text: String,
+        #[arg(long, default_value = "paste")]
+        source: String,
+        #[arg(long)]
+        session: Option<String>,
+        #[arg(long, default_value = "text/plain")]
+        content_type: String,
+        #[arg(long = "learner-kind", default_value = "reference")]
+        learner_kind: String,
+        #[arg(long = "candidate-concept")]
+        candidate_concepts: Vec<String>,
+        #[arg(long)]
+        note: Option<String>,
+        #[arg(long)]
+        json: bool,
     },
     Next {
         #[arg(long, default_value = "cli")]
@@ -151,6 +171,10 @@ enum Commands {
     Config {
         #[command(subcommand)]
         command: ConfigCommands,
+    },
+    Project {
+        #[command(subcommand)]
+        command: ProjectCommands,
     },
 }
 
@@ -260,6 +284,16 @@ enum ConfigCommands {
     },
 }
 
+#[derive(Debug, Subcommand)]
+enum ProjectCommands {
+    Detect {
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     run(cli)
@@ -344,6 +378,18 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 print!("{}", config_list_text(&specs));
             }
         }
+        Commands::Project {
+            command: ProjectCommands::Detect { path, json },
+        } => {
+            let discovered = discover_project_manifest(path)?.ok_or_else(|| {
+                adapter_error("no p-os.toml found from the given path or its parents")
+            })?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&discovered)?);
+            } else {
+                print!("{}", project_detect_text(&discovered));
+            }
+        }
         Commands::Diagnose { concept } => {
             let conn = open_database_read_only(cli.db.unwrap_or_else(default_db_path))?;
             let engine = Engine::new(conn);
@@ -426,6 +472,31 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                         return Err(adapter_error("ingest requires --text or --adapter-command"));
                     }
                 },
+                Commands::Capture {
+                    text,
+                    source,
+                    session,
+                    content_type,
+                    learner_kind,
+                    candidate_concepts,
+                    note,
+                    json,
+                } => {
+                    let record = engine.capture_learning_evidence(CaptureInput {
+                        session_id: session,
+                        source,
+                        content_type,
+                        text,
+                        learner_kind: parse_learner_capture_kind(&learner_kind)?,
+                        candidate_concept_ids: candidate_concepts,
+                        note,
+                    })?;
+                    if json {
+                        println!("{}", capture_record_json(&record)?);
+                    } else {
+                        print!("{}", capture_record_text(&record));
+                    }
+                }
                 Commands::Next { session } => {
                     if let Some(task) = engine.next_task()? {
                         engine.record_next_task_event(&session, &task)?;
@@ -648,6 +719,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 Commands::Privacy { .. } => unreachable!("handled before database open"),
                 Commands::Trust { .. } => unreachable!("handled before writable database open"),
                 Commands::Config { .. } => unreachable!("handled before database open"),
+                Commands::Project { .. } => unreachable!("handled before database open"),
             }
         }
     }
@@ -906,6 +978,16 @@ fn adapter_error(message: impl Into<String>) -> Box<dyn std::error::Error> {
         std::io::ErrorKind::InvalidData,
         message.into(),
     ))
+}
+
+fn parse_learner_capture_kind(
+    value: &str,
+) -> Result<LearnerCaptureKind, Box<dyn std::error::Error>> {
+    LearnerCaptureKind::parse(value).ok_or_else(|| {
+        adapter_error(
+            "capture --learner-kind must be one of reference, own_answer, error_log, code_change, chat_excerpt, unknown",
+        )
+    })
 }
 
 fn open_existing_database(path: &Path) -> Result<Connection, Box<dyn std::error::Error>> {
@@ -1432,6 +1514,50 @@ fn status_snapshot_text(snapshot: &StatusSnapshot) -> String {
     text
 }
 
+fn capture_record_json(record: &CaptureRecord) -> serde_json::Result<String> {
+    serde_json::to_string_pretty(&serde_json::json!({
+        "capture_id": record.capture_id,
+        "evidence_id": record.evidence_id,
+        "status": record.status.as_str(),
+        "learner_kind": record.learner_kind.as_str(),
+        "recorded_only": record.effect == polaris_core::capture_queue::CaptureEffect::RecordedOnly,
+        "message": record.message,
+    }))
+}
+
+fn capture_record_text(record: &CaptureRecord) -> String {
+    format!(
+        "capture_id: {}\nevidence_id: {}\nstatus: {}\nlearner_kind: {}\nrecorded_only: {}\nmessage: {}\n",
+        record.capture_id,
+        record.evidence_id,
+        record.status.as_str(),
+        record.learner_kind.as_str(),
+        record.effect == polaris_core::capture_queue::CaptureEffect::RecordedOnly,
+        record.message
+    )
+}
+
+fn project_detect_text(discovered: &DiscoveredProjectManifest) -> String {
+    format!(
+        "project_id: {}\n\
+         title: {}\n\
+         kind: {}\n\
+         default_pack: {}\n\
+         entry: {}\n\
+         today_command: {}\n\
+         manifest: {}\n\
+         root: {}\n",
+        discovered.manifest.project_id,
+        discovered.manifest.title,
+        discovered.manifest.kind,
+        discovered.manifest.default_pack,
+        discovered.manifest.default_entry,
+        discovered.manifest.entry.today_command,
+        discovered.manifest_path.display(),
+        discovered.project_root.display()
+    )
+}
+
 fn print_diagnosis(diagnosis: polaris_core::diagnosis::GraphDiagnosis) {
     println!("concept: {}", diagnosis.concept_id);
     println!("latest_failed: {}", diagnosis.latest_failed);
@@ -1618,6 +1744,7 @@ mod tests {
     fn parses_required_command_set() {
         for args in [
             vec!["polaris", "init", "--pack", "packs/rust"],
+            vec!["polaris", "capture", "--text", "hello", "--source", "paste"],
             vec!["polaris", "ingest", "--text", "hello"],
             vec![
                 "polaris",
@@ -1683,6 +1810,8 @@ mod tests {
             vec!["polaris", "privacy", "show", "--json"],
             vec!["polaris", "trust", "show"],
             vec!["polaris", "trust", "show", "--json"],
+            vec!["polaris", "project", "detect"],
+            vec!["polaris", "project", "detect", "--path", ".", "--json"],
         ] {
             Cli::try_parse_from(args).unwrap();
         }
@@ -1951,6 +2080,71 @@ mod tests {
         assert!(text.contains("state=frustrated"));
         assert!(text.contains("effect=recorded_only"));
         assert!(text.contains("does not directly change mastery or scheduling"));
+    }
+
+    #[test]
+    fn capture_record_text_reports_recorded_only_message() {
+        let record = polaris_core::capture_queue::CaptureRecord {
+            capture_id: "capture-1".to_owned(),
+            evidence_id: "evidence-1".to_owned(),
+            status: polaris_core::capture_queue::CaptureStatus::Pending,
+            learner_kind: polaris_core::capture_queue::LearnerCaptureKind::Reference,
+            effect: polaris_core::capture_queue::CaptureEffect::RecordedOnly,
+            message: "已保存为学习资料，不会直接算作掌握。".to_owned(),
+        };
+
+        let text = capture_record_text(&record);
+
+        assert!(text.contains("capture_id: capture-1"));
+        assert!(text.contains("evidence_id: evidence-1"));
+        assert!(text.contains("status: pending"));
+        assert!(text.contains("learner_kind: reference"));
+        assert!(text.contains("recorded_only: true"));
+        assert!(text.contains("不会直接算作掌握"));
+    }
+
+    #[test]
+    fn capture_command_records_pending_item_without_attempt_or_mastery() {
+        let db_path = temp_db_path("capture-command");
+        cleanup_db_path(&db_path);
+        let cli = Cli::try_parse_from(vec![
+            "polaris",
+            "--db",
+            db_path.to_str().unwrap(),
+            "capture",
+            "--text",
+            "我刚看了 Rust 所有权的一段解释",
+            "--source",
+            "paste",
+            "--learner-kind",
+            "reference",
+            "--candidate-concept",
+            "ownership",
+        ])
+        .unwrap();
+
+        run(cli).unwrap();
+
+        let conn = Connection::open(&db_path).unwrap();
+        let (queued_count, evidence_count, attempt_count, mastery_count): (i64, i64, i64, i64) =
+            conn.query_row(
+                "SELECT
+                    (SELECT COUNT(*) FROM capture_queue WHERE status='pending'),
+                    (SELECT COUNT(*) FROM evidence_items WHERE source='paste'),
+                    (SELECT COUNT(*) FROM attempts),
+                    (SELECT COUNT(*) FROM mastery_states)",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+
+        drop(conn);
+        cleanup_db_path(&db_path);
+
+        assert_eq!(queued_count, 1);
+        assert_eq!(evidence_count, 1);
+        assert_eq!(attempt_count, 0);
+        assert_eq!(mastery_count, 0);
     }
 
     #[test]
@@ -2287,7 +2481,7 @@ mod tests {
         cleanup_db_path(&db_path);
 
         assert_eq!(user_version, polaris_core::db::CURRENT_SCHEMA_VERSION);
-        assert_eq!(migration_count, 1);
+        assert_eq!(migration_count, 2);
         assert_eq!(active_pack, "rust");
     }
 
@@ -2562,7 +2756,7 @@ mod tests {
         assert!(report.ok);
         let text = doctor_report_text(&report);
         assert!(text.contains("schema_version="));
-        assert!(text.contains("migration_count=1"));
+        assert!(text.contains("migration_count=2"));
         assert!(text.contains("integrity=ok"));
         assert!(text.contains("replay_checked=0"));
 

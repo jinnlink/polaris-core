@@ -2,6 +2,7 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::time::Duration;
 
+use polaris_core::capture_queue::{CaptureEffect, CaptureInput, LearnerCaptureKind};
 use polaris_core::engine::{Engine, SubmitInput};
 use polaris_core::learner_feedback::LearnerFeedbackInput;
 use serde_json::{json, Value};
@@ -59,12 +60,14 @@ impl HttpApi {
                 200,
                 serde_json::to_value(self.engine.trust_panel()?)?,
             )),
+            ("POST", "/capture") => self.capture(body),
             ("POST", "/next") => self.next(body),
             ("POST", "/evidence") => self.evidence(body),
             ("POST", "/feedback") => self.feedback(body),
             ("GET", "/next")
             | ("GET", "/evidence")
             | ("GET", "/feedback")
+            | (_, "/capture")
             | ("POST", "/status")
             | ("POST", "/learner-mirror")
             | (_, "/trust") => Ok(response(405, json!({"error": "method not allowed"}))),
@@ -95,6 +98,58 @@ impl HttpApi {
                     "reason": task.reason,
                 },
                 "teaching_instruction": instruction,
+            }),
+        ))
+    }
+
+    fn capture(&mut self, body: &str) -> Result<HttpResponse, Box<dyn std::error::Error>> {
+        let arguments = match json_body(body) {
+            Ok(arguments) => arguments,
+            Err(error) => return Ok(response(400, json!({"error": error}))),
+        };
+        let Some(text) = optional_str(&arguments, "text") else {
+            return Ok(response(
+                400,
+                json!({"error": "missing string field: text"}),
+            ));
+        };
+        let source = optional_str(&arguments, "source").unwrap_or("paste");
+        let content_type = optional_str(&arguments, "content_type").unwrap_or("text/plain");
+        let learner_kind_text = optional_str(&arguments, "learner_kind").unwrap_or("reference");
+        let Some(learner_kind) = LearnerCaptureKind::parse(learner_kind_text) else {
+            return Ok(response(
+                400,
+                json!({"error": "learner_kind must be one of reference, own_answer, error_log, code_change, chat_excerpt, unknown"}),
+            ));
+        };
+        let candidate_concept_ids = match optional_string_array(&arguments, "candidate_concept_ids")
+        {
+            Ok(values) => values,
+            Err(error) => return Ok(response(400, json!({"error": error}))),
+        };
+
+        let record = match self.engine.capture_learning_evidence(CaptureInput {
+            session_id: optional_str(&arguments, "session").map(str::to_owned),
+            source: source.to_owned(),
+            content_type: content_type.to_owned(),
+            text: text.to_owned(),
+            learner_kind,
+            candidate_concept_ids,
+            note: optional_str(&arguments, "note").map(str::to_owned),
+        }) {
+            Ok(record) => record,
+            Err(error) => return Ok(response(400, json!({"error": error.to_string()}))),
+        };
+
+        Ok(response(
+            200,
+            json!({
+                "capture_id": record.capture_id,
+                "evidence_id": record.evidence_id,
+                "status": record.status.as_str(),
+                "learner_kind": record.learner_kind.as_str(),
+                "recorded_only": record.effect == CaptureEffect::RecordedOnly,
+                "message": record.message,
             }),
         ))
     }
@@ -324,6 +379,23 @@ fn concept_id_argument(value: &Value) -> Option<&str> {
     optional_str(value, "concept_id").or_else(|| optional_str(value, "concept"))
 }
 
+fn optional_string_array(value: &Value, key: &str) -> Result<Vec<String>, String> {
+    let Some(items) = value.get(key) else {
+        return Ok(Vec::new());
+    };
+    let Some(items) = items.as_array() else {
+        return Err(format!("{key} must be an array of strings"));
+    };
+    items
+        .iter()
+        .map(|item| {
+            item.as_str()
+                .map(str::to_owned)
+                .ok_or_else(|| format!("{key} must be an array of strings"))
+        })
+        .collect()
+}
+
 fn find_header_end(bytes: &[u8]) -> Option<usize> {
     bytes.windows(4).position(|window| window == b"\r\n\r\n")
 }
@@ -393,6 +465,7 @@ mod tests {
             "GET /status",
             "GET /learner-mirror",
             "GET /trust",
+            "POST /capture",
             "POST /next",
             "POST /evidence",
             "POST /feedback",
@@ -454,6 +527,27 @@ mod tests {
             ],
         );
 
+        let capture = api
+            .handle(
+                "POST",
+                "/capture",
+                &json!({
+                    "session": "contract",
+                    "source": "paste",
+                    "text": "I read a short note about ownership.",
+                    "learner_kind": "reference"
+                })
+                .to_string(),
+            )
+            .unwrap();
+        assert_eq!(capture.status, 200);
+        assert_string_field(&capture.body, "capture_id");
+        assert_string_field(&capture.body, "evidence_id");
+        assert_bool_field(&capture.body, "recorded_only");
+        assert_string_field(&capture.body, "status");
+        assert_string_field(&capture.body, "learner_kind");
+        assert_string_field(&capture.body, "message");
+
         let next = api
             .handle("POST", "/next", &json!({"session": "contract"}).to_string())
             .unwrap();
@@ -510,6 +604,10 @@ mod tests {
         let method_not_allowed = api.handle("GET", "/next", "").unwrap();
         assert_eq!(method_not_allowed.status, 405);
         assert_eq!(method_not_allowed.body["error"], "method not allowed");
+
+        let capture_get = api.handle("GET", "/capture", "").unwrap();
+        assert_eq!(capture_get.status, 405);
+        assert_eq!(capture_get.body["error"], "method not allowed");
 
         let bad_request = api.handle("POST", "/evidence", "{").unwrap();
         assert_eq!(bad_request.status, 400);
@@ -620,6 +718,75 @@ mod tests {
             )
             .unwrap();
         assert_eq!(events, 1);
+    }
+
+    #[test]
+    fn http_capture_records_pending_item_without_attempt_or_mastery() {
+        let mut api = test_api();
+
+        let response = api
+            .handle(
+                "POST",
+                "/capture",
+                &json!({
+                    "session": "http-capture",
+                    "source": "paste",
+                    "content_type": "text/plain",
+                    "text": "Ownership means one binding is responsible for dropping a value.",
+                    "learner_kind": "reference",
+                    "candidate_concept_ids": ["ownership"],
+                    "external_score": 1.0,
+                    "final_score": 1.0
+                })
+                .to_string(),
+            )
+            .unwrap();
+
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body["recorded_only"], true);
+        assert_eq!(response.body["status"], "pending");
+        assert_eq!(response.body["learner_kind"], "reference");
+        assert!(response.body["capture_id"].as_str().is_some());
+        assert!(response.body["evidence_id"].as_str().is_some());
+        assert!(response.body["message"]
+            .as_str()
+            .unwrap()
+            .contains("不会直接算作掌握"));
+
+        let (queued_count, evidence_count, attempt_count, mastery_count, grade_queue_count): (
+            i64,
+            i64,
+            i64,
+            i64,
+            i64,
+        ) = api
+            .engine()
+            .conn()
+            .query_row(
+                "SELECT
+                    (SELECT COUNT(*) FROM capture_queue WHERE status='pending'),
+                    (SELECT COUNT(*) FROM evidence_items WHERE source='paste'),
+                    (SELECT COUNT(*) FROM attempts),
+                    (SELECT COUNT(*) FROM mastery_states),
+                    (SELECT COUNT(*) FROM grade_queue)",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
+            .unwrap();
+
+        assert_eq!(queued_count, 1);
+        assert_eq!(evidence_count, 1);
+        assert_eq!(attempt_count, 0);
+        assert_eq!(mastery_count, 0);
+        assert_eq!(grade_queue_count, 0);
     }
 
     #[test]

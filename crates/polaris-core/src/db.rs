@@ -5,10 +5,12 @@ use rusqlite::{Connection, OpenFlags};
 use crate::config::default_registry;
 use crate::error::{PolarisError, Result};
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 1;
+pub const CURRENT_SCHEMA_VERSION: i64 = 2;
 
 const BASELINE_SCHEMA_VERSION: i64 = 1;
 const BASELINE_MIGRATION_NAME: &str = "baseline_current_schema";
+const CAPTURE_QUEUE_SCHEMA_VERSION: i64 = 2;
+const CAPTURE_QUEUE_MIGRATION_NAME: &str = "capture_queue";
 
 pub fn open_database(path: impl AsRef<Path>) -> Result<Connection> {
     let path = path.as_ref();
@@ -146,6 +148,18 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             enqueued_at TEXT,
             retry_count INTEGER DEFAULT 0,
             last_error TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS capture_queue(
+            id TEXT PRIMARY KEY,
+            evidence_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            learner_kind TEXT NOT NULL,
+            candidate_concept_ids_json TEXT NOT NULL DEFAULT '[]',
+            note TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(evidence_id) REFERENCES evidence_items(id)
         );
 
         CREATE TABLE IF NOT EXISTS theta(
@@ -370,6 +384,8 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             ON goal_dimensions(goal_id);
         CREATE INDEX IF NOT EXISTS idx_milestone_goal
             ON goal_milestones(goal_id);
+        CREATE INDEX IF NOT EXISTS idx_capture_queue_status_updated
+            ON capture_queue(status, updated_at DESC);
         "#,
     )?;
 
@@ -389,6 +405,11 @@ pub fn migrate(conn: &Connection) -> Result<()> {
     }
 
     record_schema_migration(conn, BASELINE_SCHEMA_VERSION, BASELINE_MIGRATION_NAME)?;
+    record_schema_migration(
+        conn,
+        CAPTURE_QUEUE_SCHEMA_VERSION,
+        CAPTURE_QUEUE_MIGRATION_NAME,
+    )?;
     set_schema_version(conn, CURRENT_SCHEMA_VERSION)?;
 
     Ok(())
@@ -484,6 +505,7 @@ mod tests {
             "sessions",
             "behavior_events",
             "grade_queue",
+            "capture_queue",
             "theta",
             "theta_history",
             "pack_theta",
@@ -577,7 +599,7 @@ mod tests {
             })
             .unwrap();
         assert_eq!(p_init, "0.33");
-        assert_eq!(first_count, 1);
+        assert_eq!(first_count, 2);
         assert_eq!(second_count, first_count);
     }
 
@@ -699,7 +721,7 @@ mod tests {
 
         assert_eq!(user_version, CURRENT_SCHEMA_VERSION);
         assert_eq!(p_init, "0.33");
-        assert_eq!(migration_count, 1);
+        assert_eq!(migration_count, 2);
         assert_eq!(journal_mode.to_lowercase(), "wal");
     }
 
@@ -761,6 +783,7 @@ mod tests {
             "idx_goals_parent",
             "idx_goal_dim_goal",
             "idx_milestone_goal",
+            "idx_capture_queue_status_updated",
         ] {
             let exists: i64 = conn
                 .query_row(

@@ -209,6 +209,8 @@ P09A (engine 拆分)
 - 学生入口只暴露 3 个动作：继续今天、记录我刚学到的、我卡住了。pack、SQLite、MCP、HTTP、θ、HMM、`concept_id` 等内部词不出现在零基础入口。
 - Learning Aura 是学生 UI 的优先承接面；`docs/visuals/learner-mirror` 是状态镜子参考；`docs/visuals/atlas` 仍然面向开发者，不作为学生入口。
 - 后续实现拆成 P12B-P12G。它们必须先经 QUEUE 正式登记，不能从本文直接自行认领。
+- P12B 已按用户裁决转正式票：学习项目声明协议见 `docs/PROJECT_MANIFEST_PROTOCOL.md`，样例见 `examples/project-manifests/*/p-os.toml`。
+- P12C 已实现并通过验收：Capture Queue v1 通过 `polaris capture` 与 HTTP `POST /capture` 让 raw evidence 先入库，并明确 `recorded_only` 不影响掌握度。P12D-P12G 仍需后续裁决。
 
 ---
 

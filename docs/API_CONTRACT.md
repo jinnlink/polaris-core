@@ -83,6 +83,31 @@ HTTP 响应体均为 JSON。成功响应使用 HTTP 200；客户端错误使用 
 - `recent_activity`
 - `governance`
 
+### `POST /capture`
+
+用途：把外部学习资料先保存为待处理 capture，不生成 attempt，不改变掌握度、调度或 grade queue。请求中的外部评分字段不被信任。
+
+成功状态码：`200`
+
+请求字段：
+
+- `text`: string，必填。
+- `session`: string，可选；缺省为无 session。
+- `source`: string，可选；缺省为 `paste`。
+- `content_type`: string，可选；缺省为 `text/plain`。
+- `learner_kind`: string，可选；稳定枚举为 `reference | own_answer | error_log | code_change | chat_excerpt | unknown`，缺省为 `reference`。
+- `candidate_concept_ids`: string array，可选；仅作为候选，不触发概念新增或 mastery fold。
+- `note`: string，可选。
+
+稳定顶层字段：
+
+- `capture_id`: string。
+- `evidence_id`: string。
+- `status`: string，P12C 成功写入时为 `pending`。
+- `learner_kind`: string。
+- `recorded_only`: boolean，P12C 成功写入时为 `true`。
+- `message`: string，学生可读提示。
+
 ### `POST /next`
 
 用途：返回本地调度的下一题并记录 `next` 行为事件。
@@ -188,6 +213,9 @@ MCP 使用 JSON-RPC 2.0。通知方法 `notifications/*` 返回空响应。未�
 - `mark_report_assertion_accurate`
 - `record_learner_feedback`
 - `get_trust_panel`
+- `detect_project_manifest`
+- `capture_evidence`
+- `get_learner_mirror`
 - `submit_evidence`
 - `get_teaching_instruction`
 
@@ -207,6 +235,9 @@ MCP 使用 JSON-RPC 2.0。通知方法 `notifications/*` 返回空响应。未�
 关键工具语义：
 
 - `get_next_task`: 与 HTTP `POST /next` 等价，缺省 session 为 `mcp`。
+- `detect_project_manifest`: 从 `path`（可选，缺省为 MCP server 当前目录）向上发现 `p-os.toml`。找到时返回 `found=true`、`project_root`、`manifest_path`、`manifest`；未找到时返回 `found=false`，不视为工具错误。
+- `capture_evidence`: 与 HTTP `POST /capture` 语义对齐，把外部学习资料保存为 pending raw capture；不得生成 attempt、不得改变 mastery、不得写 grade queue，外部评分字段不被信任。
+- `get_learner_mirror`: 与 HTTP `GET /learner-mirror` 对齐，返回 `generated_at`、`confidence_curve`、`phase_distribution`、`recent_assertions`。
 - `submit_evidence`: 请求字段和外层返回字段与 HTTP `POST /evidence` 对齐，但保留当前 MCP submit 路径语义：可使用引擎评分和后续提交流水线；外部评分字段仍不得作为掌握度权威。
 - `record_learner_feedback`: 与 HTTP `POST /feedback` 等价，缺省 session 为 `mcp`。
 - `get_trust_panel`: 与 `polaris://trust` 资源读取返回同一顶层形状。

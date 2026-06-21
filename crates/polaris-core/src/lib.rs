@@ -1,5 +1,6 @@
 pub mod breeding;
 pub mod calibration;
+pub mod capture_queue;
 pub mod citation;
 pub mod config;
 pub mod consolidation;
@@ -29,6 +30,7 @@ pub mod pedagogy;
 pub mod phase;
 pub mod phase_dynamics;
 pub mod privacy;
+pub mod project_manifest;
 pub mod report;
 pub mod sandbox;
 pub mod scheduler;

@@ -1,0 +1,19 @@
+schema_version = 1
+project_id = "biology-foundations"
+title = "生物学基础训练"
+kind = "course"
+default_pack = "biology"
+default_entry = "today"
+
+[entry]
+start_label = "继续今天"
+capture_label = "记录我刚学到的"
+stuck_label = "我卡住了"
+today_command = "biology-lab today --date {today}"
+
+[evidence]
+include = ["chapters/**", "lab-notes/**", "flashcards/**", "experiments/**"]
+ignore = [".git/**", "exports/**", "raw-media/**"]
+
+[ui]
+preferred_shell = "aura"

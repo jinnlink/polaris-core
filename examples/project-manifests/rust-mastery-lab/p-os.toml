@@ -1,0 +1,19 @@
+schema_version = 1
+project_id = "rust-mastery-lab"
+title = "Rust 与软件工程训练"
+kind = "course"
+default_pack = "rust"
+default_entry = "today"
+
+[entry]
+start_label = "继续今天"
+capture_label = "记录我刚学到的"
+stuck_label = "我卡住了"
+today_command = "cargo run -p labctl -- today --date {today}"
+
+[evidence]
+include = ["course/**", "exercises/**", "projects/**", "journal/**"]
+ignore = ["target/**", ".git/**", "node_modules/**"]
+
+[ui]
+preferred_shell = "aura"
