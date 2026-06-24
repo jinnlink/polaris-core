@@ -5,6 +5,10 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use uuid::Uuid;
 
+use crate::ai_profile::{
+    ai_interaction_profile, update_ai_interaction_profile, AiInteractionProfile,
+    AiInteractionProfileInput,
+};
 use crate::breeding::{
     admitted_bred_moves, evaluate_bred_moves, preregister_bred_move, record_bred_move_outcome,
     BredMove, BredMoveInput, BreedingEvaluationSummary,
@@ -234,6 +238,17 @@ impl Engine {
 
     pub fn trust_panel(&self) -> Result<TrustPanel> {
         trust_panel(&self.conn)
+    }
+
+    pub fn ai_interaction_profile(&self) -> Result<AiInteractionProfile> {
+        ai_interaction_profile(&self.conn)
+    }
+
+    pub fn update_ai_interaction_profile(
+        &self,
+        input: AiInteractionProfileInput,
+    ) -> Result<AiInteractionProfile> {
+        update_ai_interaction_profile(&self.conn, input)
     }
 
     pub fn phase_dynamics(&self) -> Result<PhaseDynamicsSummary> {

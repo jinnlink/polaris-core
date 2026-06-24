@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use clap::{Parser, Subcommand, ValueEnum};
+use polaris_core::ai_profile::{AiInteractionProfile, AiInteractionProfileInput};
 use polaris_core::capture_queue::{CaptureInput, CaptureRecord, CaptureStatus, LearnerCaptureKind};
 use polaris_core::config::{
     parameter_specs, parameters_markdown, ParameterClass, ParameterSpec, TuningRoute,
@@ -178,6 +179,10 @@ enum Commands {
         #[command(subcommand)]
         command: TrustCommands,
     },
+    AiProfile {
+        #[command(subcommand)]
+        command: AiProfileCommands,
+    },
     Config {
         #[command(subcommand)]
         command: ConfigCommands,
@@ -321,6 +326,32 @@ enum TrustCommands {
 }
 
 #[derive(Debug, Subcommand)]
+enum AiProfileCommands {
+    Show {
+        #[arg(long)]
+        json: bool,
+    },
+    Set {
+        #[arg(long)]
+        persona: Option<String>,
+        #[arg(long)]
+        verbosity: Option<String>,
+        #[arg(long = "explanation-depth")]
+        explanation_depth: Option<String>,
+        #[arg(long)]
+        proactivity: Option<String>,
+        #[arg(long = "intervention-frequency")]
+        intervention_frequency: Option<String>,
+        #[arg(long = "correction-style")]
+        correction_style: Option<String>,
+        #[arg(long = "custom-notes")]
+        custom_notes: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
 enum ConfigCommands {
     List {
         #[arg(long)]
@@ -401,6 +432,48 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 println!("{}", serde_json::to_string_pretty(&panel)?);
             } else {
                 print!("{}", trust_show_text(&panel));
+            }
+        }
+        Commands::AiProfile {
+            command: AiProfileCommands::Show { json },
+        } => {
+            let conn = open_database_read_only(cli.db.unwrap_or_else(default_db_path))?;
+            let engine = Engine::new(conn);
+            let profile = engine.ai_interaction_profile()?;
+            if json {
+                println!("{}", ai_profile_json(&profile)?);
+            } else {
+                print!("{}", ai_profile_text(&profile));
+            }
+        }
+        Commands::AiProfile {
+            command:
+                AiProfileCommands::Set {
+                    persona,
+                    verbosity,
+                    explanation_depth,
+                    proactivity,
+                    intervention_frequency,
+                    correction_style,
+                    custom_notes,
+                    json,
+                },
+        } => {
+            let conn = open_existing_database(&cli.db.unwrap_or_else(default_db_path))?;
+            let engine = Engine::new(conn);
+            let profile = engine.update_ai_interaction_profile(AiInteractionProfileInput {
+                persona,
+                verbosity,
+                explanation_depth,
+                proactivity,
+                intervention_frequency,
+                correction_style,
+                custom_notes,
+            })?;
+            if json {
+                println!("{}", ai_profile_json(&profile)?);
+            } else {
+                print!("{}", ai_profile_text(&profile));
             }
         }
         Commands::Config {
@@ -836,6 +909,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 Commands::Doctor { .. } => unreachable!("handled before writable database open"),
                 Commands::Privacy { .. } => unreachable!("handled before database open"),
                 Commands::Trust { .. } => unreachable!("handled before writable database open"),
+                Commands::AiProfile { .. } => unreachable!("handled before writable database open"),
                 Commands::Config { .. } => unreachable!("handled before database open"),
                 Commands::Project { .. } => unreachable!("handled before database open"),
             }
@@ -1410,6 +1484,24 @@ fn privacy_show_text(inventory: &PrivacyCallInventory, tier0_only: bool) -> Stri
         ));
     }
     text
+}
+
+fn ai_profile_json(profile: &AiInteractionProfile) -> serde_json::Result<String> {
+    serde_json::to_string_pretty(profile)
+}
+
+fn ai_profile_text(profile: &AiInteractionProfile) -> String {
+    format!(
+        "AI 交互偏好\npersona: {}\nverbosity: {}\nexplanation_depth: {}\nproactivity: {}\nintervention_frequency: {}\ncorrection_style: {}\ncustom_notes: {}\nguidance: {}\n",
+        profile.persona,
+        profile.verbosity,
+        profile.explanation_depth,
+        profile.proactivity,
+        profile.intervention_frequency,
+        profile.correction_style,
+        profile.custom_notes.as_deref().unwrap_or("-"),
+        profile.guidance
+    )
 }
 
 fn parse_parameter_class(
@@ -2035,6 +2127,14 @@ mod tests {
             vec!["polaris", "privacy", "show", "--json"],
             vec!["polaris", "trust", "show"],
             vec!["polaris", "trust", "show", "--json"],
+            vec!["polaris", "ai-profile", "show"],
+            vec![
+                "polaris",
+                "ai-profile",
+                "set",
+                "--persona",
+                "balanced_mentor",
+            ],
             vec!["polaris", "project", "detect"],
             vec!["polaris", "project", "detect", "--path", ".", "--json"],
         ] {
@@ -2744,6 +2844,114 @@ mod tests {
                 command: PrivacyCommands::Show { json: true }
             }
         ));
+    }
+
+    #[test]
+    fn p13c_ai_profile_commands_parse_show_and_set() {
+        let show = Cli::try_parse_from(vec!["polaris", "ai-profile", "show", "--json"]).unwrap();
+        assert!(matches!(
+            show.command,
+            Commands::AiProfile {
+                command: AiProfileCommands::Show { json: true }
+            }
+        ));
+
+        let set = Cli::try_parse_from(vec![
+            "polaris",
+            "ai-profile",
+            "set",
+            "--persona",
+            "socratic_tutor",
+            "--verbosity",
+            "detailed",
+            "--explanation-depth",
+            "examples_first",
+            "--proactivity",
+            "stuck_only",
+            "--intervention-frequency",
+            "normal",
+            "--correction-style",
+            "guided",
+            "--custom-notes",
+            "先问再讲。",
+            "--json",
+        ])
+        .unwrap();
+        assert!(matches!(
+            set.command,
+            Commands::AiProfile {
+                command: AiProfileCommands::Set {
+                    persona: Some(ref persona),
+                    verbosity: Some(ref verbosity),
+                    explanation_depth: Some(ref explanation_depth),
+                    proactivity: Some(ref proactivity),
+                    intervention_frequency: Some(ref intervention_frequency),
+                    correction_style: Some(ref correction_style),
+                    custom_notes: Some(ref custom_notes),
+                    json: true,
+                }
+            } if persona == "socratic_tutor"
+                && verbosity == "detailed"
+                && explanation_depth == "examples_first"
+                && proactivity == "stuck_only"
+                && intervention_frequency == "normal"
+                && correction_style == "guided"
+                && custom_notes == "先问再讲。"
+        ));
+    }
+
+    #[test]
+    fn p13c_ai_profile_set_command_persists_preferences() {
+        let db_path = temp_db_path("ai-profile-set-command");
+        cleanup_db_path(&db_path);
+
+        run(Cli::try_parse_from(vec![
+            "polaris",
+            "--db",
+            db_path.to_str().unwrap(),
+            "init",
+            "--pack",
+            workspace_pack_path("packs/rust").to_str().unwrap(),
+        ])
+        .unwrap())
+        .unwrap();
+        run(Cli::try_parse_from(vec![
+            "polaris",
+            "--db",
+            db_path.to_str().unwrap(),
+            "ai-profile",
+            "set",
+            "--persona",
+            "strict_coach",
+            "--verbosity",
+            "brief",
+            "--explanation-depth",
+            "key_steps",
+            "--proactivity",
+            "on_request",
+            "--intervention-frequency",
+            "low",
+            "--correction-style",
+            "direct",
+        ])
+        .unwrap())
+        .unwrap();
+
+        let conn = Connection::open(&db_path).unwrap();
+        let profile_json: String = conn
+            .query_row(
+                "SELECT value FROM meta WHERE key='ai.interaction_profile'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let profile: serde_json::Value = serde_json::from_str(&profile_json).unwrap();
+        drop(conn);
+        cleanup_db_path(&db_path);
+
+        assert_eq!(profile["persona"], "strict_coach");
+        assert_eq!(profile["verbosity"], "brief");
+        assert_eq!(profile["proactivity"], "on_request");
     }
 
     #[test]

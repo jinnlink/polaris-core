@@ -1,5 +1,6 @@
 use std::io::{self, BufRead, Write};
 
+use polaris_core::ai_profile::AiInteractionProfileInput;
 use polaris_core::capture_queue::{CaptureEffect, CaptureInput, CaptureStatus, LearnerCaptureKind};
 use polaris_core::engine::{Engine, SubmitInput};
 use polaris_core::inbox_practice::InboxPracticeSubmissionInput;
@@ -77,6 +78,8 @@ impl McpSession {
                 "act_on_learner_inbox_item" => self.act_on_learner_inbox_item(arguments),
                 "draft_inbox_practice" => self.draft_inbox_practice(arguments),
                 "submit_inbox_practice" => self.submit_inbox_practice(arguments),
+                "get_ai_interaction_profile" => self.get_ai_interaction_profile(),
+                "update_ai_interaction_profile" => self.update_ai_interaction_profile(arguments),
                 "get_learner_mirror" => self.get_learner_mirror(),
                 "submit_evidence" => self.submit_evidence(arguments),
                 "get_teaching_instruction" => self.get_teaching_instruction(arguments),
@@ -382,6 +385,36 @@ impl McpSession {
         .map_err(|error| error.to_string())
     }
 
+    fn get_ai_interaction_profile(&self) -> Result<Value, String> {
+        serde_json::to_value(
+            self.engine
+                .ai_interaction_profile()
+                .map_err(|error| error.to_string())?,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    fn update_ai_interaction_profile(&self, arguments: &Value) -> Result<Value, String> {
+        let input = AiInteractionProfileInput {
+            persona: optional_ai_profile_str(arguments, "persona")?.map(str::to_owned),
+            verbosity: optional_ai_profile_str(arguments, "verbosity")?.map(str::to_owned),
+            explanation_depth: optional_ai_profile_str(arguments, "explanation_depth")?
+                .map(str::to_owned),
+            proactivity: optional_ai_profile_str(arguments, "proactivity")?.map(str::to_owned),
+            intervention_frequency: optional_ai_profile_str(arguments, "intervention_frequency")?
+                .map(str::to_owned),
+            correction_style: optional_ai_profile_str(arguments, "correction_style")?
+                .map(str::to_owned),
+            custom_notes: optional_ai_profile_str(arguments, "custom_notes")?.map(str::to_owned),
+        };
+        serde_json::to_value(
+            self.engine
+                .update_ai_interaction_profile(input)
+                .map_err(|error| error.to_string())?,
+        )
+        .map_err(|error| error.to_string())
+    }
+
     fn get_learner_mirror(&self) -> Result<Value, String> {
         serde_json::to_value(
             self.engine
@@ -675,6 +708,30 @@ fn tool_definitions() -> Value {
             }
         },
         {
+            "name": "get_ai_interaction_profile",
+            "description": "Return the local learner's AI interaction preferences: persona, verbosity, explanation depth, proactivity, intervention frequency, correction style, optional notes, and guidance text for the AI IDE. Read-only; does not affect mastery.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {}
+            }
+        },
+        {
+            "name": "update_ai_interaction_profile",
+            "description": "Update the local learner's AI interaction preferences. Use only when the user asks to change AI personality, verbosity, explanation depth, proactivity, intervention frequency, correction style, or custom notes. Does not affect mastery.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "persona": {"type": "string", "enum": ["balanced_mentor", "socratic_tutor", "strict_coach", "friendly_companion", "direct_operator"], "description": "AI personality preset."},
+                    "verbosity": {"type": "string", "enum": ["brief", "normal", "detailed"], "description": "How much the AI should say."},
+                    "explanation_depth": {"type": "string", "enum": ["answer_only", "key_steps", "deep", "examples_first"], "description": "How deeply the AI should explain."},
+                    "proactivity": {"type": "string", "enum": ["on_request", "stuck_only", "proactive"], "description": "When the AI should proactively intervene."},
+                    "intervention_frequency": {"type": "string", "enum": ["low", "normal", "high"], "description": "How often the AI should interrupt or check understanding."},
+                    "correction_style": {"type": "string", "enum": ["direct", "guided", "supportive"], "description": "How the AI should correct mistakes."},
+                    "custom_notes": {"type": "string", "maxLength": 2000, "description": "Optional free-form learner preference; empty string clears existing notes."}
+                }
+            }
+        },
+        {
             "name": "get_learner_mirror",
             "description": "Return the read-only learner mirror static panel with confidence curve, phase distribution, and recent assertions.",
             "inputSchema": {
@@ -779,6 +836,15 @@ fn concept_id_argument(value: &Value) -> Result<&str, String> {
 
 fn optional_str<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
     value.get(key).and_then(Value::as_str)
+}
+
+fn optional_ai_profile_str<'a>(value: &'a Value, key: &str) -> Result<Option<&'a str>, String> {
+    let Some(raw) = value.get(key) else {
+        return Ok(None);
+    };
+    raw.as_str()
+        .map(Some)
+        .ok_or_else(|| format!("{key} must be a string"))
 }
 
 fn required_i64(value: &Value, key: &str) -> Result<i64, String> {
@@ -915,6 +981,8 @@ mod tests {
                 "act_on_learner_inbox_item",
                 "draft_inbox_practice",
                 "submit_inbox_practice",
+                "get_ai_interaction_profile",
+                "update_ai_interaction_profile",
                 "get_learner_mirror",
                 "submit_evidence",
                 "get_teaching_instruction",
@@ -960,6 +1028,8 @@ mod tests {
             "act_on_learner_inbox_item",
             "draft_inbox_practice",
             "submit_inbox_practice",
+            "get_ai_interaction_profile",
+            "update_ai_interaction_profile",
             "get_learner_mirror",
         ] {
             assert!(
@@ -1017,6 +1087,8 @@ mod tests {
                 "act_on_learner_inbox_item",
                 "draft_inbox_practice",
                 "submit_inbox_practice",
+                "get_ai_interaction_profile",
+                "update_ai_interaction_profile",
                 "get_learner_mirror",
                 "submit_evidence",
                 "get_teaching_instruction",
@@ -1429,6 +1501,79 @@ mod tests {
             )
             .unwrap();
         assert_eq!(final_score_count, 0);
+    }
+
+    #[test]
+    fn p13c_mcp_gets_and_updates_ai_interaction_profile() {
+        let mut session = test_session();
+
+        let default_profile = call_tool_json(&mut session, "get_ai_interaction_profile", json!({}));
+        assert_eq!(default_profile["persona"], "balanced_mentor");
+        assert_eq!(default_profile["verbosity"], "normal");
+        assert!(default_profile["guidance"]
+            .as_str()
+            .unwrap()
+            .contains("平衡"));
+
+        let updated = call_tool_json(
+            &mut session,
+            "update_ai_interaction_profile",
+            json!({
+                "persona": "socratic_tutor",
+                "verbosity": "detailed",
+                "explanation_depth": "examples_first",
+                "proactivity": "stuck_only",
+                "intervention_frequency": "normal",
+                "correction_style": "guided",
+                "custom_notes": "先追问，再解释。"
+            }),
+        );
+        assert_eq!(updated["persona"], "socratic_tutor");
+        assert_eq!(updated["verbosity"], "detailed");
+        assert_eq!(updated["custom_notes"], "先追问，再解释。");
+        assert!(updated["guidance"].as_str().unwrap().contains("苏格拉底"));
+
+        let invalid_type = session
+            .handle_request(json!({
+                "jsonrpc": "2.0",
+                "id": 130,
+                "method": "tools/call",
+                "params": {
+                    "name": "update_ai_interaction_profile",
+                    "arguments": {"verbosity": 123}
+                }
+            }))
+            .unwrap()
+            .unwrap();
+        assert_eq!(invalid_type["result"]["isError"], true);
+        assert!(invalid_type["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("verbosity must be a string"));
+
+        let invalid = session
+            .handle_request(json!({
+                "jsonrpc": "2.0",
+                "id": 131,
+                "method": "tools/call",
+                "params": {
+                    "name": "update_ai_interaction_profile",
+                    "arguments": {"intervention_frequency": "constant"}
+                }
+            }))
+            .unwrap()
+            .unwrap();
+        assert_eq!(invalid["result"]["isError"], true);
+
+        let persisted = call_tool_json(&mut session, "get_ai_interaction_profile", json!({}));
+        assert_eq!(persisted["intervention_frequency"], "normal");
+
+        let cleared = call_tool_json(
+            &mut session,
+            "update_ai_interaction_profile",
+            json!({"custom_notes": ""}),
+        );
+        assert_eq!(cleared["custom_notes"], Value::Null);
     }
 
     #[test]

@@ -8,7 +8,7 @@
 
 - Phase 0（设计与交接包）：**完成** —— 设计冻结于 `docs/MASTER_PLAN.md`，宪法在 `SPEC.md`。
 - Phase 1（walking skeleton）：**P01 已实现并完成子 agent 审查补修** —— 票在 `docs/tickets/TICKET_P01_WALKING_SKELETON.md`。
-- Phase 12/13（学习入口）：**项目声明、Capture Queue、Learner Inbox、Inbox Practice Bridge、AI IDE MCP 入口已实现** —— 课程仓库通过 `p-os.toml` 声明自己，AI IDE 连接同一个 Polaris MCP 即可辅助学习。
+- Phase 12/13（学习入口）：**项目声明、Capture Queue、Learner Inbox、Inbox Practice Bridge、AI IDE MCP 入口、AI 交互偏好已实现** —— 课程仓库通过 `p-os.toml` 声明自己，AI IDE 连接同一个 Polaris MCP 即可辅助学习。
 
 ## 学生 / AI IDE 怎么用
 
@@ -29,6 +29,7 @@
 cargo build -p polaris-cli
 New-Item -ItemType Directory -Force C:\MyProject\polaris-data
 .\target\debug\polaris.exe --db C:\MyProject\polaris-data\polaris.sqlite init --pack packs\rust
+.\target\debug\polaris.exe --db C:\MyProject\polaris-data\polaris.sqlite ai-profile set --persona socratic_tutor --verbosity detailed --explanation-depth examples_first --proactivity stuck_only --intervention-frequency normal --correction-style guided
 .\target\debug\polaris.exe project detect --path examples\project-manifests\rust-mastery-lab
 .\target\debug\polaris.exe --db C:\MyProject\polaris-data\polaris.sqlite capture --text "我刚看了一段所有权解释：一个值同一时刻只有一个 owner。" --source paste --candidate-concept ownership
 .\target\debug\polaris.exe --db C:\MyProject\polaris-data\polaris.sqlite inbox list
@@ -38,6 +39,7 @@ New-Item -ItemType Directory -Force C:\MyProject\polaris-data
 你应该看到：
 
 - `project detect` 输出 `project_id`、`default_pack`、`today_command`。
+- `ai-profile set/show` 让你设置 AI 的性格、话量、解释深度、主动程度和介入频率；这些偏好只影响外部 AI 说话方式，不改变掌握度。
 - `capture` 输出 `recorded_only: true`，表示资料已保存，但不会直接算作掌握。
 - `inbox list` 输出学习收件箱，给出“转成一道小题 / 稍后再看 / 忽略”等学生动作。
 - 想练其中一条时，先运行 `inbox act --capture <capture_id> --action accept`，再运行 `inbox practice --capture <capture_id>` 生成小题。
@@ -86,6 +88,7 @@ cargo build -p polaris-cli
 
 ```text
 你现在是我的学习助手。请先调用 Polaris MCP 的 detect_project_manifest，确认当前课程项目。
+然后调用 get_ai_interaction_profile，按其中 guidance 调整你的性格、话量、解释深度和介入频率。
 学习过程中，不要直接判断我“掌握了”。如果我只是贴资料、笔记、错误日志或代码片段，请用 capture_evidence 保存为学习资料。
 请定期用 list_learner_inbox 查看我保存过但还没处理的资料；如果我想练其中一条，用 act_on_learner_inbox_item 的 accept 标记为可转小题。
 对已经 practice_ready 的资料，先用 draft_inbox_practice 生成一道小题，让我回答；我回答后，用 submit_inbox_practice 提交回答和我的 confidence。

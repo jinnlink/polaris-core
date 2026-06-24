@@ -83,6 +83,42 @@ HTTP 响应体均为 JSON。成功响应使用 HTTP 200；客户端错误使用 
 - `recent_activity`
 - `governance`
 
+### `GET /ai-profile`
+
+用途：读取本地 AI 交互偏好，供 CLI、HTTP 客户端和 AI IDE 调整语气、解释深度与介入频率。该 profile 不参与 mastery、调度或评分。
+
+成功状态码：`200`
+
+稳定顶层字段：
+
+- `version`: integer。
+- `persona`: string，稳定枚举为 `balanced_mentor | socratic_tutor | strict_coach | friendly_companion | direct_operator`。
+- `verbosity`: string，稳定枚举为 `brief | normal | detailed`。
+- `explanation_depth`: string，稳定枚举为 `answer_only | key_steps | deep | examples_first`。
+- `proactivity`: string，稳定枚举为 `on_request | stuck_only | proactive`。
+- `intervention_frequency`: string，稳定枚举为 `low | normal | high`。
+- `correction_style`: string，稳定枚举为 `direct | guided | supportive`。
+- `custom_notes`: string 或 null；最长 2000 字符。
+- `guidance`: string，面向 AI IDE 的自然语言执行提示。
+
+### `POST /ai-profile`
+
+用途：更新本地 AI 交互偏好。请求可以只传需要改变的字段；非法枚举返回 400 且不写入。该入口只改变交互偏好，不改变学习事实。
+
+成功状态码：`200`
+
+请求字段：
+
+- `persona`: string，可选。
+- `verbosity`: string，可选。
+- `explanation_depth`: string，可选。
+- `proactivity`: string，可选。
+- `intervention_frequency`: string，可选。
+- `correction_style`: string，可选。
+- `custom_notes`: string，可选；最长 2000 字符；空字符串清除已有补充说明。
+
+稳定顶层字段：同 `GET /ai-profile`。
+
 ### `POST /capture`
 
 用途：把外部学习资料先保存为待处理 capture，不生成 attempt，不改变掌握度、调度或 grade queue。请求中的外部评分字段不被信任。
@@ -313,6 +349,8 @@ MCP 使用 JSON-RPC 2.0。通知方法 `notifications/*` 返回空响应。未�
 - `act_on_learner_inbox_item`
 - `draft_inbox_practice`
 - `submit_inbox_practice`
+- `get_ai_interaction_profile`
+- `update_ai_interaction_profile`
 - `get_learner_mirror`
 - `submit_evidence`
 - `get_teaching_instruction`
@@ -339,6 +377,8 @@ MCP 使用 JSON-RPC 2.0。通知方法 `notifications/*` 返回空响应。未�
 - `act_on_learner_inbox_item`: 与 HTTP `POST /inbox/action` 语义对齐；`accept` 只标记 `practice_ready`，`defer` 保留稍后处理，`ignore` 隐藏，`archive` 归档。不得生成 attempt、mastery 或 grade queue。
 - `draft_inbox_practice`: 与 HTTP `POST /inbox/practice` 语义对齐，从 `practice_ready` capture 生成学生可答的小题草稿；不得生成 attempt、mastery 或 grade queue，不暴露内部掌握度参数。
 - `submit_inbox_practice`: 与 HTTP `POST /inbox/practice/submit` 语义对齐，提交学生回答和 `confidence`，复用引擎自有评分路径并把 capture 标为 `practiced`；外部评分字段仍不得作为掌握度权威。
+- `get_ai_interaction_profile`: 与 HTTP `GET /ai-profile` 语义对齐，返回本地 AI 交互偏好和 `guidance`；只读，不影响学习事实。
+- `update_ai_interaction_profile`: 与 HTTP `POST /ai-profile` 语义对齐；仅在用户要求改变 AI 性格、话量、解释深度、主动程度、介入频率、纠错风格或补充说明时调用，不影响 mastery。
 - `get_learner_mirror`: 与 HTTP `GET /learner-mirror` 对齐，返回 `generated_at`、`confidence_curve`、`phase_distribution`、`recent_assertions`。
 - `submit_evidence`: 请求字段和外层返回字段与 HTTP `POST /evidence` 对齐，但保留当前 MCP submit 路径语义：可使用引擎评分和后续提交流水线；外部评分字段仍不得作为掌握度权威。
 - `record_learner_feedback`: 与 HTTP `POST /feedback` 等价，缺省 session 为 `mcp`。

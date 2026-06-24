@@ -2,6 +2,7 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::time::Duration;
 
+use polaris_core::ai_profile::AiInteractionProfileInput;
 use polaris_core::capture_queue::{CaptureEffect, CaptureInput, LearnerCaptureKind};
 use polaris_core::engine::{Engine, SubmitInput};
 use polaris_core::inbox_practice::InboxPracticeSubmissionInput;
@@ -62,6 +63,11 @@ impl HttpApi {
                 200,
                 serde_json::to_value(self.engine.trust_panel()?)?,
             )),
+            ("GET", "/ai-profile") => Ok(response(
+                200,
+                serde_json::to_value(self.engine.ai_interaction_profile()?)?,
+            )),
+            ("POST", "/ai-profile") => self.ai_profile_update(body),
             ("GET", "/inbox") => self.inbox(),
             ("POST", "/inbox/action") => self.inbox_action(body),
             ("POST", "/inbox/practice") => self.inbox_practice(body),
@@ -81,6 +87,7 @@ impl HttpApi {
             | ("POST", "/status")
             | ("POST", "/learner-mirror")
             | (_, "/trust") => Ok(response(405, json!({"error": "method not allowed"}))),
+            (_, "/ai-profile") => Ok(response(405, json!({"error": "method not allowed"}))),
             _ => Ok(response(404, json!({"error": "not found"}))),
         }
     }
@@ -169,6 +176,50 @@ impl HttpApi {
             200,
             json!({ "items": self.engine.learner_inbox(&[], 20)? }),
         ))
+    }
+
+    fn ai_profile_update(&self, body: &str) -> Result<HttpResponse, Box<dyn std::error::Error>> {
+        let arguments = match json_body(body) {
+            Ok(arguments) => arguments,
+            Err(error) => return Ok(response(400, json!({"error": error}))),
+        };
+        let input = AiInteractionProfileInput {
+            persona: match optional_ai_profile_str(&arguments, "persona") {
+                Ok(value) => value.map(str::to_owned),
+                Err(error) => return Ok(response(400, json!({"error": error}))),
+            },
+            verbosity: match optional_ai_profile_str(&arguments, "verbosity") {
+                Ok(value) => value.map(str::to_owned),
+                Err(error) => return Ok(response(400, json!({"error": error}))),
+            },
+            explanation_depth: match optional_ai_profile_str(&arguments, "explanation_depth") {
+                Ok(value) => value.map(str::to_owned),
+                Err(error) => return Ok(response(400, json!({"error": error}))),
+            },
+            proactivity: match optional_ai_profile_str(&arguments, "proactivity") {
+                Ok(value) => value.map(str::to_owned),
+                Err(error) => return Ok(response(400, json!({"error": error}))),
+            },
+            intervention_frequency: match optional_ai_profile_str(
+                &arguments,
+                "intervention_frequency",
+            ) {
+                Ok(value) => value.map(str::to_owned),
+                Err(error) => return Ok(response(400, json!({"error": error}))),
+            },
+            correction_style: match optional_ai_profile_str(&arguments, "correction_style") {
+                Ok(value) => value.map(str::to_owned),
+                Err(error) => return Ok(response(400, json!({"error": error}))),
+            },
+            custom_notes: match optional_ai_profile_str(&arguments, "custom_notes") {
+                Ok(value) => value.map(str::to_owned),
+                Err(error) => return Ok(response(400, json!({"error": error}))),
+            },
+        };
+        match self.engine.update_ai_interaction_profile(input) {
+            Ok(profile) => Ok(response(200, serde_json::to_value(profile)?)),
+            Err(error) => Ok(response(400, json!({"error": error.to_string()}))),
+        }
     }
 
     fn inbox_action(&self, body: &str) -> Result<HttpResponse, Box<dyn std::error::Error>> {
@@ -500,6 +551,15 @@ fn optional_str<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
     value.get(key).and_then(Value::as_str)
 }
 
+fn optional_ai_profile_str<'a>(value: &'a Value, key: &str) -> Result<Option<&'a str>, String> {
+    let Some(raw) = value.get(key) else {
+        return Ok(None);
+    };
+    raw.as_str()
+        .map(Some)
+        .ok_or_else(|| format!("{key} must be a string"))
+}
+
 fn concept_id_argument(value: &Value) -> Option<&str> {
     optional_str(value, "concept_id").or_else(|| optional_str(value, "concept"))
 }
@@ -590,6 +650,8 @@ mod tests {
             "GET /status",
             "GET /learner-mirror",
             "GET /trust",
+            "GET /ai-profile",
+            "POST /ai-profile",
             "POST /capture",
             "POST /next",
             "POST /evidence",
@@ -1072,6 +1134,77 @@ mod tests {
         assert_eq!(mastery_count, 1);
         assert_eq!(grade_queue_count, 1);
         assert_eq!(final_score_count, 0);
+    }
+
+    #[test]
+    fn p13c_http_ai_profile_gets_and_updates_preferences() {
+        let mut api = test_api();
+
+        let default_profile = api.handle("GET", "/ai-profile", "").unwrap();
+        assert_eq!(default_profile.status, 200);
+        assert_eq!(default_profile.body["persona"], "balanced_mentor");
+        assert_eq!(default_profile.body["verbosity"], "normal");
+        assert!(default_profile.body["guidance"]
+            .as_str()
+            .unwrap()
+            .contains("平衡"));
+
+        let updated = api
+            .handle(
+                "POST",
+                "/ai-profile",
+                &json!({
+                    "persona": "friendly_companion",
+                    "verbosity": "detailed",
+                    "explanation_depth": "deep",
+                    "proactivity": "proactive",
+                    "intervention_frequency": "high",
+                    "correction_style": "supportive",
+                    "custom_notes": "多解释，但别替我直接做题。"
+                })
+                .to_string(),
+            )
+            .unwrap();
+        assert_eq!(updated.status, 200);
+        assert_eq!(updated.body["persona"], "friendly_companion");
+        assert_eq!(updated.body["verbosity"], "detailed");
+        assert_eq!(updated.body["custom_notes"], "多解释，但别替我直接做题。");
+        assert!(updated.body["guidance"].as_str().unwrap().contains("陪伴"));
+
+        let invalid_type = api
+            .handle(
+                "POST",
+                "/ai-profile",
+                &json!({"verbosity": 123}).to_string(),
+            )
+            .unwrap();
+        assert_eq!(invalid_type.status, 400);
+        assert!(invalid_type.body["error"]
+            .as_str()
+            .unwrap()
+            .contains("verbosity must be a string"));
+
+        let invalid = api
+            .handle(
+                "POST",
+                "/ai-profile",
+                &json!({"verbosity": "endless"}).to_string(),
+            )
+            .unwrap();
+        assert_eq!(invalid.status, 400);
+
+        let persisted = api.handle("GET", "/ai-profile", "").unwrap();
+        assert_eq!(persisted.body["verbosity"], "detailed");
+
+        let cleared = api
+            .handle(
+                "POST",
+                "/ai-profile",
+                &json!({"custom_notes": ""}).to_string(),
+            )
+            .unwrap();
+        assert_eq!(cleared.status, 200);
+        assert_eq!(cleared.body["custom_notes"], Value::Null);
     }
 
     #[test]

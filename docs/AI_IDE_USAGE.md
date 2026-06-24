@@ -27,6 +27,7 @@ Copy-Item C:\MyProject\polaris-core\examples\project-manifests\rust-mastery-lab\
 cargo build -p polaris-cli
 New-Item -ItemType Directory -Force C:\MyProject\polaris-data
 .\target\debug\polaris.exe --db C:\MyProject\polaris-data\polaris.sqlite init --pack packs\rust
+.\target\debug\polaris.exe --db C:\MyProject\polaris-data\polaris.sqlite ai-profile set --persona balanced_mentor --verbosity normal --explanation-depth key_steps --proactivity stuck_only --intervention-frequency normal --correction-style guided
 ```
 
 确认项目声明能被发现：
@@ -84,6 +85,7 @@ C:\MyProject\polaris-core\target\debug\polaris.exe --db C:\MyProject\polaris-dat
 
 ```text
 请先调用 Polaris 的 detect_project_manifest，确认这个课程项目。
+然后调用 get_ai_interaction_profile，按 guidance 调整你的性格、话量、解释深度、主动程度和介入频率。
 然后按课程仓库自己的 today 入口带我学习。
 我贴资料、笔记、错误日志或代码片段时，请用 capture_evidence 保存。
 请定期用 list_learner_inbox 查看我保存过但还没处理的资料；如果我想练其中一条，用 act_on_learner_inbox_item 的 accept 标记为可转小题。
@@ -98,6 +100,8 @@ C:\MyProject\polaris-core\target\debug\polaris.exe --db C:\MyProject\polaris-dat
 | 场景 | MCP tool | 说明 |
 |---|---|---|
 | 刚打开课程仓库 | `detect_project_manifest` | 发现 `p-os.toml`，知道课程名、默认 pack 和今天入口 |
+| 开始对话或用户改了 AI 风格 | `get_ai_interaction_profile` | 读取性格、话量、解释深度、主动程度、介入频率和 guidance |
+| 用户要求“你少说点 / 多解释 / 主动一点 / 别老打断” | `update_ai_interaction_profile` | 更新本地交互偏好，只影响 AI 说话方式，不影响掌握度 |
 | 学生贴资料、笔记、错误日志、代码片段 | `capture_evidence` | 只保存为 raw capture，不改变掌握度 |
 | 想看保存过但还没处理的资料 | `list_learner_inbox` | 返回学生可读状态和 2 到 3 个可选动作 |
 | 想把某条资料留到后续练习 | `act_on_learner_inbox_item` | `accept` 只标记为 `practice_ready`，不生成 attempt |
@@ -111,18 +115,46 @@ C:\MyProject\polaris-core\target\debug\polaris.exe --db C:\MyProject\polaris-dat
 
 最重要的边界：`capture_evidence` 不是“我学会了”。它只是把资料放进本地库。`draft_inbox_practice` 也只是出一道小题。只有学生作答、解释、迁移应用后，才应该用 `submit_inbox_practice` 或 `submit_evidence`。
 
+## AI 性格和介入频率怎么设
+
+命令行设置：
+
+```powershell
+C:\MyProject\polaris-core\target\debug\polaris.exe --db C:\MyProject\polaris-data\polaris.sqlite ai-profile set --persona socratic_tutor --verbosity detailed --explanation-depth examples_first --proactivity stuck_only --intervention-frequency normal --correction-style guided
+```
+
+常用值：
+
+| 字段 | 可选值 | 含义 |
+|---|---|---|
+| `persona` | `balanced_mentor` / `socratic_tutor` / `strict_coach` / `friendly_companion` / `direct_operator` | AI 的性格或角色 |
+| `verbosity` | `brief` / `normal` / `detailed` | 话多话少 |
+| `explanation_depth` | `answer_only` / `key_steps` / `deep` / `examples_first` | 解释深度 |
+| `proactivity` | `on_request` / `stuck_only` / `proactive` | 主动程度 |
+| `intervention_frequency` | `low` / `normal` / `high` | 介入频率 |
+| `correction_style` | `direct` / `guided` / `supportive` | 纠错风格 |
+
+查看当前设置：
+
+```powershell
+C:\MyProject\polaris-core\target\debug\polaris.exe --db C:\MyProject\polaris-data\polaris.sqlite ai-profile show --json
+```
+
+AI IDE 也可以通过 MCP 的 `update_ai_interaction_profile` 修改这些值。它不应该擅自修改；只有你明确说“少说点”“多解释一点”“主动提醒我”这类偏好时才改。
+
 ## 推荐学习流程
 
 1. AI 调用 `detect_project_manifest`。
-2. AI 根据 `entry.today_command` 或课程仓库约定打开今天的学习内容。
-3. 学生正常学习、提问、贴代码或错误。
-4. AI 用 `capture_evidence` 保存资料和现场证据。
-5. AI 用 `list_learner_inbox` 看是否有值得处理的资料，并只给 2 到 3 个选择。
-6. 如果学生选择把某条资料变成练习，AI 先用 `act_on_learner_inbox_item(action=accept)` 标记，不要直接算掌握。
-7. AI 用 `draft_inbox_practice` 生成一个具体问题，而不是直接给结论。
-8. 学生回答后，AI 询问或记录学生 `confidence`，再用 `submit_inbox_practice` 提交回答。
-9. 普通课程题仍可用 `submit_evidence`，但不要把 AI 自己的评分字段当掌握度权威。
-10. AI 用 `get_learner_mirror` 或 `get_next_task` 决定下一步。
+2. AI 调用 `get_ai_interaction_profile`，按 `guidance` 调整说话和介入方式。
+3. AI 根据 `entry.today_command` 或课程仓库约定打开今天的学习内容。
+4. 学生正常学习、提问、贴代码或错误。
+5. AI 用 `capture_evidence` 保存资料和现场证据。
+6. AI 用 `list_learner_inbox` 看是否有值得处理的资料，并只给 2 到 3 个选择。
+7. 如果学生选择把某条资料变成练习，AI 先用 `act_on_learner_inbox_item(action=accept)` 标记，不要直接算掌握。
+8. AI 用 `draft_inbox_practice` 生成一个具体问题，而不是直接给结论。
+9. 学生回答后，AI 询问或记录学生 `confidence`，再用 `submit_inbox_practice` 提交回答。
+10. 普通课程题仍可用 `submit_evidence`，但不要把 AI 自己的评分字段当掌握度权威。
+11. AI 用 `get_learner_mirror` 或 `get_next_task` 决定下一步。
 
 ## 常见误区
 
