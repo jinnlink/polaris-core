@@ -27,6 +27,18 @@ powershell -ExecutionPolicy Bypass -File scripts\real_use_smoke.ps1
 
 它会用 `target\p14a-real-use.sqlite` 临时库跑完 init、AI profile、项目声明、capture、inbox、practice、submit 和 learner mirror。完整说明见 [真实使用 smoke](REAL_USE_SMOKE.md)。
 
+如果你想确认 AI IDE 会用的 MCP stdio 通道也能跑通，再执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\mcp_real_use_smoke.ps1
+```
+
+它会启动真实 `polaris.exe --db ... mcp` 子进程，通过 JSON-RPC `Content-Length` framing 调用 `initialize`、`tools/list`、项目发现、AI profile、capture、inbox practice、submit 和 learner mirror。要用真实课程仓库检测：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\mcp_real_use_smoke.ps1 -ProjectPath C:\MyProject\Learned\rust-mastery-lab -DbPath target\p14b-learned-mcp-real-use.sqlite -TranscriptPath target\p14b-learned-mcp-real-use-transcript.txt
+```
+
 ## 第一次初始化
 
 在 `C:\MyProject\polaris-core` 运行：

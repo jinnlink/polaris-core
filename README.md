@@ -25,6 +25,7 @@
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\real_use_smoke.ps1
+powershell -ExecutionPolicy Bypass -File scripts\mcp_real_use_smoke.ps1
 ```
 
 ## 5 分钟本地试跑
