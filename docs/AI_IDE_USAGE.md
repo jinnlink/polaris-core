@@ -19,6 +19,14 @@ Copy-Item C:\MyProject\polaris-core\examples\project-manifests\rust-mastery-lab\
 
 `p-os.toml` 只说明“这是哪个学习项目、默认 pack 是什么、今天怎么开工、哪些路径可作为学习证据”。它不是课程内容，也不是 Domain Pack。
 
+如果你想先确认本机闭环能跑通，在 `C:\MyProject\polaris-core` 执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\real_use_smoke.ps1
+```
+
+它会用 `target\p14a-real-use.sqlite` 临时库跑完 init、AI profile、项目声明、capture、inbox、practice、submit 和 learner mirror。完整说明见 [真实使用 smoke](REAL_USE_SMOKE.md)。
+
 ## 第一次初始化
 
 在 `C:\MyProject\polaris-core` 运行：

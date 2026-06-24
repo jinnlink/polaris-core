@@ -1,6 +1,6 @@
 # 票队列（单票制）
 
-状态：**无 In Progress；P13C 已实现、通过验收并提交；P12E 已实现、通过验收并提交**。任何时刻只允许 1 张票 In Progress。
+状态：**无 In Progress；P14A 已实现、通过验收并提交；P13C 已实现、通过验收并提交；P12E 已实现、通过验收并提交**。任何时刻只允许 1 张票 In Progress。
 P12F-P12G 仍仅是 `docs/LEARNER_CAPTURE_ROADMAP.md` 与 P12 实施计划中的候选拆分，并非可直接认领的正式票，需用户裁决或新开正式票后才能认领。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 **Phase 7+ 产品形态轴线见 `docs/PRODUCT_ROADMAP.md`**（轴 6 学习者形态 / 轴 7 多 Pack 承载 / 轴 8 工程演进 / 轴 9 信任面板）。
@@ -99,6 +99,10 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 - [x] **P13A AI IDE MCP 项目发现与学习入口**（`TICKET_P13A_AI_IDE_MCP_PROJECT_DISCOVERY.md`）← 已实现、通过验收并提交；把项目发现、raw capture、学习者镜像暴露为通用 Polaris MCP tools，使 AI IDE 可在任意课程仓库中连接同一个 Polaris；服务环节：验证真懂 → 定位模糊 → 针对性补缺
 - [x] **P13B README 与 AI IDE 使用指南**（`TICKET_P13B_README_AI_IDE_USAGE.md`）← 已实现、通过验收并提交；把 README 和使用指南补到普通用户能照做，说明课程仓库、AI IDE、`p-os.toml` 与 Polaris MCP 的配合方式；服务环节：验证真懂 → 定位模糊 → 针对性补缺
 - [x] **P13C AI Interaction Profile v1**（`TICKET_P13C_AI_INTERACTION_PROFILE.md`）← 已实现、通过验收并提交；让用户设置 AI 性格、话多话少、解释深度、主动程度和介入频率，并通过 CLI/HTTP/MCP 暴露给 AI IDE；服务环节：针对性补缺 → 用户可控
+
+## Phase 14 — 真实使用验收
+
+- [x] **P14A 真实使用 smoke v1**（`TICKET_P14A_REAL_USE_SMOKE.md`）← 已实现、通过验收并提交；把 init、AI profile、项目声明、capture、inbox、practice、submit、learner mirror 串成一键可复跑脚本和 transcript；服务环节：验证真懂 → 定位模糊 → 针对性补缺 → 用户能实际用起来
 
 ## Backlog（票外发现的问题记在这里，不顺手做）
 

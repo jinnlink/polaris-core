@@ -21,6 +21,12 @@
 
 最短可用流程见 [AI IDE 使用指南](docs/AI_IDE_USAGE.md)。
 
+想先确认本机闭环能跑通，可以运行 [真实使用 smoke](docs/REAL_USE_SMOKE.md)：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\real_use_smoke.ps1
+```
+
 ## 5 分钟本地试跑
 
 以下命令在 `C:\MyProject\polaris-core` 运行：
@@ -141,6 +147,7 @@ cargo run -p polaris-cli -- --db target\p01-quickstart.db grade-pending
 | `docs/MASTER_PLAN.md` | 完整设计蓝图（含抽象引擎、心智动力学引擎、五个原创框架、教学法纲要 v3、分阶段与验证门） |
 | `docs/DATA_MODEL.md` | 表结构 DDL 与全部公式（实现的直接依据） |
 | `docs/AI_IDE_USAGE.md` | AI IDE 接入 Polaris MCP 的使用指南：课程仓库、`p-os.toml`、MCP 配置和学习流程 |
+| `docs/REAL_USE_SMOKE.md` | 一键真实使用 smoke：init、AI profile、项目声明、capture、inbox、practice、submit、learner mirror |
 | `docs/PROJECT_MANIFEST_PROTOCOL.md` | `p-os.toml` 学习项目声明协议 |
 | `docs/API_CONTRACT.md` | HTTP 与 MCP 对外稳定契约 |
 | `docs/tickets/QUEUE.md` | 票队列（单票制，P01→P05 对应 Phase 1→5） |
