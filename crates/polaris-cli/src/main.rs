@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use clap::{Parser, Subcommand, ValueEnum};
-use polaris_core::capture_queue::{CaptureInput, CaptureRecord, LearnerCaptureKind};
+use polaris_core::capture_queue::{CaptureInput, CaptureRecord, CaptureStatus, LearnerCaptureKind};
 use polaris_core::config::{
     parameter_specs, parameters_markdown, ParameterClass, ParameterSpec, TuningRoute,
 };
@@ -12,6 +12,9 @@ use polaris_core::db::{
 use polaris_core::engine::{Engine, SubmitInput};
 use polaris_core::error::PolarisError;
 use polaris_core::learner_feedback::{LearnerFeedbackInput, LearnerFeedbackReceipt};
+use polaris_core::learner_inbox::{
+    LearnerInboxAction, LearnerInboxActionReceipt, LearnerInboxItem,
+};
 use polaris_core::learner_mirror::LearnerMirrorSnapshot;
 use polaris_core::ops::{
     doctor_diagnostics, doctor_report, ActivitySummary, DoctorDiagnostics, DoctorReport,
@@ -73,6 +76,10 @@ enum Commands {
         note: Option<String>,
         #[arg(long)]
         json: bool,
+    },
+    Inbox {
+        #[command(subcommand)]
+        command: InboxCommands,
     },
     Next {
         #[arg(long, default_value = "cli")]
@@ -199,6 +206,28 @@ enum FeedbackCommands {
         session: String,
         #[arg(long)]
         concept: Option<String>,
+        #[arg(long)]
+        note: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum InboxCommands {
+    List {
+        #[arg(long = "status")]
+        statuses: Vec<String>,
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+        #[arg(long)]
+        json: bool,
+    },
+    Act {
+        #[arg(long)]
+        capture: String,
+        #[arg(long)]
+        action: String,
         #[arg(long)]
         note: Option<String>,
         #[arg(long)]
@@ -497,6 +526,38 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                         print!("{}", capture_record_text(&record));
                     }
                 }
+                Commands::Inbox { command } => match command {
+                    InboxCommands::List {
+                        statuses,
+                        limit,
+                        json,
+                    } => {
+                        let statuses = parse_capture_statuses(&statuses)?;
+                        let items = engine.learner_inbox(&statuses, limit)?;
+                        if json {
+                            println!("{}", learner_inbox_json(&items)?);
+                        } else {
+                            print!("{}", learner_inbox_text(&items));
+                        }
+                    }
+                    InboxCommands::Act {
+                        capture,
+                        action,
+                        note,
+                        json,
+                    } => {
+                        let receipt = engine.act_on_learner_inbox_item(
+                            &capture,
+                            parse_learner_inbox_action(&action)?,
+                            note,
+                        )?;
+                        if json {
+                            println!("{}", learner_inbox_receipt_json(&receipt)?);
+                        } else {
+                            print!("{}", learner_inbox_receipt_text(&receipt));
+                        }
+                    }
+                },
                 Commands::Next { session } => {
                     if let Some(task) = engine.next_task()? {
                         engine.record_next_task_event(&session, &task)?;
@@ -987,6 +1048,29 @@ fn parse_learner_capture_kind(
         adapter_error(
             "capture --learner-kind must be one of reference, own_answer, error_log, code_change, chat_excerpt, unknown",
         )
+    })
+}
+
+fn parse_capture_statuses(
+    values: &[String],
+) -> Result<Vec<CaptureStatus>, Box<dyn std::error::Error>> {
+    values
+        .iter()
+        .map(|value| {
+            CaptureStatus::parse(value).ok_or_else(|| {
+                adapter_error(
+                    "inbox --status must be one of pending, mapped, practice_ready, practiced, ignored, archived",
+                )
+            })
+        })
+        .collect()
+}
+
+fn parse_learner_inbox_action(
+    value: &str,
+) -> Result<LearnerInboxAction, Box<dyn std::error::Error>> {
+    LearnerInboxAction::parse(value).ok_or_else(|| {
+        adapter_error("inbox --action must be one of accept, defer, ignore, archive")
     })
 }
 
@@ -1534,6 +1618,54 @@ fn capture_record_text(record: &CaptureRecord) -> String {
         record.learner_kind.as_str(),
         record.effect == polaris_core::capture_queue::CaptureEffect::RecordedOnly,
         record.message
+    )
+}
+
+fn learner_inbox_json(items: &[LearnerInboxItem]) -> serde_json::Result<String> {
+    serde_json::to_string_pretty(&serde_json::json!({ "items": items }))
+}
+
+fn learner_inbox_text(items: &[LearnerInboxItem]) -> String {
+    if items.is_empty() {
+        return "学习收件箱为空。\n".to_owned();
+    }
+    let mut text = format!("学习收件箱：{} 条\n", items.len());
+    for (index, item) in items.iter().enumerate() {
+        text.push_str(&format!(
+            "{}. {} [{}]\n",
+            index + 1,
+            item.message,
+            item.status.as_str()
+        ));
+        text.push_str(&format!("   capture_id: {}\n", item.capture_id));
+        text.push_str(&format!("   摘要: {}\n", item.text_preview));
+        if let Some(concept_hint) = &item.concept_hint {
+            text.push_str(&format!("   可能相关: {}\n", concept_hint));
+        }
+        let actions = item
+            .actions
+            .iter()
+            .map(|action| format!("{}({})", action.label, action.action.as_str()))
+            .collect::<Vec<_>>()
+            .join(" / ");
+        if !actions.is_empty() {
+            text.push_str(&format!("   可选: {actions}\n"));
+        }
+    }
+    text
+}
+
+fn learner_inbox_receipt_json(receipt: &LearnerInboxActionReceipt) -> serde_json::Result<String> {
+    serde_json::to_string_pretty(receipt)
+}
+
+fn learner_inbox_receipt_text(receipt: &LearnerInboxActionReceipt) -> String {
+    format!(
+        "capture_id: {}\nstatus: {}\neffect: {}\nmessage: {}\n",
+        receipt.capture_id,
+        receipt.status.as_str(),
+        receipt.effect,
+        receipt.message
     )
 }
 
@@ -2145,6 +2277,109 @@ mod tests {
         assert_eq!(evidence_count, 1);
         assert_eq!(attempt_count, 0);
         assert_eq!(mastery_count, 0);
+    }
+
+    #[test]
+    fn p12d_inbox_commands_parse_list_and_act() {
+        let list = Cli::try_parse_from(vec![
+            "polaris", "inbox", "list", "--status", "pending", "--limit", "5", "--json",
+        ])
+        .unwrap();
+        assert!(matches!(
+            list.command,
+            Commands::Inbox {
+                command: InboxCommands::List {
+                    ref statuses,
+                    limit: 5,
+                    json: true,
+                }
+            } if statuses == &vec!["pending".to_owned()]
+        ));
+
+        let act = Cli::try_parse_from(vec![
+            "polaris",
+            "inbox",
+            "act",
+            "--capture",
+            "capture-1",
+            "--action",
+            "accept",
+            "--note",
+            "turn it into practice",
+            "--json",
+        ])
+        .unwrap();
+        assert!(matches!(
+            act.command,
+            Commands::Inbox {
+                command: InboxCommands::Act {
+                    ref capture,
+                    ref action,
+                    ref note,
+                    json: true,
+                }
+            } if capture == "capture-1"
+                && action == "accept"
+                && note.as_deref() == Some("turn it into practice")
+        ));
+    }
+
+    #[test]
+    fn p12d_inbox_accept_command_marks_practice_ready_without_attempt_or_mastery() {
+        let db_path = temp_db_path("inbox-accept-command");
+        cleanup_db_path(&db_path);
+        let capture = Cli::try_parse_from(vec![
+            "polaris",
+            "--db",
+            db_path.to_str().unwrap(),
+            "capture",
+            "--text",
+            "Borrow checker error I want to practice",
+            "--source",
+            "paste",
+        ])
+        .unwrap();
+        run(capture).unwrap();
+
+        let conn = Connection::open(&db_path).unwrap();
+        let capture_id: String = conn
+            .query_row("SELECT id FROM capture_queue", [], |row| row.get(0))
+            .unwrap();
+        drop(conn);
+
+        let accept = Cli::try_parse_from(vec![
+            "polaris",
+            "--db",
+            db_path.to_str().unwrap(),
+            "inbox",
+            "act",
+            "--capture",
+            capture_id.as_str(),
+            "--action",
+            "accept",
+        ])
+        .unwrap();
+        run(accept).unwrap();
+
+        let conn = Connection::open(&db_path).unwrap();
+        let (status, attempt_count, mastery_count, grade_queue_count): (String, i64, i64, i64) =
+            conn.query_row(
+                "SELECT
+                    (SELECT status FROM capture_queue WHERE id=?1),
+                    (SELECT COUNT(*) FROM attempts),
+                    (SELECT COUNT(*) FROM mastery_states),
+                    (SELECT COUNT(*) FROM grade_queue)",
+                [capture_id.as_str()],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+        drop(conn);
+        cleanup_db_path(&db_path);
+
+        assert_eq!(status, "practice_ready");
+        assert_eq!(attempt_count, 0);
+        assert_eq!(mastery_count, 0);
+        assert_eq!(grade_queue_count, 0);
     }
 
     #[test]

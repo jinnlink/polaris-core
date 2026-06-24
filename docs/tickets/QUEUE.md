@@ -1,7 +1,7 @@
 # 票队列（单票制）
 
-状态：**无 In Progress；P13B 已实现、通过验收并提交**。任何时刻只允许 1 张票 In Progress。
-P12D-P12G 仍仅是 `docs/LEARNER_CAPTURE_ROADMAP.md` 与 P12 实施计划中的候选拆分，并非可直接认领的正式票，需用户裁决或新开正式票后才能认领。
+状态：**无 In Progress；P12D 已实现、通过验收并提交**。任何时刻只允许 1 张票 In Progress。
+P12E-P12G 仍仅是 `docs/LEARNER_CAPTURE_ROADMAP.md` 与 P12 实施计划中的候选拆分，并非可直接认领的正式票，需用户裁决或新开正式票后才能认领。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 **Phase 7+ 产品形态轴线见 `docs/PRODUCT_ROADMAP.md`**（轴 6 学习者形态 / 轴 7 多 Pack 承载 / 轴 8 工程演进 / 轴 9 信任面板）。
 新增票必须标注它服务主命题（验证真懂→定位模糊→针对性补缺）的哪一环。
@@ -91,6 +91,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 - [x] **P12A 无感学习入口与外部知识入库规划**（`TICKET_P12A_LEARNING_CAPTURE_ROADMAP.md`）← 已实现并通过验收；落地产品路线图、P12 实施计划和后续票边界，不改代码；服务环节：验证真懂 → 定位模糊 → 针对性补缺
 - [x] **P12B 学习项目声明 v1**（`TICKET_P12B_PROJECT_MANIFEST.md`）← 已实现并通过验收；`p-os.toml` 最小协议、向上发现、校验/展示入口与多项目样例；不做 capture queue，不改数据库；服务环节：验证真懂 → 定位模糊
 - [x] **P12C Capture Queue v1**（`TICKET_P12C_CAPTURE_QUEUE.md`）← 已实现并通过验收；raw 外部知识先入库为 pending capture，返回 recorded_only，绝不生成 attempt 或 mastery；服务环节：验证真懂 → 定位模糊
+- [x] **P12D Learner Inbox v1**（`TICKET_P12D_LEARNER_INBOX.md`）← 已实现并通过验收；让学生和 AI IDE 能查看并轻处理 capture queue，不生成 attempt、不改 pack；服务环节：验证真懂 → 定位模糊 → 针对性补缺
 
 ## Phase 13 — AI IDE 中间层接入
 
@@ -99,7 +100,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 
 ## Backlog（票外发现的问题记在这里，不顺手做）
 
-- **P12D-P12G 候选实现拆分**：详见 `docs/LEARNER_CAPTURE_ROADMAP.md` 与 `docs/superpowers/plans/2026-06-18-p12-learner-capture-inbox.md`。这些不是可直接认领的正式票；必须由用户裁决后逐张转成正式票，并遵守单票制。
+- **P12E-P12G 候选实现拆分**：详见 `docs/LEARNER_CAPTURE_ROADMAP.md` 与 `docs/superpowers/plans/2026-06-18-p12-learner-capture-inbox.md`。这些不是可直接认领的正式票；必须由用户裁决后逐张转成正式票，并遵守单票制。P12D 已按用户“继续开发”裁决转成正式票。
 
 - P03A 审查后续：当前 Q 降级初始化在单 Rust pack 下使用 `q[0]=1.0` 作为 deterministic one-hot track 维；多 pack/多 track 前需补 `latent.dims` 或 pack/track→维度映射，避免所有概念共用同一潜因子。→ 已转正式票 P03M。
 - P05A 验收观察：`cargo test --workspace` 首次在 `p03c_geometry::geometry_candidates_use_hnsw_and_combined_scores` 偶发缺少 `schema:raii` 候选，导致同文件后续用例因 `ENV_LOCK` PoisonError 连锁失败；单跑 `cargo test -p polaris-core --test p03c_geometry` 通过，重跑 `cargo test --workspace` 通过。建议后续单独开票把 HNSW 候选测试改成确定性夹具或扩大候选池；服务环节：全环节（验证稳定性）。→ 已转正式票 P03N。

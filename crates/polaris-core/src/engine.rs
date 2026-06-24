@@ -39,6 +39,10 @@ use crate::gu_prior::{gu_prior_shadow_summary, GuPriorShadowSummary};
 use crate::learner_feedback::{
     record_learner_feedback, LearnerFeedbackInput, LearnerFeedbackReceipt,
 };
+use crate::learner_inbox::{
+    act_on_learner_inbox_item, learner_inbox, LearnerInboxAction, LearnerInboxActionReceipt,
+    LearnerInboxItem,
+};
 use crate::learner_mirror::{learner_mirror_snapshot, LearnerMirrorSnapshot};
 use crate::mastery::{fold_all, fold_attempt, AttemptObservation, MasteryParams, MasteryState};
 use crate::mental_fit::{run_mental_dynamics_fit, transitions_from_meta, MentalFitSummary};
@@ -363,6 +367,23 @@ impl Engine {
 
     pub fn capture_learning_evidence(&self, input: CaptureInput) -> Result<CaptureRecord> {
         capture_learning_evidence(&self.conn, input)
+    }
+
+    pub fn learner_inbox(
+        &self,
+        statuses: &[crate::capture_queue::CaptureStatus],
+        limit: usize,
+    ) -> Result<Vec<LearnerInboxItem>> {
+        learner_inbox(&self.conn, statuses, limit)
+    }
+
+    pub fn act_on_learner_inbox_item(
+        &self,
+        capture_id: &str,
+        action: LearnerInboxAction,
+        note: Option<String>,
+    ) -> Result<LearnerInboxActionReceipt> {
+        act_on_learner_inbox_item(&self.conn, capture_id, action, note)
     }
 
     pub fn run_gu_induction(&self) -> Result<GuInductionSummary> {

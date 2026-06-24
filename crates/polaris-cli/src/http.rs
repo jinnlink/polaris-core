@@ -5,6 +5,7 @@ use std::time::Duration;
 use polaris_core::capture_queue::{CaptureEffect, CaptureInput, LearnerCaptureKind};
 use polaris_core::engine::{Engine, SubmitInput};
 use polaris_core::learner_feedback::LearnerFeedbackInput;
+use polaris_core::learner_inbox::LearnerInboxAction;
 use serde_json::{json, Value};
 
 const MAX_REQUEST_BYTES: usize = 1_048_576;
@@ -60,6 +61,8 @@ impl HttpApi {
                 200,
                 serde_json::to_value(self.engine.trust_panel()?)?,
             )),
+            ("GET", "/inbox") => self.inbox(),
+            ("POST", "/inbox/action") => self.inbox_action(body),
             ("POST", "/capture") => self.capture(body),
             ("POST", "/next") => self.next(body),
             ("POST", "/evidence") => self.evidence(body),
@@ -67,6 +70,8 @@ impl HttpApi {
             ("GET", "/next")
             | ("GET", "/evidence")
             | ("GET", "/feedback")
+            | (_, "/inbox")
+            | (_, "/inbox/action")
             | (_, "/capture")
             | ("POST", "/status")
             | ("POST", "/learner-mirror")
@@ -152,6 +157,46 @@ impl HttpApi {
                 "message": record.message,
             }),
         ))
+    }
+
+    fn inbox(&self) -> Result<HttpResponse, Box<dyn std::error::Error>> {
+        Ok(response(
+            200,
+            json!({ "items": self.engine.learner_inbox(&[], 20)? }),
+        ))
+    }
+
+    fn inbox_action(&self, body: &str) -> Result<HttpResponse, Box<dyn std::error::Error>> {
+        let arguments = match json_body(body) {
+            Ok(arguments) => arguments,
+            Err(error) => return Ok(response(400, json!({"error": error}))),
+        };
+        let Some(capture_id) = optional_str(&arguments, "capture_id") else {
+            return Ok(response(
+                400,
+                json!({"error": "missing string field: capture_id"}),
+            ));
+        };
+        let Some(action_text) = optional_str(&arguments, "action") else {
+            return Ok(response(
+                400,
+                json!({"error": "missing string field: action"}),
+            ));
+        };
+        let Some(action) = LearnerInboxAction::parse(action_text) else {
+            return Ok(response(
+                400,
+                json!({"error": "action must be one of accept, defer, ignore, archive"}),
+            ));
+        };
+        match self.engine.act_on_learner_inbox_item(
+            capture_id,
+            action,
+            optional_str(&arguments, "note").map(str::to_owned),
+        ) {
+            Ok(receipt) => Ok(response(200, serde_json::to_value(receipt)?)),
+            Err(error) => Ok(response(400, json!({"error": error.to_string()}))),
+        }
     }
 
     fn evidence(&mut self, body: &str) -> Result<HttpResponse, Box<dyn std::error::Error>> {
@@ -784,6 +829,73 @@ mod tests {
 
         assert_eq!(queued_count, 1);
         assert_eq!(evidence_count, 1);
+        assert_eq!(attempt_count, 0);
+        assert_eq!(mastery_count, 0);
+        assert_eq!(grade_queue_count, 0);
+    }
+
+    #[test]
+    fn p12d_http_inbox_lists_and_updates_capture_without_attempt_or_mastery() {
+        let mut api = test_api();
+        let capture = api
+            .handle(
+                "POST",
+                "/capture",
+                &json!({
+                    "text": "Borrow checker note from an IDE chat.",
+                    "source": "ai-ide",
+                    "candidate_concept_ids": ["ownership"]
+                })
+                .to_string(),
+            )
+            .unwrap();
+        let capture_id = capture.body["capture_id"].as_str().unwrap().to_owned();
+
+        let inbox = api.handle("GET", "/inbox", "").unwrap();
+
+        assert_eq!(inbox.status, 200);
+        let items = inbox.body["items"].as_array().unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["capture_id"], capture_id.as_str());
+        assert_eq!(items[0]["status"], "pending");
+        assert_eq!(items[0]["message"], "已保存，稍后帮你整理");
+        assert_eq!(items[0]["actions"].as_array().unwrap().len(), 3);
+        assert_eq!(items[0]["actions"][0]["action"], "accept");
+        assert_eq!(items[0]["actions"][0]["label"], "转成一道小题");
+        assert!(items[0].get("p_known").is_none());
+        assert!(items[0].get("theta").is_none());
+        assert!(items[0].get("candidate_concept_ids_json").is_none());
+
+        let action = api
+            .handle(
+                "POST",
+                "/inbox/action",
+                &json!({
+                    "capture_id": capture_id.as_str(),
+                    "action": "accept"
+                })
+                .to_string(),
+            )
+            .unwrap();
+
+        assert_eq!(action.status, 200);
+        assert_eq!(action.body["capture_id"], capture_id.as_str());
+        assert_eq!(action.body["status"], "practice_ready");
+        assert_eq!(action.body["effect"], "recorded_only");
+        assert!(action.body["message"].as_str().unwrap().contains("小题"));
+
+        let (attempt_count, mastery_count, grade_queue_count): (i64, i64, i64) = api
+            .engine()
+            .conn()
+            .query_row(
+                "SELECT
+                    (SELECT COUNT(*) FROM attempts),
+                    (SELECT COUNT(*) FROM mastery_states),
+                    (SELECT COUNT(*) FROM grade_queue)",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
         assert_eq!(attempt_count, 0);
         assert_eq!(mastery_count, 0);
         assert_eq!(grade_queue_count, 0);

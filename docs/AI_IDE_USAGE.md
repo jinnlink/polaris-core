@@ -86,6 +86,7 @@ C:\MyProject\polaris-core\target\debug\polaris.exe --db C:\MyProject\polaris-dat
 请先调用 Polaris 的 detect_project_manifest，确认这个课程项目。
 然后按课程仓库自己的 today 入口带我学习。
 我贴资料、笔记、错误日志或代码片段时，请用 capture_evidence 保存。
+请定期用 list_learner_inbox 查看我保存过但还没处理的资料；如果我想练其中一条，用 act_on_learner_inbox_item 的 accept 标记为可转小题。
 我回答问题后，再用 submit_evidence 提交作答证据。
 需要看我现在的学习状态时，用 get_learner_mirror。
 下一步练什么，请以 get_next_task 为本地调度参考，但课程讲解以当前仓库为主。
@@ -97,6 +98,8 @@ C:\MyProject\polaris-core\target\debug\polaris.exe --db C:\MyProject\polaris-dat
 |---|---|---|
 | 刚打开课程仓库 | `detect_project_manifest` | 发现 `p-os.toml`，知道课程名、默认 pack 和今天入口 |
 | 学生贴资料、笔记、错误日志、代码片段 | `capture_evidence` | 只保存为 raw capture，不改变掌握度 |
+| 想看保存过但还没处理的资料 | `list_learner_inbox` | 返回学生可读状态和 2 到 3 个可选动作 |
+| 想把某条资料留到后续练习 | `act_on_learner_inbox_item` | `accept` 只标记为 `practice_ready`，不生成 attempt |
 | 学生完成回答或解释 | `submit_evidence` | 进入 engine-owned scoring，才会产生 attempt 和掌握度更新 |
 | 学生说累了、卡住、想暂停 | `record_learner_feedback` | 记录学习状态，不直接改掌握度 |
 | 想知道当前状态 | `get_learner_mirror` | 读取学习者镜像 |
@@ -111,9 +114,11 @@ C:\MyProject\polaris-core\target\debug\polaris.exe --db C:\MyProject\polaris-dat
 2. AI 根据 `entry.today_command` 或课程仓库约定打开今天的学习内容。
 3. 学生正常学习、提问、贴代码或错误。
 4. AI 用 `capture_evidence` 保存资料和现场证据。
-5. AI 引导学生回答一个问题，而不是直接给结论。
-6. 学生回答后，AI 用 `submit_evidence` 提交回答。
-7. AI 用 `get_learner_mirror` 或 `get_next_task` 决定下一步。
+5. AI 用 `list_learner_inbox` 看是否有值得处理的资料，并只给 2 到 3 个选择。
+6. 如果学生选择把某条资料变成练习，AI 先用 `act_on_learner_inbox_item(action=accept)` 标记，不要直接算掌握。
+7. AI 引导学生回答一个问题，而不是直接给结论。
+8. 学生回答后，AI 用 `submit_evidence` 提交回答。
+9. AI 用 `get_learner_mirror` 或 `get_next_task` 决定下一步。
 
 ## 常见误区
 
@@ -134,6 +139,12 @@ C:\MyProject\polaris-core\target\debug\polaris.exe project detect --path C:\MyPr
 
 ```powershell
 C:\MyProject\polaris-core\target\debug\polaris.exe --db C:\MyProject\polaris-data\polaris.sqlite capture --text "今天学到一条所有权规则。" --source paste
+```
+
+查看学习收件箱：
+
+```powershell
+C:\MyProject\polaris-core\target\debug\polaris.exe --db C:\MyProject\polaris-data\polaris.sqlite inbox list
 ```
 
 读取学习者镜像：

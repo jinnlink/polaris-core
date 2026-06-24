@@ -1,8 +1,9 @@
 use std::io::{self, BufRead, Write};
 
-use polaris_core::capture_queue::{CaptureEffect, CaptureInput, LearnerCaptureKind};
+use polaris_core::capture_queue::{CaptureEffect, CaptureInput, CaptureStatus, LearnerCaptureKind};
 use polaris_core::engine::{Engine, SubmitInput};
 use polaris_core::learner_feedback::LearnerFeedbackInput;
+use polaris_core::learner_inbox::LearnerInboxAction;
 use polaris_core::project_manifest::discover_project_manifest;
 use serde_json::{json, Value};
 
@@ -71,6 +72,8 @@ impl McpSession {
                 "get_trust_panel" => self.get_trust_panel(),
                 "detect_project_manifest" => self.detect_project_manifest(arguments),
                 "capture_evidence" => self.capture_evidence(arguments),
+                "list_learner_inbox" => self.list_learner_inbox(arguments),
+                "act_on_learner_inbox_item" => self.act_on_learner_inbox_item(arguments),
                 "get_learner_mirror" => self.get_learner_mirror(),
                 "submit_evidence" => self.submit_evidence(arguments),
                 "get_teaching_instruction" => self.get_teaching_instruction(arguments),
@@ -304,6 +307,33 @@ impl McpSession {
             "recorded_only": record.effect == CaptureEffect::RecordedOnly,
             "message": record.message,
         }))
+    }
+
+    fn list_learner_inbox(&self, arguments: &Value) -> Result<Value, String> {
+        let statuses = parse_capture_statuses(optional_string_array(arguments, "statuses")?)?;
+        let limit = optional_i64(arguments, "limit").unwrap_or(20).max(1) as usize;
+        let items = self
+            .engine
+            .learner_inbox(&statuses, limit)
+            .map_err(|error| error.to_string())?;
+        Ok(json!({ "items": items }))
+    }
+
+    fn act_on_learner_inbox_item(&self, arguments: &Value) -> Result<Value, String> {
+        let capture_id = required_str(arguments, "capture_id")?;
+        let action_text = required_str(arguments, "action")?;
+        let action = LearnerInboxAction::parse(action_text)
+            .ok_or_else(|| "action must be one of accept, defer, ignore, archive".to_owned())?;
+        serde_json::to_value(
+            self.engine
+                .act_on_learner_inbox_item(
+                    capture_id,
+                    action,
+                    optional_str(arguments, "note").map(str::to_owned),
+                )
+                .map_err(|error| error.to_string())?,
+        )
+        .map_err(|error| error.to_string())
     }
 
     fn get_learner_mirror(&self) -> Result<Value, String> {
@@ -546,6 +576,34 @@ fn tool_definitions() -> Value {
             }
         },
         {
+            "name": "list_learner_inbox",
+            "description": "List learner-facing capture inbox items in pending, mapped, or practice_ready states. Returns student-readable messages and up to three actions per item; does not expose mastery parameters.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "statuses": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": ["pending", "mapped", "practice_ready", "practiced", "ignored", "archived"]},
+                        "description": "Optional status filter. Defaults to pending, mapped, and practice_ready."
+                    },
+                    "limit": {"type": "integer", "minimum": 1, "description": "Maximum number of items. Defaults to 20."}
+                }
+            }
+        },
+        {
+            "name": "act_on_learner_inbox_item",
+            "description": "Apply a light learner inbox action: accept marks an item practice_ready, defer keeps it for later, ignore hides it, archive stores it without reminders. Never creates attempts or mastery state.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "capture_id": {"type": "string", "description": "Capture queue item id returned by capture_evidence or list_learner_inbox."},
+                    "action": {"type": "string", "enum": ["accept", "defer", "ignore", "archive"], "description": "Inbox action to apply."},
+                    "note": {"type": "string", "description": "Optional note to store with the item."}
+                },
+                "required": ["capture_id", "action"]
+            }
+        },
+        {
             "name": "get_learner_mirror",
             "description": "Return the read-only learner mirror static panel with confidence curve, phase distribution, and recent assertions.",
             "inputSchema": {
@@ -684,6 +742,17 @@ fn optional_string_array(value: &Value, key: &str) -> Result<Vec<String>, String
         .collect()
 }
 
+fn parse_capture_statuses(values: Vec<String>) -> Result<Vec<CaptureStatus>, String> {
+    values
+        .into_iter()
+        .map(|value| {
+            CaptureStatus::parse(&value).ok_or_else(|| {
+                "statuses must contain only pending, mapped, practice_ready, practiced, ignored, archived".to_owned()
+            })
+        })
+        .collect()
+}
+
 fn error_response(id: Value, code: i64, message: &str) -> Value {
     json!({
         "jsonrpc": "2.0",
@@ -771,6 +840,8 @@ mod tests {
                 "get_trust_panel",
                 "detect_project_manifest",
                 "capture_evidence",
+                "list_learner_inbox",
+                "act_on_learner_inbox_item",
                 "get_learner_mirror",
                 "submit_evidence",
                 "get_teaching_instruction",
@@ -812,6 +883,8 @@ mod tests {
             "get_trust_panel",
             "detect_project_manifest",
             "capture_evidence",
+            "list_learner_inbox",
+            "act_on_learner_inbox_item",
             "get_learner_mirror",
         ] {
             assert!(
@@ -865,6 +938,8 @@ mod tests {
                 "get_trust_panel",
                 "detect_project_manifest",
                 "capture_evidence",
+                "list_learner_inbox",
+                "act_on_learner_inbox_item",
                 "get_learner_mirror",
                 "submit_evidence",
                 "get_teaching_instruction",
@@ -1150,6 +1225,63 @@ mod tests {
                 "phase_distribution",
                 "recent_assertions",
             ],
+        );
+    }
+
+    #[test]
+    fn p12d_mcp_lists_and_updates_learner_inbox_without_mastery_facts() {
+        let mut session = test_session();
+        let before = (
+            count_rows(session.engine().conn(), "attempts"),
+            count_rows(session.engine().conn(), "mastery_states"),
+            count_rows(session.engine().conn(), "grade_queue"),
+        );
+
+        let capture = call_tool_json(
+            &mut session,
+            "capture_evidence",
+            json!({
+                "text": "Borrow checker note from an AI IDE.",
+                "source": "ai-ide",
+                "candidate_concept_ids": ["ownership"]
+            }),
+        );
+        let capture_id = capture["capture_id"].as_str().unwrap().to_owned();
+
+        let inbox = call_tool_json(&mut session, "list_learner_inbox", json!({}));
+
+        let items = inbox["items"].as_array().unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["capture_id"], capture_id.as_str());
+        assert_eq!(items[0]["status"], "pending");
+        assert_eq!(items[0]["message"], "已保存，稍后帮你整理");
+        assert_eq!(items[0]["actions"][0]["action"], "accept");
+        assert_eq!(items[0]["actions"][0]["label"], "转成一道小题");
+        assert!(items[0].get("p_known").is_none());
+        assert!(items[0].get("theta").is_none());
+
+        let receipt = call_tool_json(
+            &mut session,
+            "act_on_learner_inbox_item",
+            json!({
+                "capture_id": capture_id,
+                "action": "accept"
+            }),
+        );
+
+        assert_eq!(receipt["status"], "practice_ready");
+        assert_eq!(receipt["effect"], "recorded_only");
+        assert!(
+            receipt["message"].as_str().unwrap().contains("小题"),
+            "{receipt}"
+        );
+        assert_eq!(
+            (
+                count_rows(session.engine().conn(), "attempts"),
+                count_rows(session.engine().conn(), "mastery_states"),
+                count_rows(session.engine().conn(), "grade_queue"),
+            ),
+            before
         );
     }
 

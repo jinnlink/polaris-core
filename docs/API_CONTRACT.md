@@ -108,6 +108,56 @@ HTTP 响应体均为 JSON。成功响应使用 HTTP 200；客户端错误使用 
 - `recorded_only`: boolean，P12C 成功写入时为 `true`。
 - `message`: string，学生可读提示。
 
+### `GET /inbox`
+
+用途：读取学习收件箱中默认打开状态的 capture 条目（`pending | mapped | practice_ready`）。返回学生可读文案和最多 3 个动作，不展示掌握度参数、θ 或底层 `candidate_concept_ids_json`。
+
+成功状态码：`200`
+
+稳定顶层字段：
+
+- `items`: array。
+
+`items[]` 稳定子字段：
+
+- `capture_id`: string。
+- `evidence_id`: string。
+- `status`: string，稳定枚举为 `pending | mapped | practice_ready | practiced | ignored | archived`。
+- `learner_kind`: string。
+- `source`: string。
+- `content_type`: string。
+- `text_preview`: string。
+- `concept_hint`: string 或 null，面向学生的人类可读候选提示；不得要求学生填写 concept id。
+- `note`: string 或 null。
+- `created_at`: string。
+- `updated_at`: string。
+- `message`: string，学生可读状态文案。
+- `actions`: array，最多 3 个。
+
+`actions[]` 稳定子字段：
+
+- `action`: string，稳定枚举为 `accept | defer | ignore | archive`。
+- `label`: string，学生可读动作文案。
+
+### `POST /inbox/action`
+
+用途：对学习收件箱条目执行轻动作。`accept` 只把条目标记为 `practice_ready`，供后续练习桥接使用；不得生成 prompt、attempt、mastery 或 grade queue。
+
+成功状态码：`200`
+
+请求字段：
+
+- `capture_id`: string，必填。
+- `action`: string，必填；稳定枚举为 `accept | defer | ignore | archive`。
+- `note`: string，可选。
+
+稳定顶层字段：
+
+- `capture_id`: string。
+- `status`: string。
+- `effect`: string，当前为 `recorded_only`。
+- `message`: string，学生可读提示。
+
 ### `POST /next`
 
 用途：返回本地调度的下一题并记录 `next` 行为事件。
@@ -215,6 +265,8 @@ MCP 使用 JSON-RPC 2.0。通知方法 `notifications/*` 返回空响应。未�
 - `get_trust_panel`
 - `detect_project_manifest`
 - `capture_evidence`
+- `list_learner_inbox`
+- `act_on_learner_inbox_item`
 - `get_learner_mirror`
 - `submit_evidence`
 - `get_teaching_instruction`
@@ -237,6 +289,8 @@ MCP 使用 JSON-RPC 2.0。通知方法 `notifications/*` 返回空响应。未�
 - `get_next_task`: 与 HTTP `POST /next` 等价，缺省 session 为 `mcp`。
 - `detect_project_manifest`: 从 `path`（可选，缺省为 MCP server 当前目录）向上发现 `p-os.toml`。找到时返回 `found=true`、`project_root`、`manifest_path`、`manifest`；未找到时返回 `found=false`，不视为工具错误。
 - `capture_evidence`: 与 HTTP `POST /capture` 语义对齐，把外部学习资料保存为 pending raw capture；不得生成 attempt、不得改变 mastery、不得写 grade queue，外部评分字段不被信任。
+- `list_learner_inbox`: 与 HTTP `GET /inbox` 语义对齐；可选 `statuses` 与 `limit` 参数，返回 `items`。输出必须保持学生可读，不展示内部参数。
+- `act_on_learner_inbox_item`: 与 HTTP `POST /inbox/action` 语义对齐；`accept` 只标记 `practice_ready`，`defer` 保留稍后处理，`ignore` 隐藏，`archive` 归档。不得生成 attempt、mastery 或 grade queue。
 - `get_learner_mirror`: 与 HTTP `GET /learner-mirror` 对齐，返回 `generated_at`、`confidence_curve`、`phase_distribution`、`recent_assertions`。
 - `submit_evidence`: 请求字段和外层返回字段与 HTTP `POST /evidence` 对齐，但保留当前 MCP submit 路径语义：可使用引擎评分和后续提交流水线；外部评分字段仍不得作为掌握度权威。
 - `record_learner_feedback`: 与 HTTP `POST /feedback` 等价，缺省 session 为 `mcp`。
