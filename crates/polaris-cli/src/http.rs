@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use polaris_core::capture_queue::{CaptureEffect, CaptureInput, LearnerCaptureKind};
 use polaris_core::engine::{Engine, SubmitInput};
+use polaris_core::inbox_practice::InboxPracticeSubmissionInput;
 use polaris_core::learner_feedback::LearnerFeedbackInput;
 use polaris_core::learner_inbox::LearnerInboxAction;
 use serde_json::{json, Value};
@@ -63,6 +64,8 @@ impl HttpApi {
             )),
             ("GET", "/inbox") => self.inbox(),
             ("POST", "/inbox/action") => self.inbox_action(body),
+            ("POST", "/inbox/practice") => self.inbox_practice(body),
+            ("POST", "/inbox/practice/submit") => self.inbox_practice_submit(body),
             ("POST", "/capture") => self.capture(body),
             ("POST", "/next") => self.next(body),
             ("POST", "/evidence") => self.evidence(body),
@@ -72,6 +75,8 @@ impl HttpApi {
             | ("GET", "/feedback")
             | (_, "/inbox")
             | (_, "/inbox/action")
+            | (_, "/inbox/practice")
+            | (_, "/inbox/practice/submit")
             | (_, "/capture")
             | ("POST", "/status")
             | ("POST", "/learner-mirror")
@@ -194,6 +199,81 @@ impl HttpApi {
             action,
             optional_str(&arguments, "note").map(str::to_owned),
         ) {
+            Ok(receipt) => Ok(response(200, serde_json::to_value(receipt)?)),
+            Err(error) => Ok(response(400, json!({"error": error.to_string()}))),
+        }
+    }
+
+    fn inbox_practice(&self, body: &str) -> Result<HttpResponse, Box<dyn std::error::Error>> {
+        let arguments = match json_body(body) {
+            Ok(arguments) => arguments,
+            Err(error) => return Ok(response(400, json!({"error": error}))),
+        };
+        let Some(capture_id) = optional_str(&arguments, "capture_id") else {
+            return Ok(response(
+                400,
+                json!({"error": "missing string field: capture_id"}),
+            ));
+        };
+        match self.engine.draft_inbox_practice(capture_id) {
+            Ok(draft) => Ok(response(200, serde_json::to_value(draft)?)),
+            Err(error) => Ok(response(400, json!({"error": error.to_string()}))),
+        }
+    }
+
+    fn inbox_practice_submit(
+        &mut self,
+        body: &str,
+    ) -> Result<HttpResponse, Box<dyn std::error::Error>> {
+        let arguments = match json_body(body) {
+            Ok(arguments) => arguments,
+            Err(error) => return Ok(response(400, json!({"error": error}))),
+        };
+        let Some(capture_id) = optional_str(&arguments, "capture_id") else {
+            return Ok(response(
+                400,
+                json!({"error": "missing string field: capture_id"}),
+            ));
+        };
+        let session = optional_str(&arguments, "session").unwrap_or("http");
+        let Some(response_text) = optional_str(&arguments, "response") else {
+            return Ok(response(
+                400,
+                json!({"error": "missing string field: response"}),
+            ));
+        };
+        let Some(confidence) = arguments.get("confidence").and_then(Value::as_i64) else {
+            return Ok(response(
+                400,
+                json!({"error": "missing integer field: confidence"}),
+            ));
+        };
+        if !(1..=5).contains(&confidence) {
+            return Ok(response(
+                400,
+                json!({"error": "confidence must be in 1..=5"}),
+            ));
+        }
+
+        let draft = match self.engine.draft_inbox_practice(capture_id) {
+            Ok(draft) => draft,
+            Err(error) => return Ok(response(400, json!({"error": error.to_string()}))),
+        };
+        let observation = crate::read_behavior_observation_now(
+            self.engine.conn(),
+            session,
+            draft.concept_id.as_str(),
+        )?;
+        match self
+            .engine
+            .submit_inbox_practice(InboxPracticeSubmissionInput {
+                capture_id: capture_id.to_owned(),
+                session_id: session.to_owned(),
+                response_text: response_text.to_owned(),
+                self_confidence: confidence as i32,
+                latency_ms: observation.latency_ms,
+                hint_count: observation.hint_count,
+            }) {
             Ok(receipt) => Ok(response(200, serde_json::to_value(receipt)?)),
             Err(error) => Ok(response(400, json!({"error": error.to_string()}))),
         }
@@ -899,6 +979,99 @@ mod tests {
         assert_eq!(attempt_count, 0);
         assert_eq!(mastery_count, 0);
         assert_eq!(grade_queue_count, 0);
+    }
+
+    #[test]
+    fn p12e_http_inbox_practice_drafts_and_submits_without_trusting_external_score() {
+        let mut api = test_api();
+        let capture = api
+            .handle(
+                "POST",
+                "/capture",
+                &json!({
+                    "text": "Ownership means one value has one owner at a time.",
+                    "source": "ai-ide",
+                    "candidate_concept_ids": ["ownership"]
+                })
+                .to_string(),
+            )
+            .unwrap();
+        let capture_id = capture.body["capture_id"].as_str().unwrap().to_owned();
+        api.handle(
+            "POST",
+            "/inbox/action",
+            &json!({
+                "capture_id": capture_id.as_str(),
+                "action": "accept"
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let draft = api
+            .handle(
+                "POST",
+                "/inbox/practice",
+                &json!({"capture_id": capture_id.as_str()}).to_string(),
+            )
+            .unwrap();
+
+        assert_eq!(draft.status, 200);
+        assert_eq!(draft.body["capture_id"], capture_id.as_str());
+        assert_eq!(draft.body["status"], "practice_ready");
+        assert_eq!(draft.body["concept_hint"], "Ownership");
+        assert_eq!(draft.body["task_type"], "explain");
+        assert!(draft.body["prompt"]
+            .as_str()
+            .unwrap()
+            .contains("用自己的话"));
+        assert!(draft.body.get("p_known").is_none());
+        assert!(draft.body.get("theta").is_none());
+
+        let submit = api
+            .handle(
+                "POST",
+                "/inbox/practice/submit",
+                &json!({
+                    "capture_id": capture_id.as_str(),
+                    "session": "http-practice",
+                    "response": "Ownership controls which binding can drop the value.",
+                    "confidence": 4,
+                    "external_score": 1.0,
+                    "final_score": 1.0
+                })
+                .to_string(),
+            )
+            .unwrap();
+
+        assert_eq!(submit.status, 200);
+        assert_eq!(submit.body["capture_id"], capture_id.as_str());
+        assert_eq!(submit.body["status"], "practiced");
+        assert_eq!(submit.body["effect"], "submitted");
+        assert!((submit.body["provisional_score"].as_f64().unwrap() - 0.70).abs() < 1e-9);
+
+        let (attempt_count, mastery_count, grade_queue_count, final_score_count): (
+            i64,
+            i64,
+            i64,
+            i64,
+        ) = api
+            .engine()
+            .conn()
+            .query_row(
+                "SELECT
+                    (SELECT COUNT(*) FROM attempts),
+                    (SELECT COUNT(*) FROM mastery_states),
+                    (SELECT COUNT(*) FROM grade_queue),
+                    (SELECT COUNT(*) FROM attempts WHERE final_score IS NOT NULL)",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(attempt_count, 1);
+        assert_eq!(mastery_count, 1);
+        assert_eq!(grade_queue_count, 1);
+        assert_eq!(final_score_count, 0);
     }
 
     #[test]

@@ -158,6 +158,50 @@ HTTP 响应体均为 JSON。成功响应使用 HTTP 200；客户端错误使用 
 - `effect`: string，当前为 `recorded_only`。
 - `message`: string，学生可读提示。
 
+### `POST /inbox/practice`
+
+用途：从 `practice_ready` 的学习收件箱条目生成一条确定性小题草稿。该入口只读学习资料和已有候选概念，不生成 attempt、不改变掌握度、不暴露 `p_known`、`theta` 或内部候选 JSON。
+
+成功状态码：`200`
+
+请求字段：
+
+- `capture_id`: string，必填。
+
+稳定顶层字段：
+
+- `capture_id`: string。
+- `evidence_id`: string。
+- `status`: string，成功时为 `practice_ready`。
+- `concept_hint`: string 或 null，学生可读概念提示。
+- `task_type`: string，当前为 `explain`。
+- `prompt`: string，给学生回答的小题。
+- `source_excerpt`: string，资料摘要。
+- `message`: string，学生可读提示。
+
+### `POST /inbox/practice/submit`
+
+用途：提交学生对学习收件箱小题的回答。该入口必须采集学生自评 `confidence`，然后复用 Polaris 引擎自有提交/评分路径；请求中的外部评分字段不被信任。成功后 capture 标记为 `practiced`。
+
+成功状态码：`200`
+
+请求字段：
+
+- `capture_id`: string，必填。
+- `session`: string，可选；缺省为 `http`。
+- `response`: string，必填，学生自己的回答。
+- `confidence`: integer，必填，范围 `1..=5`。
+
+稳定顶层字段：
+
+- `capture_id`: string。
+- `attempt_id`: string。
+- `status`: string，成功时为 `practiced`。
+- `effect`: string，当前为 `submitted`。
+- `message`: string，学生可读提示。
+- `provisional_score`: number。
+- `degraded`: boolean。
+
 ### `POST /next`
 
 用途：返回本地调度的下一题并记录 `next` 行为事件。
@@ -267,6 +311,8 @@ MCP 使用 JSON-RPC 2.0。通知方法 `notifications/*` 返回空响应。未�
 - `capture_evidence`
 - `list_learner_inbox`
 - `act_on_learner_inbox_item`
+- `draft_inbox_practice`
+- `submit_inbox_practice`
 - `get_learner_mirror`
 - `submit_evidence`
 - `get_teaching_instruction`
@@ -291,6 +337,8 @@ MCP 使用 JSON-RPC 2.0。通知方法 `notifications/*` 返回空响应。未�
 - `capture_evidence`: 与 HTTP `POST /capture` 语义对齐，把外部学习资料保存为 pending raw capture；不得生成 attempt、不得改变 mastery、不得写 grade queue，外部评分字段不被信任。
 - `list_learner_inbox`: 与 HTTP `GET /inbox` 语义对齐；可选 `statuses` 与 `limit` 参数，返回 `items`。输出必须保持学生可读，不展示内部参数。
 - `act_on_learner_inbox_item`: 与 HTTP `POST /inbox/action` 语义对齐；`accept` 只标记 `practice_ready`，`defer` 保留稍后处理，`ignore` 隐藏，`archive` 归档。不得生成 attempt、mastery 或 grade queue。
+- `draft_inbox_practice`: 与 HTTP `POST /inbox/practice` 语义对齐，从 `practice_ready` capture 生成学生可答的小题草稿；不得生成 attempt、mastery 或 grade queue，不暴露内部掌握度参数。
+- `submit_inbox_practice`: 与 HTTP `POST /inbox/practice/submit` 语义对齐，提交学生回答和 `confidence`，复用引擎自有评分路径并把 capture 标为 `practiced`；外部评分字段仍不得作为掌握度权威。
 - `get_learner_mirror`: 与 HTTP `GET /learner-mirror` 对齐，返回 `generated_at`、`confidence_curve`、`phase_distribution`、`recent_assertions`。
 - `submit_evidence`: 请求字段和外层返回字段与 HTTP `POST /evidence` 对齐，但保留当前 MCP submit 路径语义：可使用引擎评分和后续提交流水线；外部评分字段仍不得作为掌握度权威。
 - `record_learner_feedback`: 与 HTTP `POST /feedback` 等价，缺省 session 为 `mcp`。

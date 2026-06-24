@@ -16,6 +16,7 @@ pub mod grader;
 pub mod graph;
 pub mod gu;
 pub mod gu_prior;
+pub mod inbox_practice;
 pub mod learner_feedback;
 pub mod learner_inbox;
 pub mod learner_mirror;

@@ -11,6 +11,9 @@ use polaris_core::db::{
 };
 use polaris_core::engine::{Engine, SubmitInput};
 use polaris_core::error::PolarisError;
+use polaris_core::inbox_practice::{
+    InboxPracticeDraft, InboxPracticeSubmissionInput, InboxPracticeSubmissionReceipt,
+};
 use polaris_core::learner_feedback::{LearnerFeedbackInput, LearnerFeedbackReceipt};
 use polaris_core::learner_inbox::{
     LearnerInboxAction, LearnerInboxActionReceipt, LearnerInboxItem,
@@ -230,6 +233,24 @@ enum InboxCommands {
         action: String,
         #[arg(long)]
         note: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    Practice {
+        #[arg(long)]
+        capture: String,
+        #[arg(long)]
+        json: bool,
+    },
+    Submit {
+        #[arg(long)]
+        capture: String,
+        #[arg(long)]
+        response: String,
+        #[arg(long)]
+        confidence: i32,
+        #[arg(long, default_value = "cli")]
+        session: String,
         #[arg(long)]
         json: bool,
     },
@@ -555,6 +576,42 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                             println!("{}", learner_inbox_receipt_json(&receipt)?);
                         } else {
                             print!("{}", learner_inbox_receipt_text(&receipt));
+                        }
+                    }
+                    InboxCommands::Practice { capture, json } => {
+                        let draft = engine.draft_inbox_practice(&capture)?;
+                        if json {
+                            println!("{}", inbox_practice_draft_json(&draft)?);
+                        } else {
+                            print!("{}", inbox_practice_draft_text(&draft));
+                        }
+                    }
+                    InboxCommands::Submit {
+                        capture,
+                        response,
+                        confidence,
+                        session,
+                        json,
+                    } => {
+                        let draft = engine.draft_inbox_practice(&capture)?;
+                        let observation = read_behavior_observation_now(
+                            engine.conn(),
+                            session.as_str(),
+                            draft.concept_id.as_str(),
+                        )?;
+                        let receipt =
+                            engine.submit_inbox_practice(InboxPracticeSubmissionInput {
+                                capture_id: capture,
+                                session_id: session,
+                                response_text: response,
+                                self_confidence: confidence,
+                                latency_ms: observation.latency_ms,
+                                hint_count: observation.hint_count,
+                            })?;
+                        if json {
+                            println!("{}", inbox_practice_receipt_json(&receipt)?);
+                        } else {
+                            print!("{}", inbox_practice_receipt_text(&receipt));
                         }
                     }
                 },
@@ -1669,6 +1726,42 @@ fn learner_inbox_receipt_text(receipt: &LearnerInboxActionReceipt) -> String {
     )
 }
 
+fn inbox_practice_draft_json(draft: &InboxPracticeDraft) -> serde_json::Result<String> {
+    serde_json::to_string_pretty(draft)
+}
+
+fn inbox_practice_draft_text(draft: &InboxPracticeDraft) -> String {
+    let concept_hint = draft.concept_hint.as_deref().unwrap_or("-");
+    format!(
+        "capture_id: {}\nevidence_id: {}\nstatus: {}\nconcept_hint: {}\ntask_type: {}\nprompt: {}\n",
+        draft.capture_id,
+        draft.evidence_id,
+        draft.status.as_str(),
+        concept_hint,
+        draft.task_type,
+        draft.prompt
+    )
+}
+
+fn inbox_practice_receipt_json(
+    receipt: &InboxPracticeSubmissionReceipt,
+) -> serde_json::Result<String> {
+    serde_json::to_string_pretty(receipt)
+}
+
+fn inbox_practice_receipt_text(receipt: &InboxPracticeSubmissionReceipt) -> String {
+    format!(
+        "capture_id: {}\nattempt_id: {}\nstatus: {}\neffect: {}\nprovisional_score: {:.3}\ndegraded: {}\nmessage: {}\n",
+        receipt.capture_id,
+        receipt.attempt_id,
+        receipt.status.as_str(),
+        receipt.effect,
+        receipt.provisional_score,
+        receipt.degraded,
+        receipt.message
+    )
+}
+
 fn project_detect_text(discovered: &DiscoveredProjectManifest) -> String {
     format!(
         "project_id: {}\n\
@@ -2380,6 +2473,142 @@ mod tests {
         assert_eq!(attempt_count, 0);
         assert_eq!(mastery_count, 0);
         assert_eq!(grade_queue_count, 0);
+    }
+
+    #[test]
+    fn p12e_inbox_commands_parse_practice_and_submit() {
+        let practice = Cli::try_parse_from(vec![
+            "polaris",
+            "inbox",
+            "practice",
+            "--capture",
+            "capture-1",
+            "--json",
+        ])
+        .unwrap();
+        assert!(matches!(
+            practice.command,
+            Commands::Inbox {
+                command: InboxCommands::Practice {
+                    ref capture,
+                    json: true,
+                }
+            } if capture == "capture-1"
+        ));
+
+        let submit = Cli::try_parse_from(vec![
+            "polaris",
+            "inbox",
+            "submit",
+            "--capture",
+            "capture-1",
+            "--response",
+            "Ownership prevents double free.",
+            "--confidence",
+            "4",
+            "--session",
+            "cli-practice",
+            "--json",
+        ])
+        .unwrap();
+        assert!(matches!(
+            submit.command,
+            Commands::Inbox {
+                command: InboxCommands::Submit {
+                    ref capture,
+                    ref response,
+                    confidence: 4,
+                    ref session,
+                    json: true,
+                }
+            } if capture == "capture-1"
+                && response == "Ownership prevents double free."
+                && session == "cli-practice"
+        ));
+    }
+
+    #[test]
+    fn p12e_inbox_submit_command_records_attempt_and_practiced_status() {
+        let db_path = temp_db_path("inbox-practice-submit-command");
+        cleanup_db_path(&db_path);
+
+        run(Cli::try_parse_from(vec![
+            "polaris",
+            "--db",
+            db_path.to_str().unwrap(),
+            "init",
+            "--pack",
+            workspace_pack_path("packs/rust").to_str().unwrap(),
+        ])
+        .unwrap())
+        .unwrap();
+        run(Cli::try_parse_from(vec![
+            "polaris",
+            "--db",
+            db_path.to_str().unwrap(),
+            "capture",
+            "--text",
+            "Ownership means one value has one owner.",
+            "--candidate-concept",
+            "ownership",
+        ])
+        .unwrap())
+        .unwrap();
+
+        let conn = Connection::open(&db_path).unwrap();
+        let capture_id: String = conn
+            .query_row("SELECT id FROM capture_queue", [], |row| row.get(0))
+            .unwrap();
+        drop(conn);
+
+        run(Cli::try_parse_from(vec![
+            "polaris",
+            "--db",
+            db_path.to_str().unwrap(),
+            "inbox",
+            "act",
+            "--capture",
+            capture_id.as_str(),
+            "--action",
+            "accept",
+        ])
+        .unwrap())
+        .unwrap();
+        run(Cli::try_parse_from(vec![
+            "polaris",
+            "--db",
+            db_path.to_str().unwrap(),
+            "inbox",
+            "submit",
+            "--capture",
+            capture_id.as_str(),
+            "--response",
+            "Ownership controls which binding can drop the value.",
+            "--confidence",
+            "4",
+        ])
+        .unwrap())
+        .unwrap();
+
+        let conn = Connection::open(&db_path).unwrap();
+        let (status, attempt_count, mastery_count, grade_queue_count): (String, i64, i64, i64) =
+            conn.query_row(
+                "SELECT
+                    (SELECT status FROM capture_queue WHERE id=?1),
+                    (SELECT COUNT(*) FROM attempts),
+                    (SELECT COUNT(*) FROM mastery_states),
+                    (SELECT COUNT(*) FROM grade_queue)",
+                [capture_id.as_str()],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+        drop(conn);
+        cleanup_db_path(&db_path);
+
+        assert_eq!(status, "practiced");
+        assert_eq!(attempt_count, 1);
+        assert_eq!(mastery_count, 1);
+        assert_eq!(grade_queue_count, 1);
     }
 
     #[test]

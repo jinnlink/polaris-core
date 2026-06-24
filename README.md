@@ -8,7 +8,7 @@
 
 - Phase 0（设计与交接包）：**完成** —— 设计冻结于 `docs/MASTER_PLAN.md`，宪法在 `SPEC.md`。
 - Phase 1（walking skeleton）：**P01 已实现并完成子 agent 审查补修** —— 票在 `docs/tickets/TICKET_P01_WALKING_SKELETON.md`。
-- Phase 12/13（学习入口）：**项目声明、Capture Queue、Learner Inbox、AI IDE MCP 入口已实现** —— 课程仓库通过 `p-os.toml` 声明自己，AI IDE 连接同一个 Polaris MCP 即可辅助学习。
+- Phase 12/13（学习入口）：**项目声明、Capture Queue、Learner Inbox、Inbox Practice Bridge、AI IDE MCP 入口已实现** —— 课程仓库通过 `p-os.toml` 声明自己，AI IDE 连接同一个 Polaris MCP 即可辅助学习。
 
 ## 学生 / AI IDE 怎么用
 
@@ -30,7 +30,7 @@ cargo build -p polaris-cli
 New-Item -ItemType Directory -Force C:\MyProject\polaris-data
 .\target\debug\polaris.exe --db C:\MyProject\polaris-data\polaris.sqlite init --pack packs\rust
 .\target\debug\polaris.exe project detect --path examples\project-manifests\rust-mastery-lab
-.\target\debug\polaris.exe --db C:\MyProject\polaris-data\polaris.sqlite capture --text "我刚看了一段所有权解释，先存下来。" --source paste
+.\target\debug\polaris.exe --db C:\MyProject\polaris-data\polaris.sqlite capture --text "我刚看了一段所有权解释：一个值同一时刻只有一个 owner。" --source paste --candidate-concept ownership
 .\target\debug\polaris.exe --db C:\MyProject\polaris-data\polaris.sqlite inbox list
 .\target\debug\polaris.exe --db C:\MyProject\polaris-data\polaris.sqlite learner-mirror --json
 ```
@@ -40,6 +40,8 @@ New-Item -ItemType Directory -Force C:\MyProject\polaris-data
 - `project detect` 输出 `project_id`、`default_pack`、`today_command`。
 - `capture` 输出 `recorded_only: true`，表示资料已保存，但不会直接算作掌握。
 - `inbox list` 输出学习收件箱，给出“转成一道小题 / 稍后再看 / 忽略”等学生动作。
+- 想练其中一条时，先运行 `inbox act --capture <capture_id> --action accept`，再运行 `inbox practice --capture <capture_id>` 生成小题。
+- 学生回答后，运行 `inbox submit --capture <capture_id> --response "..." --confidence 4`；这时才会生成 attempt 并进入引擎自有评分路径。
 - `learner-mirror --json` 输出学习者镜像字段。
 
 ## AI IDE MCP 配置示例
@@ -86,7 +88,8 @@ cargo build -p polaris-cli
 你现在是我的学习助手。请先调用 Polaris MCP 的 detect_project_manifest，确认当前课程项目。
 学习过程中，不要直接判断我“掌握了”。如果我只是贴资料、笔记、错误日志或代码片段，请用 capture_evidence 保存为学习资料。
 请定期用 list_learner_inbox 查看我保存过但还没处理的资料；如果我想练其中一条，用 act_on_learner_inbox_item 的 accept 标记为可转小题。
-只有在我回答了题目或解释了概念之后，才用 submit_evidence 提交作答证据。
+对已经 practice_ready 的资料，先用 draft_inbox_practice 生成一道小题，让我回答；我回答后，用 submit_inbox_practice 提交回答和我的 confidence。
+只有普通课程题或你自己出的非 inbox 题，才用 submit_evidence 提交作答证据。
 需要了解我当前状态时，用 get_learner_mirror；需要安排下一步练习时，用 get_next_task。
 课程怎么教以当前仓库为主，Polaris 负责记录证据、调度和学习者镜像。
 ```

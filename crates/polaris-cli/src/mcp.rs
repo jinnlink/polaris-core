@@ -2,6 +2,7 @@ use std::io::{self, BufRead, Write};
 
 use polaris_core::capture_queue::{CaptureEffect, CaptureInput, CaptureStatus, LearnerCaptureKind};
 use polaris_core::engine::{Engine, SubmitInput};
+use polaris_core::inbox_practice::InboxPracticeSubmissionInput;
 use polaris_core::learner_feedback::LearnerFeedbackInput;
 use polaris_core::learner_inbox::LearnerInboxAction;
 use polaris_core::project_manifest::discover_project_manifest;
@@ -74,6 +75,8 @@ impl McpSession {
                 "capture_evidence" => self.capture_evidence(arguments),
                 "list_learner_inbox" => self.list_learner_inbox(arguments),
                 "act_on_learner_inbox_item" => self.act_on_learner_inbox_item(arguments),
+                "draft_inbox_practice" => self.draft_inbox_practice(arguments),
+                "submit_inbox_practice" => self.submit_inbox_practice(arguments),
                 "get_learner_mirror" => self.get_learner_mirror(),
                 "submit_evidence" => self.submit_evidence(arguments),
                 "get_teaching_instruction" => self.get_teaching_instruction(arguments),
@@ -331,6 +334,49 @@ impl McpSession {
                     action,
                     optional_str(arguments, "note").map(str::to_owned),
                 )
+                .map_err(|error| error.to_string())?,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    fn draft_inbox_practice(&self, arguments: &Value) -> Result<Value, String> {
+        let capture_id = required_str(arguments, "capture_id")?;
+        serde_json::to_value(
+            self.engine
+                .draft_inbox_practice(capture_id)
+                .map_err(|error| error.to_string())?,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    fn submit_inbox_practice(&mut self, arguments: &Value) -> Result<Value, String> {
+        let capture_id = required_str(arguments, "capture_id")?;
+        let session = optional_str(arguments, "session").unwrap_or("mcp");
+        let response = required_str(arguments, "response")?;
+        let confidence = required_i64(arguments, "confidence")?;
+        if !(1..=5).contains(&confidence) {
+            return Err("confidence must be in 1..=5".to_owned());
+        }
+        let draft = self
+            .engine
+            .draft_inbox_practice(capture_id)
+            .map_err(|error| error.to_string())?;
+        let observation = crate::read_behavior_observation_now(
+            self.engine.conn(),
+            session,
+            draft.concept_id.as_str(),
+        )
+        .map_err(|error| error.to_string())?;
+        serde_json::to_value(
+            self.engine
+                .submit_inbox_practice(InboxPracticeSubmissionInput {
+                    capture_id: capture_id.to_owned(),
+                    session_id: session.to_owned(),
+                    response_text: response.to_owned(),
+                    self_confidence: confidence as i32,
+                    latency_ms: observation.latency_ms,
+                    hint_count: observation.hint_count,
+                })
                 .map_err(|error| error.to_string())?,
         )
         .map_err(|error| error.to_string())
@@ -604,6 +650,31 @@ fn tool_definitions() -> Value {
             }
         },
         {
+            "name": "draft_inbox_practice",
+            "description": "Create a deterministic learner practice prompt from a practice_ready inbox capture and its existing candidate concept. Returns student-facing prompt text only; does not create attempts or expose mastery parameters.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "capture_id": {"type": "string", "description": "Practice-ready capture queue item id returned by list_learner_inbox."}
+                },
+                "required": ["capture_id"]
+            }
+        },
+        {
+            "name": "submit_inbox_practice",
+            "description": "Submit the learner's answer to an inbox practice prompt through Polaris-owned scoring. Requires learner self-confidence; ignores external AI score fields and then marks the capture practiced.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "capture_id": {"type": "string", "description": "Practice-ready capture queue item id."},
+                    "session": {"type": "string", "description": "Optional session id. Defaults to mcp."},
+                    "response": {"type": "string", "description": "Learner's own answer to the drafted practice prompt."},
+                    "confidence": {"type": "integer", "minimum": 1, "maximum": 5, "description": "Learner self-confidence collected before feedback."}
+                },
+                "required": ["capture_id", "response", "confidence"]
+            }
+        },
+        {
             "name": "get_learner_mirror",
             "description": "Return the read-only learner mirror static panel with confidence curve, phase distribution, and recent assertions.",
             "inputSchema": {
@@ -842,6 +913,8 @@ mod tests {
                 "capture_evidence",
                 "list_learner_inbox",
                 "act_on_learner_inbox_item",
+                "draft_inbox_practice",
+                "submit_inbox_practice",
                 "get_learner_mirror",
                 "submit_evidence",
                 "get_teaching_instruction",
@@ -885,6 +958,8 @@ mod tests {
             "capture_evidence",
             "list_learner_inbox",
             "act_on_learner_inbox_item",
+            "draft_inbox_practice",
+            "submit_inbox_practice",
             "get_learner_mirror",
         ] {
             assert!(
@@ -940,6 +1015,8 @@ mod tests {
                 "capture_evidence",
                 "list_learner_inbox",
                 "act_on_learner_inbox_item",
+                "draft_inbox_practice",
+                "submit_inbox_practice",
                 "get_learner_mirror",
                 "submit_evidence",
                 "get_teaching_instruction",
@@ -1264,7 +1341,7 @@ mod tests {
             &mut session,
             "act_on_learner_inbox_item",
             json!({
-                "capture_id": capture_id,
+                "capture_id": capture_id.as_str(),
                 "action": "accept"
             }),
         );
@@ -1283,6 +1360,75 @@ mod tests {
             ),
             before
         );
+    }
+
+    #[test]
+    fn p12e_mcp_drafts_and_submits_inbox_practice_without_external_score() {
+        let mut session = test_session();
+
+        let capture = call_tool_json(
+            &mut session,
+            "capture_evidence",
+            json!({
+                "text": "Ownership means one value has one owner at a time.",
+                "source": "ai-ide",
+                "candidate_concept_ids": ["ownership"]
+            }),
+        );
+        let capture_id = capture["capture_id"].as_str().unwrap().to_owned();
+        call_tool_json(
+            &mut session,
+            "act_on_learner_inbox_item",
+            json!({
+                "capture_id": capture_id,
+                "action": "accept"
+            }),
+        );
+
+        let draft = call_tool_json(
+            &mut session,
+            "draft_inbox_practice",
+            json!({"capture_id": capture_id.as_str()}),
+        );
+
+        assert_eq!(draft["capture_id"], capture_id.as_str());
+        assert_eq!(draft["status"], "practice_ready");
+        assert_eq!(draft["concept_hint"], "Ownership");
+        assert_eq!(draft["task_type"], "explain");
+        assert!(draft["prompt"].as_str().unwrap().contains("用自己的话"));
+        assert!(draft.get("p_known").is_none());
+        assert!(draft.get("theta").is_none());
+
+        let receipt = call_tool_json(
+            &mut session,
+            "submit_inbox_practice",
+            json!({
+                "capture_id": capture_id.as_str(),
+                "session": "mcp-practice",
+                "response": "Ownership controls which binding can drop the value.",
+                "confidence": 4,
+                "external_score": 1.0,
+                "final_score": 1.0
+            }),
+        );
+
+        assert_eq!(receipt["capture_id"], capture_id.as_str());
+        assert_eq!(receipt["status"], "practiced");
+        assert_eq!(receipt["effect"], "submitted");
+        assert!((receipt["provisional_score"].as_f64().unwrap() - 0.70).abs() < 1e-9);
+        assert_eq!(count_rows(session.engine().conn(), "attempts"), 1);
+        assert_eq!(count_rows(session.engine().conn(), "mastery_states"), 1);
+        assert_eq!(count_rows(session.engine().conn(), "grade_queue"), 1);
+        let final_score_count: i64 = session
+            .engine()
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM attempts WHERE final_score IS NOT NULL",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(final_score_count, 0);
     }
 
     #[test]

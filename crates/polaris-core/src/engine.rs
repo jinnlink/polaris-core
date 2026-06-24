@@ -36,6 +36,10 @@ use crate::gu::{
     GuInductionSummary,
 };
 use crate::gu_prior::{gu_prior_shadow_summary, GuPriorShadowSummary};
+use crate::inbox_practice::{
+    draft_inbox_practice, mark_inbox_practice_submitted, InboxPracticeDraft,
+    InboxPracticeSubmissionInput, InboxPracticeSubmissionReceipt,
+};
 use crate::learner_feedback::{
     record_learner_feedback, LearnerFeedbackInput, LearnerFeedbackReceipt,
 };
@@ -384,6 +388,59 @@ impl Engine {
         note: Option<String>,
     ) -> Result<LearnerInboxActionReceipt> {
         act_on_learner_inbox_item(&self.conn, capture_id, action, note)
+    }
+
+    pub fn draft_inbox_practice(&self, capture_id: &str) -> Result<InboxPracticeDraft> {
+        draft_inbox_practice(&self.conn, capture_id)
+    }
+
+    pub fn submit_inbox_practice(
+        &mut self,
+        input: InboxPracticeSubmissionInput,
+    ) -> Result<InboxPracticeSubmissionReceipt> {
+        if !(1..=5).contains(&input.self_confidence) {
+            return Err(PolarisError::InvalidParameter {
+                key: "inbox_practice.self_confidence".to_owned(),
+                value: input.self_confidence.to_string(),
+            });
+        }
+        let draft = self.draft_inbox_practice(&input.capture_id)?;
+        let session_id = input.session_id.trim().to_owned();
+        if session_id.is_empty() {
+            return Err(PolarisError::InvalidParameter {
+                key: "inbox_practice.session_id".to_owned(),
+                value: "<empty>".to_owned(),
+            });
+        }
+        let response_text = input.response_text.trim().to_owned();
+        if response_text.is_empty() {
+            return Err(PolarisError::InvalidParameter {
+                key: "inbox_practice.response_text".to_owned(),
+                value: "<empty>".to_owned(),
+            });
+        }
+
+        let receipt = self.submit(SubmitInput {
+            session_id: session_id.clone(),
+            concept_id: draft.concept_id.clone(),
+            task_type: draft.task_type.clone(),
+            prompt_text: draft.prompt.clone(),
+            response_text,
+            self_confidence: input.self_confidence,
+            latency_ms: input.latency_ms,
+            hint_count: input.hint_count,
+        })?;
+        mark_inbox_practice_submitted(&self.conn, &draft, &session_id, &receipt.attempt_id)?;
+
+        Ok(InboxPracticeSubmissionReceipt {
+            capture_id: draft.capture_id,
+            attempt_id: receipt.attempt_id,
+            status: crate::capture_queue::CaptureStatus::Practiced,
+            effect: "submitted".to_owned(),
+            message: "已提交这道小题，系统会用你的回答更新学习状态。".to_owned(),
+            provisional_score: receipt.provisional_score,
+            degraded: receipt.degraded,
+        })
     }
 
     pub fn run_gu_induction(&self) -> Result<GuInductionSummary> {

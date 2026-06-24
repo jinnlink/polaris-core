@@ -87,7 +87,8 @@ C:\MyProject\polaris-core\target\debug\polaris.exe --db C:\MyProject\polaris-dat
 然后按课程仓库自己的 today 入口带我学习。
 我贴资料、笔记、错误日志或代码片段时，请用 capture_evidence 保存。
 请定期用 list_learner_inbox 查看我保存过但还没处理的资料；如果我想练其中一条，用 act_on_learner_inbox_item 的 accept 标记为可转小题。
-我回答问题后，再用 submit_evidence 提交作答证据。
+对已经 practice_ready 的资料，先用 draft_inbox_practice 生成一道小题，让我回答；我回答后，用 submit_inbox_practice 提交回答和我的 confidence。
+普通课程题或你自己临时出的非 inbox 题，再用 submit_evidence 提交作答证据。
 需要看我现在的学习状态时，用 get_learner_mirror。
 下一步练什么，请以 get_next_task 为本地调度参考，但课程讲解以当前仓库为主。
 ```
@@ -100,13 +101,15 @@ C:\MyProject\polaris-core\target\debug\polaris.exe --db C:\MyProject\polaris-dat
 | 学生贴资料、笔记、错误日志、代码片段 | `capture_evidence` | 只保存为 raw capture，不改变掌握度 |
 | 想看保存过但还没处理的资料 | `list_learner_inbox` | 返回学生可读状态和 2 到 3 个可选动作 |
 | 想把某条资料留到后续练习 | `act_on_learner_inbox_item` | `accept` 只标记为 `practice_ready`，不生成 attempt |
-| 学生完成回答或解释 | `submit_evidence` | 进入 engine-owned scoring，才会产生 attempt 和掌握度更新 |
+| 想把某条 `practice_ready` 资料变成一道小题 | `draft_inbox_practice` | 生成学生可答的 prompt，不生成 attempt，不暴露内部概率 |
+| 学生回答 inbox 小题 | `submit_inbox_practice` | 提交回答和 `confidence`，进入 engine-owned scoring，并把条目标为 `practiced` |
+| 学生完成普通课程题或非 inbox 解释 | `submit_evidence` | 进入 engine-owned scoring，才会产生 attempt 和掌握度更新 |
 | 学生说累了、卡住、想暂停 | `record_learner_feedback` | 记录学习状态，不直接改掌握度 |
 | 想知道当前状态 | `get_learner_mirror` | 读取学习者镜像 |
 | 想安排下一步练习 | `get_next_task` | 读取本地调度建议 |
 | 想看系统信任面 | `get_trust_panel` | 查看验证门、实验和治理状态 |
 
-最重要的边界：`capture_evidence` 不是“我学会了”。它只是把资料放进本地库。只有学生作答、解释、迁移应用后，才应该用 `submit_evidence`。
+最重要的边界：`capture_evidence` 不是“我学会了”。它只是把资料放进本地库。`draft_inbox_practice` 也只是出一道小题。只有学生作答、解释、迁移应用后，才应该用 `submit_inbox_practice` 或 `submit_evidence`。
 
 ## 推荐学习流程
 
@@ -116,9 +119,10 @@ C:\MyProject\polaris-core\target\debug\polaris.exe --db C:\MyProject\polaris-dat
 4. AI 用 `capture_evidence` 保存资料和现场证据。
 5. AI 用 `list_learner_inbox` 看是否有值得处理的资料，并只给 2 到 3 个选择。
 6. 如果学生选择把某条资料变成练习，AI 先用 `act_on_learner_inbox_item(action=accept)` 标记，不要直接算掌握。
-7. AI 引导学生回答一个问题，而不是直接给结论。
-8. 学生回答后，AI 用 `submit_evidence` 提交回答。
-9. AI 用 `get_learner_mirror` 或 `get_next_task` 决定下一步。
+7. AI 用 `draft_inbox_practice` 生成一个具体问题，而不是直接给结论。
+8. 学生回答后，AI 询问或记录学生 `confidence`，再用 `submit_inbox_practice` 提交回答。
+9. 普通课程题仍可用 `submit_evidence`，但不要把 AI 自己的评分字段当掌握度权威。
+10. AI 用 `get_learner_mirror` 或 `get_next_task` 决定下一步。
 
 ## 常见误区
 
@@ -145,6 +149,14 @@ C:\MyProject\polaris-core\target\debug\polaris.exe --db C:\MyProject\polaris-dat
 
 ```powershell
 C:\MyProject\polaris-core\target\debug\polaris.exe --db C:\MyProject\polaris-data\polaris.sqlite inbox list
+```
+
+把一条收件箱资料变成练习：
+
+```powershell
+C:\MyProject\polaris-core\target\debug\polaris.exe --db C:\MyProject\polaris-data\polaris.sqlite inbox act --capture <capture_id> --action accept
+C:\MyProject\polaris-core\target\debug\polaris.exe --db C:\MyProject\polaris-data\polaris.sqlite inbox practice --capture <capture_id>
+C:\MyProject\polaris-core\target\debug\polaris.exe --db C:\MyProject\polaris-data\polaris.sqlite inbox submit --capture <capture_id> --response "我的解释..." --confidence 4
 ```
 
 读取学习者镜像：
