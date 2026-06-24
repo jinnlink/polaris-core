@@ -26,7 +26,9 @@ use polaris_core::ops::{
 use polaris_core::pack::validate_pack_path;
 use polaris_core::pack_state::{PackSummary, PackSwitchReceipt, ThetaMode};
 use polaris_core::privacy::PrivacyCallInventory;
-use polaris_core::project_manifest::{discover_project_manifest, DiscoveredProjectManifest};
+use polaris_core::project_manifest::{
+    discover_learning_projects, discover_project_manifest, DiscoveredProjectManifest,
+};
 use polaris_core::sandbox::{run_pack_sandbox, SandboxLearner, SandboxOptions, SandboxReport};
 use polaris_core::status::StatusSnapshot;
 use polaris_core::trust::{TrustPanel, TrustParameter};
@@ -373,6 +375,14 @@ enum ProjectCommands {
         #[arg(long)]
         json: bool,
     },
+    Scan {
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+        #[arg(long = "max-depth", default_value_t = 3)]
+        max_depth: usize,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -501,18 +511,30 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 print!("{}", config_list_text(&specs));
             }
         }
-        Commands::Project {
-            command: ProjectCommands::Detect { path, json },
-        } => {
-            let discovered = discover_project_manifest(path)?.ok_or_else(|| {
-                adapter_error("no p-os.toml found from the given path or its parents")
-            })?;
-            if json {
-                println!("{}", serde_json::to_string_pretty(&discovered)?);
-            } else {
-                print!("{}", project_detect_text(&discovered));
+        Commands::Project { command } => match command {
+            ProjectCommands::Detect { path, json } => {
+                let discovered = discover_project_manifest(path)?.ok_or_else(|| {
+                    adapter_error("no p-os.toml found from the given path or its parents")
+                })?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&discovered)?);
+                } else {
+                    print!("{}", project_detect_text(&discovered));
+                }
             }
-        }
+            ProjectCommands::Scan {
+                root,
+                max_depth,
+                json,
+            } => {
+                let projects = discover_learning_projects(&root, max_depth)?;
+                if json {
+                    println!("{}", project_scan_json(&root, &projects)?);
+                } else {
+                    print!("{}", project_scan_text(&root, &projects));
+                }
+            }
+        },
         Commands::Diagnose { concept } => {
             let conn = open_database_read_only(cli.db.unwrap_or_else(default_db_path))?;
             let engine = Engine::new(conn);
@@ -1875,6 +1897,36 @@ fn project_detect_text(discovered: &DiscoveredProjectManifest) -> String {
     )
 }
 
+fn project_scan_json(
+    root: &Path,
+    projects: &[DiscoveredProjectManifest],
+) -> serde_json::Result<String> {
+    serde_json::to_string_pretty(&serde_json::json!({
+        "root": root.display().to_string(),
+        "projects": projects,
+    }))
+}
+
+fn project_scan_text(root: &Path, projects: &[DiscoveredProjectManifest]) -> String {
+    let mut text = format!(
+        "root: {}\nprojects_found: {}\n",
+        root.display(),
+        projects.len()
+    );
+    for project in projects {
+        text.push_str(&format!(
+            "- project_id: {}\n  title: {}\n  kind: {}\n  root: {}\n  manifest: {}\n  today_command: {}\n",
+            project.manifest.project_id,
+            project.manifest.title,
+            project.manifest.kind,
+            project.project_root.display(),
+            project.manifest_path.display(),
+            project.manifest.entry.today_command
+        ));
+    }
+    text
+}
+
 fn print_diagnosis(diagnosis: polaris_core::diagnosis::GraphDiagnosis) {
     println!("concept: {}", diagnosis.concept_id);
     println!("latest_failed: {}", diagnosis.latest_failed);
@@ -2137,6 +2189,16 @@ mod tests {
             ],
             vec!["polaris", "project", "detect"],
             vec!["polaris", "project", "detect", "--path", ".", "--json"],
+            vec![
+                "polaris",
+                "project",
+                "scan",
+                "--root",
+                "examples/project-manifests",
+                "--max-depth",
+                "2",
+            ],
+            vec!["polaris", "project", "scan", "--root", ".", "--json"],
         ] {
             Cli::try_parse_from(args).unwrap();
         }

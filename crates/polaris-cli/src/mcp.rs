@@ -6,7 +6,7 @@ use polaris_core::engine::{Engine, SubmitInput};
 use polaris_core::inbox_practice::InboxPracticeSubmissionInput;
 use polaris_core::learner_feedback::LearnerFeedbackInput;
 use polaris_core::learner_inbox::LearnerInboxAction;
-use polaris_core::project_manifest::discover_project_manifest;
+use polaris_core::project_manifest::{discover_learning_projects, discover_project_manifest};
 use serde_json::{json, Value};
 
 pub struct McpSession {
@@ -73,6 +73,7 @@ impl McpSession {
                 "record_learner_feedback" => self.record_learner_feedback(arguments),
                 "get_trust_panel" => self.get_trust_panel(),
                 "detect_project_manifest" => self.detect_project_manifest(arguments),
+                "discover_learning_projects" => self.discover_learning_projects(arguments),
                 "capture_evidence" => self.capture_evidence(arguments),
                 "list_learner_inbox" => self.list_learner_inbox(arguments),
                 "act_on_learner_inbox_item" => self.act_on_learner_inbox_item(arguments),
@@ -279,6 +280,22 @@ impl McpSession {
             "project_root": discovered.project_root.display().to_string(),
             "manifest_path": discovered.manifest_path.display().to_string(),
             "manifest": discovered.manifest,
+        }))
+    }
+
+    fn discover_learning_projects(&self, arguments: &Value) -> Result<Value, String> {
+        let root = optional_str(arguments, "root")
+            .or_else(|| optional_str(arguments, "path"))
+            .unwrap_or(".");
+        let max_depth = optional_i64(arguments, "max_depth")
+            .unwrap_or(3)
+            .clamp(0, 8) as usize;
+        let projects =
+            discover_learning_projects(root, max_depth).map_err(|error| error.to_string())?;
+
+        Ok(json!({
+            "root": root,
+            "projects": projects,
         }))
     }
 
@@ -634,6 +651,18 @@ fn tool_definitions() -> Value {
             }
         },
         {
+            "name": "discover_learning_projects",
+            "description": "Scan downward from a learning root for child p-os.toml projects. This is read-only and stops descending once a project manifest is found.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "root": {"type": "string", "description": "Learning root directory to scan. Defaults to the MCP server current directory."},
+                    "path": {"type": "string", "description": "Alias for root, for clients that already pass a path field."},
+                    "max_depth": {"type": "integer", "minimum": 0, "maximum": 8, "description": "Maximum child directory depth to scan. Defaults to 3 and is clamped to 0..8."}
+                }
+            }
+        },
+        {
             "name": "capture_evidence",
             "description": "Record external learning material into evidence_items and capture_queue as pending raw capture. This is recorded only and never changes mastery or creates attempts.",
             "inputSchema": {
@@ -976,6 +1005,7 @@ mod tests {
                 "record_learner_feedback",
                 "get_trust_panel",
                 "detect_project_manifest",
+                "discover_learning_projects",
                 "capture_evidence",
                 "list_learner_inbox",
                 "act_on_learner_inbox_item",
@@ -1023,6 +1053,7 @@ mod tests {
             "record_learner_feedback",
             "get_trust_panel",
             "detect_project_manifest",
+            "discover_learning_projects",
             "capture_evidence",
             "list_learner_inbox",
             "act_on_learner_inbox_item",
@@ -1082,6 +1113,7 @@ mod tests {
                 "record_learner_feedback",
                 "get_trust_panel",
                 "detect_project_manifest",
+                "discover_learning_projects",
                 "capture_evidence",
                 "list_learner_inbox",
                 "act_on_learner_inbox_item",
@@ -1294,6 +1326,35 @@ mod tests {
         );
         assert_eq!(payload["manifest"]["evidence"]["include"][0], "course/**");
         assert_eq!(payload["manifest"]["ui"]["preferred_shell"], "aura");
+    }
+
+    #[test]
+    fn mcp_discovers_learning_projects_under_root() {
+        let mut session = test_session();
+        let root = TestDir::new("mcp-project-scan");
+        let course = root.path().join("rust-mastery-lab");
+        fs::create_dir_all(&course).unwrap();
+        write_test_manifest(&course);
+        let ignored = root.path().join("_worktrees/old-copy");
+        fs::create_dir_all(&ignored).unwrap();
+        write_test_manifest(&ignored);
+
+        let payload = call_tool_json(
+            &mut session,
+            "discover_learning_projects",
+            json!({"root": root.path().display().to_string(), "max_depth": 3}),
+        );
+
+        assert_eq!(payload["root"], root.path().display().to_string());
+        assert_eq!(payload["projects"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            payload["projects"][0]["project_root"],
+            course.display().to_string()
+        );
+        assert_eq!(
+            payload["projects"][0]["manifest"]["project_id"],
+            "rust-mastery-lab"
+        );
     }
 
     #[test]

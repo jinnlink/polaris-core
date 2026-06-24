@@ -21,13 +21,21 @@
 
 最短可用流程见 [AI IDE 快速接入](docs/AI_IDE_QUICKSTART.md)；完整说明见 [AI IDE 使用指南](docs/AI_IDE_USAGE.md)。
 
-如果你想直接生成本机可复制的 MCP 配置、学习开场提示和检查清单：
+如果你想打开 `C:\MyProject\Learned` 后让 AI 自动发现里面的课程项目，推荐先生成 Learned 根目录接入包：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\learned_auto_connect.ps1
+```
+
+生成内容会在 `target\p14d-learned-auto-connect\`；MCP 配置的 `cwd` 指向 `C:\MyProject\Learned`，AI 开场后先调用 `discover_learning_projects`，再接入具体课程。
+
+如果你想为单个课程仓库生成本机可复制的 MCP 配置、学习开场提示和检查清单：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\ai_ide_onboarding_kit.ps1 -ProjectPath C:\MyProject\Learned\rust-mastery-lab -DbPath target\p14c-learned-ai-ide.sqlite -OutDir target\p14c-learned-ai-ide-kit
 ```
 
-生成内容会在 `target\p14c-learned-ai-ide-kit\`；脚本默认只写 `target\` 下临时库和输出文件，不碰用户长期数据库。
+脚本默认只写 `target\` 下临时库和输出文件，不碰用户长期数据库或 `C:\MyProject\Learned`。
 
 想先确认本机闭环能跑通，可以运行 [真实使用 smoke](docs/REAL_USE_SMOKE.md)：
 

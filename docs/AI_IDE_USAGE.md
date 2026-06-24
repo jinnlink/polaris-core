@@ -4,7 +4,15 @@
 
 核心判断：**不用给每门课程做一个 MCP。** 课程仓库提供内容和入口，AI IDE 连接同一个 Polaris MCP，先发现当前课程项目，再调用 Polaris tools。
 
-如果你只想尽快接起来，先看 [AI IDE 快速接入](AI_IDE_QUICKSTART.md)。它会用 `scripts\ai_ide_onboarding_kit.ps1` 生成本机可复制的 MCP 配置、学习开场提示和检查清单。
+如果你只想尽快接起来，先看 [AI IDE 快速接入](AI_IDE_QUICKSTART.md)。它会用 `scripts\learned_auto_connect.ps1` 或 `scripts\ai_ide_onboarding_kit.ps1` 生成本机可复制的 MCP 配置、学习开场提示和检查清单。
+
+如果你希望在 AI IDE 里直接打开 `C:\MyProject\Learned`，让 AI 自动发现里面的课程项目，运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\learned_auto_connect.ps1
+```
+
+它会生成 `target\p14d-learned-auto-connect\mcp-config.json`、`start-from-learned-prompt.md`、`projects.json` 和 `checklist.md`。配置里的 `cwd` 是 `C:\MyProject\Learned`；AI 开场后先调用 `discover_learning_projects`，选中课程后再调用 `detect_project_manifest(path=project_root)`。
 
 ## 你需要准备什么
 
@@ -57,6 +65,14 @@ powershell -ExecutionPolicy Bypass -File scripts\ai_ide_onboarding_kit.ps1 -Proj
 - `checklist.md`：第一次接入时逐项自检。
 
 通用模板在 `examples\ai-ide\`。
+
+如果你希望从 `C:\MyProject\Learned` 根目录无感接入，而不是指定单个课程仓库，用：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\learned_auto_connect.ps1
+```
+
+这个脚本只读扫描 `C:\MyProject\Learned` 下的课程项目，输出的 MCP 配置会把 `cwd` 设为 `C:\MyProject\Learned`。它不会修改 `C:\MyProject\Learned`。
 
 ## 第一次初始化
 
@@ -118,6 +134,17 @@ C:\MyProject\polaris-core\target\debug\polaris.exe --db C:\MyProject\polaris-dat
 }
 ```
 
+如果 MCP server 的 `cwd` 设为 `C:\MyProject\Learned`，让 AI 先调用：
+
+```json
+{
+  "root": "C:\\MyProject\\Learned",
+  "max_depth": 3
+}
+```
+
+对应 tool：`discover_learning_projects`。返回项目后，再用 `detect_project_manifest` 传选中的 `project_root`。
+
 ## 学习时怎么说
 
 打开课程仓库后，可以先对 AI 说：
@@ -134,10 +161,21 @@ C:\MyProject\polaris-core\target\debug\polaris.exe --db C:\MyProject\polaris-dat
 下一步练什么，请以 get_next_task 为本地调度参考，但课程讲解以当前仓库为主。
 ```
 
+如果你打开的是 `C:\MyProject\Learned` 根目录，可以改成：
+
+```text
+请先调用 Polaris 的 discover_learning_projects，root 传 C:\MyProject\Learned，max_depth 传 3。
+如果只发现一个课程项目，请直接选择它；如果发现多个，请列出 2 到 3 个让我选。
+然后对选中的 project_root 调用 detect_project_manifest，确认课程项目。
+再调用 get_ai_interaction_profile，按 guidance 调整你的性格、话量、解释深度、主动程度和介入频率。
+课程怎么教以选中的课程仓库为主，Polaris 负责记录证据、调度和学习者镜像。
+```
+
 ## AI 应该调用哪些工具
 
 | 场景 | MCP tool | 说明 |
 |---|---|---|
+| 刚打开学习根目录 | `discover_learning_projects` | 从 `C:\MyProject\Learned` 只读扫描子课程，找到 `p-os.toml` 后再选择课程 |
 | 刚打开课程仓库 | `detect_project_manifest` | 发现 `p-os.toml`，知道课程名、默认 pack 和今天入口 |
 | 开始对话或用户改了 AI 风格 | `get_ai_interaction_profile` | 读取性格、话量、解释深度、主动程度、介入频率和 guidance |
 | 用户要求“你少说点 / 多解释 / 主动一点 / 别老打断” | `update_ai_interaction_profile` | 更新本地交互偏好，只影响 AI 说话方式，不影响掌握度 |
@@ -183,21 +221,22 @@ AI IDE 也可以通过 MCP 的 `update_ai_interaction_profile` 修改这些值�
 
 ## 推荐学习流程
 
-1. AI 调用 `detect_project_manifest`。
-2. AI 调用 `get_ai_interaction_profile`，按 `guidance` 调整说话和介入方式。
-3. AI 根据 `entry.today_command` 或课程仓库约定打开今天的学习内容。
-4. 学生正常学习、提问、贴代码或错误。
-5. AI 用 `capture_evidence` 保存资料和现场证据。
-6. AI 用 `list_learner_inbox` 看是否有值得处理的资料，并只给 2 到 3 个选择。
-7. 如果学生选择把某条资料变成练习，AI 先用 `act_on_learner_inbox_item(action=accept)` 标记，不要直接算掌握。
-8. AI 用 `draft_inbox_practice` 生成一个具体问题，而不是直接给结论。
-9. 学生回答后，AI 询问或记录学生 `confidence`，再用 `submit_inbox_practice` 提交回答。
-10. 普通课程题仍可用 `submit_evidence`，但必须先有 `concept_id`/`concept`、学生回答和 `confidence`；不要把 AI 自己的评分字段当掌握度权威。
-11. AI 用 `get_learner_mirror` 或 `get_next_task` 决定下一步。
+1. 如果打开的是学习根目录，AI 先调用 `discover_learning_projects` 并选择课程；如果打开的是单课程仓库，AI 直接调用 `detect_project_manifest`。
+2. AI 对选中的课程调用 `detect_project_manifest`，确认 `project_root`、`default_pack` 和 `entry.today_command`。
+3. AI 调用 `get_ai_interaction_profile`，按 `guidance` 调整说话和介入方式。
+4. AI 根据 `entry.today_command` 或课程仓库约定打开今天的学习内容。
+5. 学生正常学习、提问、贴代码或错误。
+6. AI 用 `capture_evidence` 保存资料和现场证据。
+7. AI 用 `list_learner_inbox` 看是否有值得处理的资料，并只给 2 到 3 个选择。
+8. 如果学生选择把某条资料变成练习，AI 先用 `act_on_learner_inbox_item(action=accept)` 标记，不要直接算掌握。
+9. AI 用 `draft_inbox_practice` 生成一个具体问题，而不是直接给结论。
+10. 学生回答后，AI 询问或记录学生 `confidence`，再用 `submit_inbox_practice` 提交回答。
+11. 普通课程题仍可用 `submit_evidence`，但必须先有 `concept_id`/`concept`、学生回答和 `confidence`；不要把 AI 自己的评分字段当掌握度权威。
+12. AI 用 `get_learner_mirror` 或 `get_next_task` 决定下一步。
 
 ## 常见误区
 
-- **误区：每门课程都要做一个 MCP。** 不需要。课程仓库只要声明 `p-os.toml`，AI IDE 连接同一个 Polaris MCP。
+- **误区：每门课程都要做一个 MCP。** 不需要。课程仓库只要声明 `p-os.toml`，AI IDE 连接同一个 Polaris MCP；打开学习根目录时先用 `discover_learning_projects` 找到课程即可。
 - **误区：AI 说你懂了就算掌握。** 不算。外部 AI 判断只能作为证据，掌握度由 Polaris 引擎根据 evidence-bound scoring 更新。
 - **误区：保存资料会改变掌握度。** 不会。`capture_evidence` 返回 `recorded_only=true`，表示只记录。
 - **误区：Polaris 要负责所有教学内容。** 不对。课程怎么教通常由课程仓库决定；Polaris 负责学习状态、调度、证据和镜像。
@@ -207,6 +246,7 @@ AI IDE 也可以通过 MCP 的 `update_ai_interaction_profile` 修改这些值�
 查看项目声明：
 
 ```powershell
+C:\MyProject\polaris-core\target\debug\polaris.exe project scan --root C:\MyProject\Learned --max-depth 3
 C:\MyProject\polaris-core\target\debug\polaris.exe project detect --path C:\MyProject\Learned\rust-mastery-lab
 ```
 

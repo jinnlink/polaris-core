@@ -1,6 +1,6 @@
 # AI IDE 快速接入 Polaris
 
-这页只解决一个问题：你已经有一个课程仓库，怎么让 AI IDE 接上 Polaris，然后开始学。
+这页只解决一个问题：你已经有课程仓库或学习根目录，怎么让 AI IDE 接上 Polaris，然后开始学。
 
 核心关系：
 
@@ -12,13 +12,28 @@
 
 ## 1. 生成接入包
 
-在 `C:\MyProject\polaris-core` 运行：
+如果你在 AI IDE 里直接打开 `C:\MyProject\Learned`，用自动发现接入包：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\learned_auto_connect.ps1
+```
+
+它会：
+
+- 构建 `target\debug\polaris.exe`。
+- 用 `target\p14d-learned-auto.sqlite` 临时库初始化 Rust pack。
+- 只读扫描 `C:\MyProject\Learned` 下的 `p-os.toml` 学习项目。
+- 生成以 `C:\MyProject\Learned` 为 `cwd` 的 MCP 配置、开场提示、项目清单和检查清单。
+
+AI 开场后先调用 `discover_learning_projects`，选中课程项目后再调用 `detect_project_manifest(path=project_root)`。
+
+如果你只想接入一个明确课程仓库，在 `C:\MyProject\polaris-core` 运行：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\ai_ide_onboarding_kit.ps1
 ```
 
-它会：
+单课程脚本会：
 
 - 构建 `target\debug\polaris.exe`。
 - 用 `target\p14c-ai-ide-kit.sqlite` 临时库初始化 Rust pack。
@@ -31,13 +46,31 @@ powershell -ExecutionPolicy Bypass -File scripts\ai_ide_onboarding_kit.ps1
 powershell -ExecutionPolicy Bypass -File scripts\ai_ide_onboarding_kit.ps1 -ProjectPath C:\MyProject\Learned\rust-mastery-lab -DbPath target\p14c-learned-ai-ide.sqlite -OutDir target\p14c-learned-ai-ide-kit
 ```
 
-脚本默认只写 `target\...`，不会写你的长期数据库。
+两个脚本默认都只写 `target\...`，不会写你的长期数据库，也不会修改 `C:\MyProject\Learned`。
 
 ## 2. 复制 MCP 配置
 
 打开脚本输出的 `mcp-config.json`，把 `mcpServers.polaris-core` 配置块复制到 AI IDE 的 MCP 配置里。
 
-脚本生成的试跑配置形状类似：
+Learned 自动接入包的配置形状类似：
+
+```json
+{
+  "mcpServers": {
+    "polaris-core": {
+      "command": "C:\\MyProject\\polaris-core\\target\\debug\\polaris.exe",
+      "args": [
+        "--db",
+        "C:\\MyProject\\polaris-core\\target\\p14d-learned-auto.sqlite",
+        "mcp"
+      ],
+      "cwd": "C:\\MyProject\\Learned"
+    }
+  }
+}
+```
+
+单课程脚本生成的试跑配置形状类似：
 
 ```json
 {
@@ -55,17 +88,18 @@ powershell -ExecutionPolicy Bypass -File scripts\ai_ide_onboarding_kit.ps1 -Proj
 }
 ```
 
-如果你的 AI IDE 不支持 `cwd`，仍然可以保留 `command` 和 `args`，然后要求 AI 调用 `detect_project_manifest` 时显式传课程路径。
+如果你的 AI IDE 不支持 `cwd`，仍然可以保留 `command` 和 `args`。打开 Learned 根目录时，让 AI 调用 `discover_learning_projects(root="C:\\MyProject\\Learned")`；打开单课程仓库时，让 AI 调用 `detect_project_manifest` 并显式传课程路径。
 
 ## 3. 打开课程仓库
 
-在 AI IDE 中打开课程仓库，例如：
+在 AI IDE 中打开学习根目录或课程仓库，例如：
 
 ```text
+C:\MyProject\Learned
 C:\MyProject\Learned\rust-mastery-lab
 ```
 
-课程仓库根目录需要有 `p-os.toml`。它只声明项目、默认 pack、今天入口和可收集证据路径，不替代课程本身。
+课程仓库根目录需要有 `p-os.toml`。如果你打开的是 `C:\MyProject\Learned`，AI 会先扫描子目录里的 `p-os.toml` 再接入课程。`p-os.toml` 只声明项目、默认 pack、今天入口和可收集证据路径，不替代课程本身。
 
 ## 4. 粘贴开场提示
 
@@ -73,7 +107,8 @@ C:\MyProject\Learned\rust-mastery-lab
 
 这份提示会要求 AI：
 
-- 先调用 `detect_project_manifest`。
+- 打开 Learned 根目录时先调用 `discover_learning_projects`，选定项目后调用 `detect_project_manifest`。
+- 打开单课程仓库时先调用 `detect_project_manifest`。
 - 再调用 `get_ai_interaction_profile`，按你的性格、话量、解释深度、主动程度和介入频率说话。
 - 贴资料时用 `capture_evidence` 保存。
 - 练 inbox 资料时先 `act_on_learner_inbox_item(action=accept)`，再 `draft_inbox_practice`。
@@ -97,11 +132,18 @@ C:\MyProject\Learned\rust-mastery-lab
 
 第一次跑通后，你就可以按课程正常学习。AI 讲不清时继续问；你贴的资料、错误、笔记可以先进入 Polaris 收件箱，再被转成真正的小练习。
 
+如果你是从 `C:\MyProject\Learned` 根目录启动，第一步改成：
+
+```text
+1. discover_learning_projects
+2. detect_project_manifest(path=<selected project_root>)
+```
+
 ## 常见问题
 
 **每个课程都要做一个 MCP 吗？**
 
-不需要。同一个 Polaris MCP 通过 `detect_project_manifest` 识别当前课程。
+不需要。同一个 Polaris MCP 可以通过 `discover_learning_projects` 扫描学习根目录，再通过 `detect_project_manifest` 识别当前课程。
 
 **AI 说我懂了，Polaris 就会改掌握度吗？**
 

@@ -344,6 +344,7 @@ MCP 使用 JSON-RPC 2.0。通知方法 `notifications/*` 返回空响应。未�
 - `record_learner_feedback`
 - `get_trust_panel`
 - `detect_project_manifest`
+- `discover_learning_projects`
 - `capture_evidence`
 - `list_learner_inbox`
 - `act_on_learner_inbox_item`
@@ -372,6 +373,7 @@ MCP 使用 JSON-RPC 2.0。通知方法 `notifications/*` 返回空响应。未�
 
 - `get_next_task`: 与 HTTP `POST /next` 等价，缺省 session 为 `mcp`。
 - `detect_project_manifest`: 从 `path`（可选，缺省为 MCP server 当前目录）向上发现 `p-os.toml`。找到时返回 `found=true`、`project_root`、`manifest_path`、`manifest`；未找到时返回 `found=false`，不视为工具错误。
+- `discover_learning_projects`: 从 `root`（可选，缺省为 MCP server 当前目录；`path` 可作为 alias）向下只读扫描 `p-os.toml` 学习项目声明，返回 `root` 与 `projects`。扫描会跳过 `_worktrees`、`.git`、`target` 等非课程目录，找到一个项目后不继续深入该项目内部；该工具只发现课程项目，不修改课程仓库、不生成掌握度。
 - `capture_evidence`: 与 HTTP `POST /capture` 语义对齐，把外部学习资料保存为 pending raw capture；不得生成 attempt、不得改变 mastery、不得写 grade queue，外部评分字段不被信任。
 - `list_learner_inbox`: 与 HTTP `GET /inbox` 语义对齐；可选 `statuses` 与 `limit` 参数，返回 `items`。输出必须保持学生可读，不展示内部参数。
 - `act_on_learner_inbox_item`: 与 HTTP `POST /inbox/action` 语义对齐；`accept` 只标记 `practice_ready`，`defer` 保留稍后处理，`ignore` 隐藏，`archive` 归档。不得生成 attempt、mastery 或 grade queue。

@@ -110,6 +110,21 @@ pub fn discover_project_manifest(
     Ok(None)
 }
 
+pub fn discover_learning_projects(
+    root: impl AsRef<Path>,
+    max_depth: usize,
+) -> Result<Vec<DiscoveredProjectManifest>, ProjectManifestError> {
+    let root = root.as_ref();
+    let mut projects = Vec::new();
+    scan_learning_projects(root, root, 0, max_depth, &mut projects)?;
+    projects.sort_by(|left, right| {
+        left.project_root
+            .cmp(&right.project_root)
+            .then_with(|| left.manifest.project_id.cmp(&right.manifest.project_id))
+    });
+    Ok(projects)
+}
+
 pub fn load_project_manifest(
     path: impl AsRef<Path>,
 ) -> Result<ProjectManifest, ProjectManifestError> {
@@ -124,6 +139,87 @@ pub fn load_project_manifest(
             source,
         })?;
     validate_manifest(manifest)
+}
+
+fn scan_learning_projects(
+    root: &Path,
+    dir: &Path,
+    depth: usize,
+    max_depth: usize,
+    projects: &mut Vec<DiscoveredProjectManifest>,
+) -> Result<(), ProjectManifestError> {
+    if should_skip_scan_dir(root, dir) {
+        return Ok(());
+    }
+
+    let manifest_path = dir.join("p-os.toml");
+    if manifest_path.is_file() {
+        let manifest = load_project_manifest(&manifest_path)?;
+        projects.push(DiscoveredProjectManifest {
+            project_root: dir.to_path_buf(),
+            manifest_path,
+            manifest,
+        });
+        return Ok(());
+    }
+
+    if depth >= max_depth {
+        return Ok(());
+    }
+
+    let mut children = Vec::new();
+    let read_dir = std::fs::read_dir(dir).map_err(|source| ProjectManifestError::Read {
+        path: dir.display().to_string(),
+        source,
+    })?;
+    for entry in read_dir {
+        let entry = entry.map_err(|source| ProjectManifestError::Read {
+            path: dir.display().to_string(),
+            source,
+        })?;
+        let file_type = entry
+            .file_type()
+            .map_err(|source| ProjectManifestError::Read {
+                path: entry.path().display().to_string(),
+                source,
+            })?;
+        if file_type.is_dir() && !file_type.is_symlink() {
+            children.push(entry.path());
+        }
+    }
+    children.sort();
+
+    for child in children {
+        scan_learning_projects(root, &child, depth + 1, max_depth, projects)?;
+    }
+    Ok(())
+}
+
+fn should_skip_scan_dir(root: &Path, dir: &Path) -> bool {
+    if dir == root {
+        return false;
+    }
+    let Some(name) = dir.file_name().and_then(|value| value.to_str()) else {
+        return false;
+    };
+    matches!(
+        name,
+        ".git"
+            | ".hg"
+            | ".svn"
+            | ".agents"
+            | ".claude"
+            | ".cursor"
+            | ".codewhale"
+            | ".deepseek"
+            | "_worktrees"
+            | "_library"
+            | "_local-runtimes"
+            | "target"
+            | "node_modules"
+            | ".venv"
+            | "venv"
+    )
 }
 
 fn validate_manifest(manifest: ProjectManifest) -> Result<ProjectManifest, ProjectManifestError> {

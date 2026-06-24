@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use polaris_core::project_manifest::{
-    discover_project_manifest, load_project_manifest, ProjectManifestError,
+    discover_learning_projects, discover_project_manifest, load_project_manifest,
+    ProjectManifestError,
 };
 
 #[test]
@@ -89,9 +90,79 @@ fn discovery_returns_none_when_no_manifest_exists() {
     assert!(discovered.is_none());
 }
 
+#[test]
+fn scans_learning_projects_under_root() {
+    let root = TestDir::new("scan");
+    let course = root.path().join("rust-mastery-lab");
+    fs::create_dir_all(course.join("course/day01")).unwrap();
+    write_manifest(&course, TEST_MANIFEST);
+
+    let worktree = root.path().join("_worktrees/old-copy");
+    fs::create_dir_all(&worktree).unwrap();
+    write_manifest(
+        &worktree,
+        r#"
+schema_version = 1
+project_id = "ignored-worktree-copy"
+title = "Ignored"
+kind = "course"
+default_pack = "rust"
+default_entry = "today"
+
+[entry]
+today_command = "ignored"
+"#,
+    );
+
+    let nested_fixture = course.join("engine/polaris-core/examples/project-manifests/fixture");
+    fs::create_dir_all(&nested_fixture).unwrap();
+    write_manifest(
+        &nested_fixture,
+        r#"
+schema_version = 1
+project_id = "ignored-nested-fixture"
+title = "Ignored Nested"
+kind = "course"
+default_pack = "rust"
+default_entry = "today"
+
+[entry]
+today_command = "ignored"
+"#,
+    );
+
+    let projects = discover_learning_projects(root.path(), 3).unwrap();
+
+    assert_eq!(projects.len(), 1);
+    assert_eq!(projects[0].project_root, course);
+    assert_eq!(projects[0].manifest.project_id, "rust-mastery-lab");
+}
+
 fn write_manifest(root: &Path, content: &str) {
     fs::write(root.join("p-os.toml"), content.trim_start()).unwrap();
 }
+
+const TEST_MANIFEST: &str = r#"
+schema_version = 1
+project_id = "rust-mastery-lab"
+title = "Rust 与软件工程训练"
+kind = "course"
+default_pack = "rust"
+default_entry = "today"
+
+[entry]
+start_label = "继续今天"
+capture_label = "记录我刚学到的"
+stuck_label = "我卡住了"
+today_command = "cargo run -p labctl -- today --date {today}"
+
+[evidence]
+include = ["course/**", "exercises/**"]
+ignore = ["target/**", ".git/**"]
+
+[ui]
+preferred_shell = "aura"
+"#;
 
 struct TestDir {
     path: PathBuf,
