@@ -4,6 +4,8 @@
 
 核心判断：**不用给每门课程做一个 MCP。** 课程仓库提供内容和入口，AI IDE 连接同一个 Polaris MCP，先发现当前课程项目，再调用 Polaris tools。
 
+如果你只想尽快接起来，先看 [AI IDE 快速接入](AI_IDE_QUICKSTART.md)。它会用 `scripts\ai_ide_onboarding_kit.ps1` 生成本机可复制的 MCP 配置、学习开场提示和检查清单。
+
 ## 你需要准备什么
 
 - 一个课程仓库，例如 `C:\MyProject\Learned\rust-mastery-lab`。
@@ -11,11 +13,14 @@
 - 一个支持 MCP 的 AI IDE。
 - 课程仓库根目录有 `p-os.toml`。
 
-如果课程仓库还没有 `p-os.toml`，可以先复制样例：
+如果你的课程仓库还没有 `p-os.toml`，可以先把样例复制到你自己的课程仓库：
 
 ```powershell
-Copy-Item C:\MyProject\polaris-core\examples\project-manifests\rust-mastery-lab\p-os.toml C:\MyProject\Learned\rust-mastery-lab\p-os.toml
+$CourseRepo = "C:\MyProject\YourCourse"
+Copy-Item C:\MyProject\polaris-core\examples\project-manifests\rust-mastery-lab\p-os.toml (Join-Path $CourseRepo "p-os.toml")
 ```
+
+在本项目里，`C:\MyProject\Learned\rust-mastery-lab` 是只读验证参考路径；不要为了试文档去修改它。
 
 `p-os.toml` 只说明“这是哪个学习项目、默认 pack 是什么、今天怎么开工、哪些路径可作为学习证据”。它不是课程内容，也不是 Domain Pack。
 
@@ -38,6 +43,20 @@ powershell -ExecutionPolicy Bypass -File scripts\mcp_real_use_smoke.ps1
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\mcp_real_use_smoke.ps1 -ProjectPath C:\MyProject\Learned\rust-mastery-lab -DbPath target\p14b-learned-mcp-real-use.sqlite -TranscriptPath target\p14b-learned-mcp-real-use-transcript.txt
 ```
+
+想生成 AI IDE 接入材料，用：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\ai_ide_onboarding_kit.ps1 -ProjectPath C:\MyProject\Learned\rust-mastery-lab -DbPath target\p14c-learned-ai-ide.sqlite -OutDir target\p14c-learned-ai-ide-kit
+```
+
+它会输出：
+
+- `mcp-config.json`：复制到 AI IDE 的 MCP 配置。
+- `start-learning-prompt.md`：粘给 AI，让它知道怎样使用 Polaris。
+- `checklist.md`：第一次接入时逐项自检。
+
+通用模板在 `examples\ai-ide\`。
 
 ## 第一次初始化
 
@@ -110,7 +129,7 @@ C:\MyProject\polaris-core\target\debug\polaris.exe --db C:\MyProject\polaris-dat
 我贴资料、笔记、错误日志或代码片段时，请用 capture_evidence 保存。
 请定期用 list_learner_inbox 查看我保存过但还没处理的资料；如果我想练其中一条，用 act_on_learner_inbox_item 的 accept 标记为可转小题。
 对已经 practice_ready 的资料，先用 draft_inbox_practice 生成一道小题，让我回答；我回答后，用 submit_inbox_practice 提交回答和我的 confidence。
-普通课程题或你自己临时出的非 inbox 题，再用 submit_evidence 提交作答证据。
+普通课程题或你自己临时出的非 inbox 题，先用 get_next_task 拿到 concept_id，或使用课程明确给出的概念；问或记录我的 confidence 后，再用 submit_evidence 提交 session、concept_id/concept、response、confidence。
 需要看我现在的学习状态时，用 get_learner_mirror。
 下一步练什么，请以 get_next_task 为本地调度参考，但课程讲解以当前仓库为主。
 ```
@@ -127,7 +146,7 @@ C:\MyProject\polaris-core\target\debug\polaris.exe --db C:\MyProject\polaris-dat
 | 想把某条资料留到后续练习 | `act_on_learner_inbox_item` | `accept` 只标记为 `practice_ready`，不生成 attempt |
 | 想把某条 `practice_ready` 资料变成一道小题 | `draft_inbox_practice` | 生成学生可答的 prompt，不生成 attempt，不暴露内部概率 |
 | 学生回答 inbox 小题 | `submit_inbox_practice` | 提交回答和 `confidence`，进入 engine-owned scoring，并把条目标为 `practiced` |
-| 学生完成普通课程题或非 inbox 解释 | `submit_evidence` | 进入 engine-owned scoring，才会产生 attempt 和掌握度更新 |
+| 学生完成普通课程题或非 inbox 解释 | `submit_evidence` | 先用 `get_next_task` 或课程明确概念，再提交 `session`、`concept_id`/`concept`、`response`、`confidence`，进入 engine-owned scoring |
 | 学生说累了、卡住、想暂停 | `record_learner_feedback` | 记录学习状态，不直接改掌握度 |
 | 想知道当前状态 | `get_learner_mirror` | 读取学习者镜像 |
 | 想安排下一步练习 | `get_next_task` | 读取本地调度建议 |
@@ -173,7 +192,7 @@ AI IDE 也可以通过 MCP 的 `update_ai_interaction_profile` 修改这些值�
 7. 如果学生选择把某条资料变成练习，AI 先用 `act_on_learner_inbox_item(action=accept)` 标记，不要直接算掌握。
 8. AI 用 `draft_inbox_practice` 生成一个具体问题，而不是直接给结论。
 9. 学生回答后，AI 询问或记录学生 `confidence`，再用 `submit_inbox_practice` 提交回答。
-10. 普通课程题仍可用 `submit_evidence`，但不要把 AI 自己的评分字段当掌握度权威。
+10. 普通课程题仍可用 `submit_evidence`，但必须先有 `concept_id`/`concept`、学生回答和 `confidence`；不要把 AI 自己的评分字段当掌握度权威。
 11. AI 用 `get_learner_mirror` 或 `get_next_task` 决定下一步。
 
 ## 常见误区

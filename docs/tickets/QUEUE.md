@@ -1,6 +1,6 @@
 # 票队列（单票制）
 
-状态：**无 In Progress；P14B 已实现、通过验收并提交；P14A 已实现、通过验收并提交；P13C 已实现、通过验收并提交；P12E 已实现、通过验收并提交**。任何时刻只允许 1 张票 In Progress。
+状态：**无 In Progress；P14C 已实现、通过验收并提交；P14B 已实现、通过验收并提交；P14A 已实现、通过验收并提交；P13C 已实现、通过验收并提交；P12E 已实现、通过验收并提交**。任何时刻只允许 1 张票 In Progress。
 P12F-P12G 仍仅是 `docs/LEARNER_CAPTURE_ROADMAP.md` 与 P12 实施计划中的候选拆分，并非可直接认领的正式票，需用户裁决或新开正式票后才能认领。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 **Phase 7+ 产品形态轴线见 `docs/PRODUCT_ROADMAP.md`**（轴 6 学习者形态 / 轴 7 多 Pack 承载 / 轴 8 工程演进 / 轴 9 信任面板）。
@@ -104,6 +104,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 
 - [x] **P14A 真实使用 smoke v1**（`TICKET_P14A_REAL_USE_SMOKE.md`）← 已实现、通过验收并提交；把 init、AI profile、项目声明、capture、inbox、practice、submit、learner mirror 串成一键可复跑脚本和 transcript；服务环节：验证真懂 → 定位模糊 → 针对性补缺 → 用户能实际用起来
 - [x] **P14B MCP 真实会话 smoke v1**（`TICKET_P14B_MCP_REAL_USE_SMOKE.md`）← 已实现、通过验收并提交；启动真实 `polaris.exe --db ... mcp` 子进程，用 JSON-RPC Content-Length framing 跑 AI IDE 会调用的项目发现、AI profile、capture、inbox、practice、submit、learner mirror；服务环节：验证真懂 → 定位模糊 → 针对性补缺 → AI IDE 真能接入
+- [x] **P14C AI IDE 接入实战包 v1**（`TICKET_P14C_AI_IDE_ONBOARDING_KIT.md`）← 已实现、通过验收并提交；生成 AI IDE MCP 配置块、学习开场提示和检查清单，并用真实课程路径验证接入材料；服务环节：验证真懂 → 定位模糊 → 针对性补缺 → 用户能实际用起来
 
 ## Backlog（票外发现的问题记在这里，不顺手做）
 

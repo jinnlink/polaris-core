@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "polaris-core": {
+      "command": "C:\\MyProject\\polaris-core\\target\\debug\\polaris.exe",
+      "args": [
+        "--db",
+        "C:\\MyProject\\polaris-data\\polaris.sqlite",
+        "mcp"
+      ],
+      "cwd": "C:\\MyProject\\Learned\\rust-mastery-lab"
+    }
+  }
+}
