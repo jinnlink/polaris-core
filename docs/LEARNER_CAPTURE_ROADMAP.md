@@ -20,7 +20,7 @@
 - 仓库外学到的知识不能丢，先进入证据库。
 - 读过、看过、收藏过、AI 讲过，不等于掌握。
 - 只有学生自己的解释、预测、代码修改、测试修复或 teach-back，才可能影响掌握度。
-- `polaris-core` 继续做本地学习引擎，`Learned` 和 Aura 做学生入口与课程产品。
+- `polaris-core` 继续做本地学习引擎并承载正式 Tauri 桌面入口；`Learned` 的 Coursebook 承载课程产品。Aura 只作弃用历史参考。
 
 ## 2. 学生第一屏
 
@@ -71,7 +71,7 @@ Polaris Core 负责：
 Polaris Core 不负责：
 
 - Rust 课程文本。
-- 桌面 UI 视觉壳。
+- Coursebook 的课程 UI 与课程叙事。
 - 学生日课叙事。
 - 浏览器插件、截图 OCR、IDE 插件等具体传感器。
 - 把外部 AI 评分当成掌握度权威。
@@ -82,18 +82,18 @@ Polaris Core 不负责：
 
 - Rust 和软件工程课程体验。
 - `开工`、日课、预测题、练习、teach-back。
-- Learning Aura 桌面伴随入口。
+- Coursebook 课程上下文入口。
 - 课程插图、教学场景、练习项目和 journal 视图。
 
 长期目标：
 
 - `Learned` 继续承载课程产品和人类可读视图。
 - Polaris Core 成为结构化事实源。
-- `labctl` 和 Aura 只是入口壳，不自行判断掌握度。
+- Coursebook 和 `labctl` 只是课程入口壳，不自行判断掌握度；正式桌面入口由 Polaris Tauri 应用承载。
 
 ### 学习项目声明
 
-学生不应该每次都回到 `polaris-core` 说「开工」。正确入口是：**每个学习项目自己声明已接入 P-OS**。学生打开 Rust、英语、生物等任意学习项目时，AI、Aura 或本地入口能自动发现该声明，并按当前项目启动。
+学生不应该每次都回到 `polaris-core` 说「开工」。正确入口是：**每个学习项目自己声明已接入 P-OS**。学生打开 Rust、英语、生物等任意学习项目时，Coursebook、AI 或 Polaris 桌面入口能自动发现该声明，并按当前项目启动。
 
 项目声明不是 Domain Pack。两者职责不同：
 
@@ -326,16 +326,16 @@ raw evidence
 
 | 资产 | 位置 | 面向对象 | 结论 |
 |---|---|---|---|
-| Learning Aura | `C:\MyProject\Learned\rust-mastery-lab\aura` | 学生 | 优先复用为学生入口 |
-| stack-heap-ownership 教学场景 | `C:\MyProject\Learned\rust-mastery-lab\aura\public\teaching-scenes\stack-heap-ownership` | Rust 入门学生 | 适合做所有权第一批可视化 |
+| Coursebook | `C:\MyProject\Learned\rust-mastery-lab\apps\coursebook` | 学生 | P12G 的课程侧正式承接面；需另开 Learned 仓库正式票 |
+| Learning Aura | `C:\MyProject\Learned\rust-mastery-lab\aura` | 历史参考 | 已弃用，不复活、不作为正式入口 |
 | learner mirror 静态面板 | `docs/visuals/learner-mirror` | 学生 / 维护者 | 可作为 Polaris 状态镜子参考 |
 | atlas 架构图谱 | `docs/visuals/atlas` | 开发者 | 不作为学生入口 |
 | architecture SVG/HTML | `docs/visuals/polaris-core-architecture.*` | 开发者 | 不作为学生入口 |
 
 产品判断：
 
-- 学生入口优先接 Aura，不从 atlas 开始。
-- Polaris Core 的 `/learner-mirror`、`/next`、`/evidence`、`/feedback`、`/trust` 是 Aura 的数据面。
+- 正式桌面入口由 `polaris-core` 的 Tauri 应用承接；课程上下文入口由 Coursebook 承接，不从 atlas 开始。
+- Polaris Core 的稳定 MCP/HTTP 契约是桌面端与 Coursebook 的共同数据面；课程壳不得复制掌握度判断。
 - Atlas 只用于维护者理解架构，不参与学生开工流。
 
 ## 10. 分阶段落地
@@ -436,20 +436,21 @@ raw evidence
 - 不直接修改正式 pack。
 - 不绕过 strict-citation。
 
-### P12G：Learned / Aura Bridge
+### P12G：Learned / Coursebook Bridge
 
 目标：把学生入口接到真正可用的课程壳。
 
 范围：
 
-- `labctl` 或 Aura 调用 Polaris 的 capture/inbox/next/evidence/feedback。
+- Coursebook 后端或 `labctl` 通过 Polaris MCP 审计回合与 capture/inbox 契约接入。
 - `开工` 时合并日课、due、弱项、收件箱。
-- Aura 展示 3 个学生动作。
+- Coursebook 展示 2–3 个学生动作，并保持“练习已提交”与“已经掌握”的语义边界。
 
 禁区：
 
 - 不在 `labctl` 自己判断掌握度。
 - 不修改 `C:\MyProject\Learned`，除非另开该仓库的正式票并取得写权限。
+- 不修改或复活已弃用 Aura。
 
 ## 11. 第一版成功标准
 
@@ -484,4 +485,5 @@ raw evidence
 | `docs/PRODUCT_ROADMAP.md` | 产品形态总路线图，本文是 2026-06-18 补充轴线 |
 | `docs/tickets/QUEUE.md` | 单票执行队列 |
 | `C:\MyProject\Learned\rust-mastery-lab\docs\evidence-schema.md` | Learned journal 与 Polaris attempts 的桥接参考 |
-| `C:\MyProject\Learned\rust-mastery-lab\aura` | 学生入口 UI 参考 |
+| `C:\MyProject\Learned\rust-mastery-lab\apps\coursebook` | P12G 课程侧正式承接面（当前只读参考） |
+| `C:\MyProject\Learned\rust-mastery-lab\aura` | 已弃用历史参考，不复活 |

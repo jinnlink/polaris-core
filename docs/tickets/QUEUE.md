@@ -1,7 +1,7 @@
 # 票队列（单票制）
 
-状态：**无 In Progress；P15B 已实现、通过验收，等待用户确认后提交；P15A 已实现、通过验收并提交；P14D 已实现、通过验收；P14C 已实现、通过验收并提交；P14B 已实现、通过验收并提交；P14A 已实现、通过验收并提交；P13C 已实现、通过验收并提交；P12E 已实现、通过验收并提交**。任何时刻只允许 1 张票 In Progress。
-P12F-P12G 仍仅是 `docs/LEARNER_CAPTURE_ROADMAP.md` 与 P12 实施计划中的候选拆分，并非可直接认领的正式票，需用户裁决或新开正式票后才能认领。
+状态：**无 In Progress；P16A 已实现并通过验收，等待用户确认后提交；P15B 已提交（`a9fd13b`）**。任何时刻只允许 1 张票 In Progress。
+P12F 已登记为正式排队票；P12G 是 `Learned` 仓库外部依赖门，必须另开该仓库正式票并取得写权限，不能从本队列直接认领。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 **Phase 7+ 产品形态轴线见 `docs/PRODUCT_ROADMAP.md`**（轴 6 学习者形态 / 轴 7 多 Pack 承载 / 轴 8 工程演进 / 轴 9 信任面板）。
 新增票必须标注它服务主命题（验证真懂→定位模糊→针对性补缺）的哪一环。
@@ -37,7 +37,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 
 ## Phase 4 — UI + MRT
 
-- [x] **P04A Tauri 常驻小窗（100% Tier 0 秒开）+ 可展开工作区（状态镜子=相图）**（`TICKET_P04A_DESKTOP_STATUS_MIRROR.md`）← 已实现并通过验收；先交付 Tauri/HTTP 共用的 Tier 0 状态镜子契约与 CLI JSON 出口，不引入未验证桌面依赖；服务环节：定位模糊 → 针对性补缺
+- [x] **P04A 桌面状态镜子契约（原规划标题含 Tauri，但未交付桌面应用）**（`TICKET_P04A_DESKTOP_STATUS_MIRROR.md`）← 已实现并通过验收；交付 Tauri/HTTP 可共用的 Tier 0 DTO 与 CLI JSON 出口，正式 Tauri 产品由 P17A–P17G 实现；服务环节：定位模糊 → 针对性补缺
 - [x] **P04B HTTP API 门**（`TICKET_P04B_HTTP_API.md`）← 已实现并通过验收；为常驻伴随 UI 暴露本地 HTTP 最小闭环：health/status/next/evidence；服务环节：验证真懂 → 定位模糊 → 针对性补缺
 - [x] **P04C MRT 微随机化引擎（预登记审计）+ 教法签名后验（F1）+ 个人摩擦曲线拟合（F3）**（`TICKET_P04C_MRT_FRICTION_SIGNATURE.md`）← 已实现并通过验收；在 `next` 选 move 决策点加入审计化微随机与摩擦/签名后验；服务环节：验证真懂 → 定位模糊 → 针对性补缺
 - [x] **P04D 目标引擎移植（goals/dimensions/milestones，参考 Polaris schema v9）**（`TICKET_P04D_GOAL_ENGINE.md`）← 已实现并通过验收；迁入 goals/dimensions/milestones 建模核心与 Engine 薄封装，不接入调度/MRT/HTTP/MCP；服务环节：验证真懂 → 定位模糊 → 针对性补缺
@@ -110,11 +110,39 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 ## Phase 15 — 外部学习工作区接入
 
 - [x] **P15A DeepTutor MCP stdio 双帧兼容**（`TICKET_P15A_DEEPTUTOR_MCP_STDIO_COMPAT.md`）← 已实现、通过验收并提交；保留现有 `Content-Length` 客户端兼容，同时接受当前 MCP SDK 使用的 JSON Lines stdio，使 DeepTutor 能调用同一套稳定 Polaris tools；服务环节：验证真懂 → 定位模糊 → 针对性补缺
-- [x] **P15B Tier 2 可审计任务回合契约**（`TICKET_P15B_TIER2_AUDITED_TURN_CONTRACT.md`）← 已实现、通过验收，等待用户确认后提交；为外部导师把“取题 → 学生原始作答 → 引擎提交”关联为可校验、可审计的 MCP 回合，不改评分数学或调度权威；服务环节：验证真懂 → 针对性补缺
+- [x] **P15B Tier 2 可审计任务回合契约**（`TICKET_P15B_TIER2_AUDITED_TURN_CONTRACT.md`）← 已实现、通过验收并提交（`a9fd13b`）；为外部导师把“取题 → 学生原始作答 → 引擎提交”关联为可校验、可审计的 MCP 回合，不改评分数学或调度权威；服务环节：验证真懂 → 针对性补缺
+
+## Phase 16 — 原始蓝图能力收口
+
+- [x] **P16A 蓝图与 Atlas 收口**（`TICKET_P16A_BLUEPRINT_ATLAS_ALIGNMENT.md`）← 已实现并通过验收，等待用户确认后提交；建立蓝图能力—实现—票据状态矩阵，纠正 P04A/Tauri 与 Aura/Coursebook 边界，让开发者 Atlas 从 QUEUE 动态生成真实进度；服务环节：全环节（工程事实可审计）
+- [ ] **P16B 实时知识地图契约**（`TICKET_P16B_KNOWLEDGE_MAP_CONTRACT.md`）← 依赖 P16A；从现有事实表推导分页/子图知识地图，统一 Core/HTTP/MCP/Tauri DTO，不建立第二份 mastery 真相；服务环节：定位模糊
+- [ ] **P16C 跨域预测地图**（`TICKET_P16C_CROSS_DOMAIN_PREDICTION_MAP.md`）← 依赖 P16B；把 θ·q、结构/几何锚点和 2–3 条初始路径组成带置信度的预测地图，isolated Pack 禁止继承；服务环节：定位模糊 → 针对性补缺
+- [ ] **P16D Global Learner Profile 数据与治理**（`TICKET_P16D_GLOBAL_PROFILE_GOVERNANCE.md`）← 依赖 P16A；画像测量注册、设置、事件、派生状态、验证记录、导出与两级清除；服务环节：验证真懂 → 定位模糊
+- [ ] **P16E Global Learner Profile 估计与验证**（`TICKET_P16E_GLOBAL_PROFILE_ESTIMATION.md`）← 依赖 P16D；行为画像、慢特质后验、EMA 调度与前瞻验证，未过门不影响 mastery/调度；服务环节：定位模糊 → 针对性补缺
+- [ ] **P16F 目标产品契约**（`TICKET_P16F_GOAL_PRODUCT_CONTRACT.md`）← 依赖 P16A；把已有 goals/dimensions/milestones 暴露为稳定契约，目标只限定候选范围；服务环节：针对性补缺
+
+## Phase 17 — Tauri 正式桌面产品
+
+- [ ] **P17A Tauri 产品底座**（`TICKET_P17A_TAURI_FOUNDATION.md`）← 依赖 P16B–P16F；Tauri 2 + React + TypeScript + Vite，直接调用 Core，共用 DTO 与瓷白设计令牌；服务环节：全环节（正式产品承载）
+- [ ] **P17B 常驻小窗与 Today**（`TICKET_P17B_TRAY_TODAY.md`）← 依赖 P17A；托盘、单实例、小窗、Pack 切换、Today 与 2–3 个行动，心流态抑制通知；服务环节：定位模糊 → 针对性补缺
+- [ ] **P17C 知识地图工作区**（`TICKET_P17C_MAP_WORKSPACE.md`）← 依赖 P17B、P16C；当前/预测/全局 Pack 地图、搜索筛选、钻取、证据与大图虚拟化；服务环节：定位模糊
+- [ ] **P17D 学习工作台**（`TICKET_P17D_LEARNING_WORKBENCH.md`）← 依赖 P17B；Practice、Capture、Inbox、Practice Bridge 与乐观评分修正；服务环节：验证真懂 → 针对性补缺
+- [ ] **P17E 画像与治理工作区**（`TICKET_P17E_PROFILE_GOVERNANCE_WORKSPACE.md`）← 依赖 P17C/P17D；Profile、Goals、Mirror、Reports、Trust、Privacy 与 Settings；服务环节：全环节（学习者知情与控制）
+- [ ] **P17F 桌面生命周期**（`TICKET_P17F_DESKTOP_LIFECYCLE.md`）← 依赖 P17E；后台任务、数据库解析、启动项、密钥、托盘退出、崩溃恢复和日志导出；服务环节：全环节（本地可靠性）
+- [ ] **P17G Windows 发布硬化**（`TICKET_P17G_WINDOWS_RELEASE_HARDENING.md`）← 依赖 P17F；无障碍、性能、视觉回归、NSIS、签名更新和 GitHub Releases CI；服务环节：全环节（公开发布）
+
+## Phase 18 — Overlay、跨仓桥接与真实验收
+
+- [ ] **P12F Concept Suggestion + Overlay Pack**（`TICKET_P12F_CONCEPT_OVERLAY_PACK.md`）← 依赖 P17G；从 Capture 提议带 provenance 的概念/边/图式，人工接受后写可回滚 overlay pack，绝不直接修改 mastery；服务环节：定位模糊 → 针对性补缺
+
+> **P12G 外部依赖门**：P12F 完成后，在 `C:\MyProject\Learned\rust-mastery-lab` 另开“Coursebook ↔ Polaris”正式票并取得该仓库写权限；不得由本仓库执行 AI 直接修改冻结仓库，也不得复活 Aura。P12G 完成前禁止认领 P18A。
+
+- [ ] **P18A 真实纵向验证**（`TICKET_P18A_LONGITUDINAL_VALIDATION.md`）← 依赖 P12F、外部 P12G；真实学习数据前瞻验证画像、跨域预测、HMM/MRT 与策略增益，失败结果保留且不降门槛；服务环节：验证真懂
+- [ ] **P18B 1.0 发布验收**（`TICKET_P18B_RELEASE_ACCEPTANCE.md`）← 依赖 P18A；干净 Windows 环境完成安装—学习—更新—备份—恢复—卸载，发布签名 1.0；服务环节：全环节（最终交付）
 
 ## Backlog（票外发现的问题记在这里，不顺手做）
 
-- **P12F-P12G 候选实现拆分**：详见 `docs/LEARNER_CAPTURE_ROADMAP.md` 与 `docs/superpowers/plans/2026-06-18-p12-learner-capture-inbox.md`。这些不是可直接认领的正式票；必须由用户裁决后逐张转成正式票，并遵守单票制。P12D、P12E 已按用户“继续开发/推进”裁决转成正式票。
+- **P12 历史拆分记录**：详见 `docs/LEARNER_CAPTURE_ROADMAP.md` 与 `docs/superpowers/plans/2026-06-18-p12-learner-capture-inbox.md`。P12D、P12E 已完成；P12F 已转为正式排队票；P12G 仅作为 `Learned` 仓库外部依赖门，不在本仓库直接认领。
 
 - P03A 审查后续：当前 Q 降级初始化在单 Rust pack 下使用 `q[0]=1.0` 作为 deterministic one-hot track 维；多 pack/多 track 前需补 `latent.dims` 或 pack/track→维度映射，避免所有概念共用同一潜因子。→ 已转正式票 P03M。
 - P05A 验收观察：`cargo test --workspace` 首次在 `p03c_geometry::geometry_candidates_use_hnsw_and_combined_scores` 偶发缺少 `schema:raii` 候选，导致同文件后续用例因 `ENV_LOCK` PoisonError 连锁失败；单跑 `cargo test -p polaris-core --test p03c_geometry` 通过，重跑 `cargo test --workspace` 通过。建议后续单独开票把 HNSW 候选测试改成确定性夹具或扩大候选池；服务环节：全环节（验证稳定性）。→ 已转正式票 P03N。

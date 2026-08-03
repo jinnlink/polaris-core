@@ -207,11 +207,11 @@ P09A (engine 拆分)
 - 每个学习项目应有自己的 `p-os.toml` 接入声明。学生在 Rust、英语、生物等项目里说「开工」，入口先按当前项目声明解析，不要求回到 `polaris-core`。
 - Raw evidence 只记录事实，不直接影响掌握度。只有学生自己的解释、预测、代码修改、测试修复或 teach-back，且采集了反馈前 `self_confidence`，才可能进入 `Engine::submit`。
 - 学生入口只暴露 3 个动作：继续今天、记录我刚学到的、我卡住了。pack、SQLite、MCP、HTTP、θ、HMM、`concept_id` 等内部词不出现在零基础入口。
-- Learning Aura 是学生 UI 的优先承接面；`docs/visuals/learner-mirror` 是状态镜子参考；`docs/visuals/atlas` 仍然面向开发者，不作为学生入口。
+- 该条在 2026-08-03 的 P16A 蓝图收口中被后续产品裁决取代：正式桌面端在 `polaris-core` 新建 Tauri 应用；课程侧承接面是 Coursebook。Aura 仅保留为冻结、弃用参考，不复活。`docs/visuals/learner-mirror` 是状态镜子参考，`docs/visuals/atlas` 仍面向开发者，不作为学生入口。
 - 后续实现拆成 P12B-P12G。它们必须先经 QUEUE 正式登记，不能从本文直接自行认领。
 - P12B 已按用户裁决转正式票：学习项目声明协议见 `docs/PROJECT_MANIFEST_PROTOCOL.md`，样例见 `examples/project-manifests/*/p-os.toml`。
-- P12C 已实现并通过验收：Capture Queue v1 通过 `polaris capture` 与 HTTP `POST /capture` 让 raw evidence 先入库，并明确 `recorded_only` 不影响掌握度。P12D-P12G 仍需后续裁决。
+- P12C-P12E 已实现并通过验收；P12F 已在 P16A 转为正式排队票；P12G 是跨仓依赖门，必须在 `Learned` 另开正式票并取得写权限。
 
 ---
 
-**本路线图状态**：v1，2026-06-15 产品经理交付；2026-06-17 经 P11D 标注历史执行序已完成。当前可执行状态以 `docs/tickets/QUEUE.md` 为准。
+**本路线图状态**：v1，2026-06-15 产品经理交付；2026-06-17 经 P11D 标注历史执行序已完成；2026-08-03 经 P16A 纠正桌面承接边界。完整蓝图缺口见 `docs/BLUEPRINT_COMPLETION_ROADMAP.md`，当前可执行状态以 `docs/tickets/QUEUE.md` 为准。

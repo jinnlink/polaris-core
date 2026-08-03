@@ -1,0 +1,2169 @@
+{
+  "meta": {
+    "project": "polaris-core",
+    "generated_at": "2026-08-03T04:51:25.112091+00:00",
+    "design": "Polaris Porcelain Intelligence Atlas",
+    "phase_note": "70 tickets completed; active: none; 15 tickets remain. Source: docs/tickets/QUEUE.md.",
+    "visual_direction": "Radix Air Sage + Quiet Motion System"
+  },
+  "modules": [
+    {
+      "id": "consolidation",
+      "title": "Consolidation",
+      "group": "Cognitive Dynamics",
+      "summary": "Runs night consolidation and counterfactual replay for slower learning signals.",
+      "files": [
+        "crates/polaris-core/src/consolidation.rs"
+      ],
+      "depends_on": [
+        "db",
+        "mastery",
+        "mirt"
+      ],
+      "related_tables": [
+        "consolidation_runs",
+        "theta_history",
+        "residual_stats"
+      ],
+      "related_tickets": [
+        "P03B",
+        "P03J"
+      ],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/consolidation.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "fsrs",
+      "title": "Fsrs",
+      "group": "Cognitive Dynamics",
+      "summary": "Implements FSRS-style memory scheduling state and retrievability.",
+      "files": [
+        "crates/polaris-core/src/fsrs.rs"
+      ],
+      "depends_on": [
+        "scheduler",
+        "mastery"
+      ],
+      "related_tables": [
+        "mastery_states"
+      ],
+      "related_tickets": [
+        "P01"
+      ],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/fsrs.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "mental_fit",
+      "title": "Mental Fit",
+      "group": "Cognitive Dynamics",
+      "summary": "Fits hazard, HMM gate, and EM mental-dynamics models for audit-only updates.",
+      "files": [
+        "crates/polaris-core/src/mental_fit.rs"
+      ],
+      "depends_on": [
+        "mental_state",
+        "db"
+      ],
+      "related_tables": [
+        "hazard_models",
+        "state_gate_evals"
+      ],
+      "related_tickets": [
+        "P03K"
+      ],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/mental_fit.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "mental_state",
+      "title": "Mental State",
+      "group": "Cognitive Dynamics",
+      "summary": "Classifies learner state from behavior events through HMM-style signals.",
+      "files": [
+        "crates/polaris-core/src/mental_state.rs"
+      ],
+      "depends_on": [
+        "db"
+      ],
+      "related_tables": [
+        "behavior_events",
+        "hazard_models"
+      ],
+      "related_tickets": [
+        "P03D"
+      ],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/mental_state.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "mirt",
+      "title": "Mirt",
+      "group": "Cognitive Dynamics",
+      "summary": "Maintains latent ability estimates used by diagnosis and consolidation.",
+      "files": [
+        "crates/polaris-core/src/mirt.rs"
+      ],
+      "depends_on": [
+        "db",
+        "mastery"
+      ],
+      "related_tables": [
+        "theta",
+        "theta_history"
+      ],
+      "related_tickets": [
+        "P03A"
+      ],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/mirt.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "tuning",
+      "title": "Tuning",
+      "group": "Cognitive Dynamics",
+      "summary": "Runs audit-backed parameter tuning and records accepted or rejected candidates.",
+      "files": [
+        "crates/polaris-core/src/tuning.rs"
+      ],
+      "depends_on": [
+        "db",
+        "consolidation"
+      ],
+      "related_tables": [
+        "param_tuning_runs"
+      ],
+      "related_tickets": [
+        "P03J"
+      ],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/tuning.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "engine",
+      "title": "Engine",
+      "group": "Core Loop",
+      "summary": "Coordinates pack init, next-task selection, evidence submission, grading, reports, and maintenance jobs.",
+      "files": [
+        "crates/polaris-core/src/engine.rs"
+      ],
+      "depends_on": [
+        "db",
+        "scheduler",
+        "grader",
+        "mastery",
+        "report",
+        "diagnosis"
+      ],
+      "related_tables": [
+        "attempts",
+        "behavior_events",
+        "grade_queue",
+        "mastery_states"
+      ],
+      "related_tickets": [
+        "P01",
+        "P02B",
+        "P03G",
+        "P03I"
+      ],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/engine.rs"
+      ],
+      "tier": "tier-0",
+      "status": "implemented"
+    },
+    {
+      "id": "mastery",
+      "title": "Mastery",
+      "group": "Core Loop",
+      "summary": "Updates concept mastery, calibration gaps, phase, and review state.",
+      "files": [
+        "crates/polaris-core/src/mastery.rs"
+      ],
+      "depends_on": [
+        "db",
+        "phase",
+        "fsrs"
+      ],
+      "related_tables": [
+        "mastery_states",
+        "attempts",
+        "theta"
+      ],
+      "related_tickets": [
+        "P01",
+        "P03E"
+      ],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/mastery.rs"
+      ],
+      "tier": "tier-0",
+      "status": "implemented"
+    },
+    {
+      "id": "scheduler",
+      "title": "Scheduler",
+      "group": "Core Loop",
+      "summary": "Chooses next tasks and interleaved batches under memory, phase, and mastery constraints.",
+      "files": [
+        "crates/polaris-core/src/scheduler.rs"
+      ],
+      "depends_on": [
+        "fsrs",
+        "mastery",
+        "phase",
+        "geometry"
+      ],
+      "related_tables": [
+        "mastery_states",
+        "behavior_events"
+      ],
+      "related_tickets": [
+        "P01",
+        "P03G"
+      ],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/scheduler.rs"
+      ],
+      "tier": "tier-0",
+      "status": "implemented"
+    },
+    {
+      "id": "ai_profile",
+      "title": "Ai Profile",
+      "group": "Core Module",
+      "summary": "Polaris Core module exported from crates/polaris-core/src/lib.rs: ai_profile.",
+      "files": [
+        "crates/polaris-core/src/ai_profile.rs"
+      ],
+      "depends_on": [],
+      "related_tables": [],
+      "related_tickets": [],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/ai_profile.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "breeding",
+      "title": "Breeding",
+      "group": "Core Module",
+      "summary": "Polaris Core module exported from crates/polaris-core/src/lib.rs: breeding.",
+      "files": [
+        "crates/polaris-core/src/breeding.rs"
+      ],
+      "depends_on": [],
+      "related_tables": [],
+      "related_tickets": [],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/breeding.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "calibration",
+      "title": "Calibration",
+      "group": "Core Module",
+      "summary": "Polaris Core module exported from crates/polaris-core/src/lib.rs: calibration.",
+      "files": [
+        "crates/polaris-core/src/calibration.rs"
+      ],
+      "depends_on": [],
+      "related_tables": [],
+      "related_tickets": [],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/calibration.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "capture_queue",
+      "title": "Capture Queue",
+      "group": "Core Module",
+      "summary": "Polaris Core module exported from crates/polaris-core/src/lib.rs: capture_queue.",
+      "files": [
+        "crates/polaris-core/src/capture_queue.rs"
+      ],
+      "depends_on": [],
+      "related_tables": [],
+      "related_tickets": [],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/capture_queue.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "fsrs_fit",
+      "title": "Fsrs Fit",
+      "group": "Core Module",
+      "summary": "Polaris Core module exported from crates/polaris-core/src/lib.rs: fsrs_fit.",
+      "files": [
+        "crates/polaris-core/src/fsrs_fit.rs"
+      ],
+      "depends_on": [],
+      "related_tables": [],
+      "related_tickets": [],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/fsrs_fit.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "goals",
+      "title": "Goals",
+      "group": "Core Module",
+      "summary": "Polaris Core module exported from crates/polaris-core/src/lib.rs: goals.",
+      "files": [
+        "crates/polaris-core/src/goals.rs"
+      ],
+      "depends_on": [],
+      "related_tables": [],
+      "related_tickets": [],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/goals.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "gu_prior",
+      "title": "Gu Prior",
+      "group": "Core Module",
+      "summary": "Polaris Core module exported from crates/polaris-core/src/lib.rs: gu_prior.",
+      "files": [
+        "crates/polaris-core/src/gu_prior.rs"
+      ],
+      "depends_on": [],
+      "related_tables": [],
+      "related_tickets": [],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/gu_prior.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "inbox_practice",
+      "title": "Inbox Practice",
+      "group": "Core Module",
+      "summary": "Polaris Core module exported from crates/polaris-core/src/lib.rs: inbox_practice.",
+      "files": [
+        "crates/polaris-core/src/inbox_practice.rs"
+      ],
+      "depends_on": [],
+      "related_tables": [],
+      "related_tickets": [],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/inbox_practice.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "learner_feedback",
+      "title": "Learner Feedback",
+      "group": "Core Module",
+      "summary": "Polaris Core module exported from crates/polaris-core/src/lib.rs: learner_feedback.",
+      "files": [
+        "crates/polaris-core/src/learner_feedback.rs"
+      ],
+      "depends_on": [],
+      "related_tables": [],
+      "related_tickets": [],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/learner_feedback.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "learner_inbox",
+      "title": "Learner Inbox",
+      "group": "Core Module",
+      "summary": "Polaris Core module exported from crates/polaris-core/src/lib.rs: learner_inbox.",
+      "files": [
+        "crates/polaris-core/src/learner_inbox.rs"
+      ],
+      "depends_on": [],
+      "related_tables": [],
+      "related_tickets": [],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/learner_inbox.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "learner_mirror",
+      "title": "Learner Mirror",
+      "group": "Core Module",
+      "summary": "Polaris Core module exported from crates/polaris-core/src/lib.rs: learner_mirror.",
+      "files": [
+        "crates/polaris-core/src/learner_mirror.rs"
+      ],
+      "depends_on": [],
+      "related_tables": [],
+      "related_tickets": [],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/learner_mirror.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "ops",
+      "title": "Ops",
+      "group": "Core Module",
+      "summary": "Polaris Core module exported from crates/polaris-core/src/lib.rs: ops.",
+      "files": [
+        "crates/polaris-core/src/ops.rs"
+      ],
+      "depends_on": [],
+      "related_tables": [],
+      "related_tickets": [],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/ops.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "pack_state",
+      "title": "Pack State",
+      "group": "Core Module",
+      "summary": "Polaris Core module exported from crates/polaris-core/src/lib.rs: pack_state.",
+      "files": [
+        "crates/polaris-core/src/pack_state.rs"
+      ],
+      "depends_on": [],
+      "related_tables": [],
+      "related_tickets": [],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/pack_state.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "pedagogy",
+      "title": "Pedagogy",
+      "group": "Core Module",
+      "summary": "Polaris Core module exported from crates/polaris-core/src/lib.rs: pedagogy.",
+      "files": [
+        "crates/polaris-core/src/pedagogy.rs"
+      ],
+      "depends_on": [],
+      "related_tables": [],
+      "related_tickets": [],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/pedagogy.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "phase_dynamics",
+      "title": "Phase Dynamics",
+      "group": "Core Module",
+      "summary": "Polaris Core module exported from crates/polaris-core/src/lib.rs: phase_dynamics.",
+      "files": [
+        "crates/polaris-core/src/phase_dynamics.rs"
+      ],
+      "depends_on": [],
+      "related_tables": [],
+      "related_tickets": [],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/phase_dynamics.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "privacy",
+      "title": "Privacy",
+      "group": "Core Module",
+      "summary": "Polaris Core module exported from crates/polaris-core/src/lib.rs: privacy.",
+      "files": [
+        "crates/polaris-core/src/privacy.rs"
+      ],
+      "depends_on": [],
+      "related_tables": [],
+      "related_tickets": [],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/privacy.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "project_manifest",
+      "title": "Project Manifest",
+      "group": "Core Module",
+      "summary": "Polaris Core module exported from crates/polaris-core/src/lib.rs: project_manifest.",
+      "files": [
+        "crates/polaris-core/src/project_manifest.rs"
+      ],
+      "depends_on": [],
+      "related_tables": [],
+      "related_tickets": [],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/project_manifest.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "sandbox",
+      "title": "Sandbox",
+      "group": "Core Module",
+      "summary": "Polaris Core module exported from crates/polaris-core/src/lib.rs: sandbox.",
+      "files": [
+        "crates/polaris-core/src/sandbox.rs"
+      ],
+      "depends_on": [],
+      "related_tables": [],
+      "related_tickets": [],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/sandbox.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "simulation",
+      "title": "Simulation",
+      "group": "Core Module",
+      "summary": "Polaris Core module exported from crates/polaris-core/src/lib.rs: simulation.",
+      "files": [
+        "crates/polaris-core/src/simulation.rs"
+      ],
+      "depends_on": [],
+      "related_tables": [],
+      "related_tickets": [],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/simulation.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "trust",
+      "title": "Trust",
+      "group": "Core Module",
+      "summary": "Polaris Core module exported from crates/polaris-core/src/lib.rs: trust.",
+      "files": [
+        "crates/polaris-core/src/trust.rs"
+      ],
+      "depends_on": [],
+      "related_tables": [],
+      "related_tickets": [],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/trust.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "db",
+      "title": "Db",
+      "group": "Data Ledger",
+      "summary": "Owns SQLite schema, migrations, hot-path indexes, and local persistence.",
+      "files": [
+        "crates/polaris-core/src/db.rs"
+      ],
+      "depends_on": [],
+      "related_tables": [
+        "meta",
+        "op_log",
+        "attempts",
+        "mastery_states"
+      ],
+      "related_tickets": [
+        "P01",
+        "P03L"
+      ],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/db.rs"
+      ],
+      "tier": "tier-0",
+      "status": "implemented"
+    },
+    {
+      "id": "cli",
+      "title": "CLI Entrypoint",
+      "group": "Entrypoints",
+      "summary": "Exposes init, ingest, next, submit, hint, abandon, status, grading, report, tuning, diagnosis, MCP, and pack validation commands.",
+      "files": [
+        "crates/polaris-cli/src/main.rs"
+      ],
+      "depends_on": [
+        "engine",
+        "pack",
+        "fsrs",
+        "phase",
+        "mcp"
+      ],
+      "related_tables": [
+        "sessions",
+        "behavior_events",
+        "attempts"
+      ],
+      "related_tickets": [
+        "P01",
+        "P02C",
+        "P03I"
+      ],
+      "source_refs": [
+        "crates/polaris-cli/src/main.rs"
+      ],
+      "tier": "tier-0",
+      "status": "implemented"
+    },
+    {
+      "id": "mcp",
+      "title": "MCP Interface",
+      "group": "Entrypoints",
+      "summary": "Provides get_next_task, get_interleaved_batch, submit_evidence, get_teaching_instruction, and read-only status/diagnosis resources.",
+      "files": [
+        "crates/polaris-cli/src/mcp.rs"
+      ],
+      "depends_on": [
+        "engine",
+        "teaching",
+        "diagnosis",
+        "status"
+      ],
+      "related_tables": [
+        "behavior_events",
+        "attempts",
+        "mastery_states"
+      ],
+      "related_tickets": [
+        "P02C"
+      ],
+      "source_refs": [
+        "crates/polaris-cli/src/mcp.rs"
+      ],
+      "tier": "tier-2",
+      "status": "implemented"
+    },
+    {
+      "id": "status",
+      "title": "Status",
+      "group": "Entrypoints",
+      "summary": "Builds read-only status snapshots for CLI and MCP consumers.",
+      "files": [
+        "crates/polaris-core/src/status.rs"
+      ],
+      "depends_on": [
+        "db",
+        "phase"
+      ],
+      "related_tables": [
+        "mastery_states",
+        "concepts"
+      ],
+      "related_tickets": [
+        "P02C"
+      ],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/status.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "citation",
+      "title": "Citation",
+      "group": "Evidence",
+      "summary": "Validates strict citation boundaries so report claims stay tied to evidence.",
+      "files": [
+        "crates/polaris-core/src/citation.rs"
+      ],
+      "depends_on": [],
+      "related_tables": [
+        "mirror_reports",
+        "evidence_items"
+      ],
+      "related_tickets": [
+        "P03I"
+      ],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/citation.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "diagnosis",
+      "title": "Diagnosis",
+      "group": "Evidence",
+      "summary": "Turns graph and attempt evidence into concept-level diagnosis.",
+      "files": [
+        "crates/polaris-core/src/diagnosis.rs"
+      ],
+      "depends_on": [
+        "graph",
+        "mastery"
+      ],
+      "related_tables": [
+        "attempts",
+        "mastery_states",
+        "edges"
+      ],
+      "related_tickets": [
+        "P02B"
+      ],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/diagnosis.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "grader",
+      "title": "Grader",
+      "group": "Evidence",
+      "summary": "Produces engine-owned provisional scores and asynchronous grade-queue outcomes.",
+      "files": [
+        "crates/polaris-core/src/grader.rs"
+      ],
+      "depends_on": [
+        "db",
+        "mastery"
+      ],
+      "related_tables": [
+        "attempts",
+        "grade_queue",
+        "mastery_states"
+      ],
+      "related_tickets": [
+        "P01",
+        "P02C"
+      ],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/grader.rs"
+      ],
+      "tier": "tier-1",
+      "status": "implemented"
+    },
+    {
+      "id": "gu",
+      "title": "Gu",
+      "group": "Evidence",
+      "summary": "Induces and audits G_u rules from repeated evidence patterns.",
+      "files": [
+        "crates/polaris-core/src/gu.rs"
+      ],
+      "depends_on": [
+        "db",
+        "diagnosis"
+      ],
+      "related_tables": [
+        "gu_rules"
+      ],
+      "related_tickets": [
+        "P03H"
+      ],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/gu.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "report",
+      "title": "Report",
+      "group": "Evidence",
+      "summary": "Builds mirror reports with evidence-bound assertions, hypotheses, and suggestions.",
+      "files": [
+        "crates/polaris-core/src/report.rs"
+      ],
+      "depends_on": [
+        "citation",
+        "db"
+      ],
+      "related_tables": [
+        "mirror_reports",
+        "attempts",
+        "evidence_items"
+      ],
+      "related_tickets": [
+        "P03I"
+      ],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/report.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "config",
+      "title": "Config",
+      "group": "Foundation",
+      "summary": "Registers typed parameters and keeps behavioral knobs explicit.",
+      "files": [
+        "crates/polaris-core/src/config.rs"
+      ],
+      "depends_on": [],
+      "related_tables": [
+        "meta"
+      ],
+      "related_tickets": [
+        "P01",
+        "P03J"
+      ],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/config.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "error",
+      "title": "Error",
+      "group": "Foundation",
+      "summary": "Centralizes recoverable Polaris Core error types.",
+      "files": [
+        "crates/polaris-core/src/error.rs"
+      ],
+      "depends_on": [],
+      "related_tables": [],
+      "related_tickets": [
+        "P01"
+      ],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/error.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "geometry",
+      "title": "Geometry",
+      "group": "Knowledge Space",
+      "summary": "Builds geometry-aware candidate sets for targeted learning paths.",
+      "files": [
+        "crates/polaris-core/src/geometry.rs"
+      ],
+      "depends_on": [
+        "graph",
+        "mastery"
+      ],
+      "related_tables": [
+        "edges",
+        "mastery_states"
+      ],
+      "related_tickets": [
+        "P03C"
+      ],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/geometry.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "graph",
+      "title": "Graph",
+      "group": "Knowledge Space",
+      "summary": "Represents typed concept edges and prerequisite/confusion topology.",
+      "files": [
+        "crates/polaris-core/src/graph.rs"
+      ],
+      "depends_on": [],
+      "related_tables": [
+        "concepts",
+        "edges"
+      ],
+      "related_tickets": [
+        "P02A",
+        "P02B"
+      ],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/graph.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "phase",
+      "title": "Phase",
+      "group": "Knowledge Space",
+      "summary": "Classifies knowledge phase so tasks target recall, transfer, and boundary repair.",
+      "files": [
+        "crates/polaris-core/src/phase.rs"
+      ],
+      "depends_on": [
+        "mastery"
+      ],
+      "related_tables": [
+        "mastery_states"
+      ],
+      "related_tickets": [
+        "P03E"
+      ],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/phase.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "pack",
+      "title": "Pack",
+      "group": "Pack",
+      "summary": "Loads and validates domain packs, concepts, prerequisites, moves, and misconceptions.",
+      "files": [
+        "crates/polaris-core/src/pack.rs"
+      ],
+      "depends_on": [
+        "graph",
+        "moves"
+      ],
+      "related_tables": [
+        "concepts",
+        "edges"
+      ],
+      "related_tickets": [
+        "P01",
+        "P05A1"
+      ],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/pack.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "moves",
+      "title": "Moves",
+      "group": "Teaching",
+      "summary": "Defines move taxonomy for recall, explain, apply, analyze, evaluate, create, and transfer.",
+      "files": [
+        "crates/polaris-core/src/moves.rs"
+      ],
+      "depends_on": [],
+      "related_tables": [
+        "moves_effects"
+      ],
+      "related_tickets": [
+        "P03F"
+      ],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/moves.rs"
+      ],
+      "tier": "support",
+      "status": "implemented"
+    },
+    {
+      "id": "teaching",
+      "title": "Teaching",
+      "group": "Teaching",
+      "summary": "Produces Tier 2 teaching instructions without letting external AI write mastery state.",
+      "files": [
+        "crates/polaris-core/src/teaching.rs"
+      ],
+      "depends_on": [
+        "diagnosis",
+        "moves"
+      ],
+      "related_tables": [
+        "attempts",
+        "edges"
+      ],
+      "related_tickets": [
+        "P02C",
+        "P03F"
+      ],
+      "source_refs": [
+        "crates/polaris-core/src/lib.rs",
+        "crates/polaris-core/src/teaching.rs"
+      ],
+      "tier": "tier-2",
+      "status": "implemented"
+    }
+  ],
+  "flows": [
+    {
+      "id": "learning-loop",
+      "title": "Learning Loop",
+      "summary": "From user-facing task selection to evidence submission, scoring, mastery update, and the next recommendation.",
+      "steps": [
+        "cli",
+        "mcp",
+        "engine",
+        "scheduler",
+        "grader",
+        "mastery",
+        "report"
+      ],
+      "source_refs": [
+        "crates/polaris-cli/src/main.rs",
+        "crates/polaris-core/src/engine.rs"
+      ]
+    },
+    {
+      "id": "evidence-replay",
+      "title": "Evidence Replay",
+      "summary": "Local facts remain replayable through append-only evidence, behavior, attempts, and derived mastery state.",
+      "steps": [
+        "evidence_items",
+        "behavior_events",
+        "attempts",
+        "grade_queue",
+        "mastery_states"
+      ],
+      "source_refs": [
+        "docs/DATA_MODEL.md",
+        "crates/polaris-core/src/db.rs"
+      ]
+    },
+    {
+      "id": "agent-interface",
+      "title": "Agent Interface",
+      "summary": "MCP tools expose the same local loop while preserving engine-owned scoring and Tier 2 teaching boundaries.",
+      "steps": [
+        "mcp",
+        "engine",
+        "teaching",
+        "diagnosis",
+        "status"
+      ],
+      "source_refs": [
+        "crates/polaris-cli/src/mcp.rs"
+      ]
+    },
+    {
+      "id": "nightly-audit",
+      "title": "Nightly Audit Loop",
+      "summary": "Slow-path consolidation, fitting, tuning, and mirror reports audit model assumptions without blocking Tier 0.",
+      "steps": [
+        "consolidation",
+        "mental_fit",
+        "tuning",
+        "gu",
+        "report"
+      ],
+      "source_refs": [
+        "docs/DATA_MODEL.md",
+        "docs/tickets/QUEUE.md"
+      ]
+    }
+  ],
+  "database": [
+    {
+      "id": "meta",
+      "title": "meta",
+      "summary": "Configuration and migration metadata, including typed parameter registration.",
+      "source_refs": [
+        "crates/polaris-core/src/db.rs",
+        "docs/DATA_MODEL.md"
+      ],
+      "hot_path": false
+    },
+    {
+      "id": "op_log",
+      "title": "op_log",
+      "summary": "Append-only operation log for replay and audit boundaries.",
+      "source_refs": [
+        "crates/polaris-core/src/db.rs",
+        "docs/DATA_MODEL.md"
+      ],
+      "hot_path": false
+    },
+    {
+      "id": "evidence_items",
+      "title": "evidence_items",
+      "summary": "Raw local evidence items ingested from learner or system sources.",
+      "source_refs": [
+        "crates/polaris-core/src/db.rs",
+        "docs/DATA_MODEL.md"
+      ],
+      "hot_path": false
+    },
+    {
+      "id": "attempts",
+      "title": "attempts",
+      "summary": "Learner responses, provisional scores, confidence, latency, and evidence links.",
+      "source_refs": [
+        "crates/polaris-core/src/db.rs",
+        "docs/DATA_MODEL.md"
+      ],
+      "hot_path": true
+    },
+    {
+      "id": "concepts",
+      "title": "concepts",
+      "summary": "Domain pack concepts and initial mastery priors.",
+      "source_refs": [
+        "crates/polaris-core/src/db.rs",
+        "docs/DATA_MODEL.md"
+      ],
+      "hot_path": true
+    },
+    {
+      "id": "edges",
+      "title": "edges",
+      "summary": "Typed prerequisite, confusion, and transfer relationships.",
+      "source_refs": [
+        "crates/polaris-core/src/db.rs",
+        "docs/DATA_MODEL.md"
+      ],
+      "hot_path": true
+    },
+    {
+      "id": "mastery_states",
+      "title": "mastery_states",
+      "summary": "Derived mastery state, phase, FSRS JSON, due time, and calibration signals.",
+      "source_refs": [
+        "crates/polaris-core/src/db.rs",
+        "docs/DATA_MODEL.md"
+      ],
+      "hot_path": false
+    },
+    {
+      "id": "sessions",
+      "title": "sessions",
+      "summary": "Learning sessions used to bind behavior events.",
+      "source_refs": [
+        "crates/polaris-core/src/db.rs",
+        "docs/DATA_MODEL.md"
+      ],
+      "hot_path": false
+    },
+    {
+      "id": "behavior_events",
+      "title": "behavior_events",
+      "summary": "Fine-grained learner behavior such as next, hint, and abandon.",
+      "source_refs": [
+        "crates/polaris-core/src/db.rs",
+        "docs/DATA_MODEL.md"
+      ],
+      "hot_path": false
+    },
+    {
+      "id": "grade_queue",
+      "title": "grade_queue",
+      "summary": "Asynchronous Tier 1 grading queue and outcomes.",
+      "source_refs": [
+        "crates/polaris-core/src/db.rs",
+        "docs/DATA_MODEL.md"
+      ],
+      "hot_path": false
+    },
+    {
+      "id": "capture_queue",
+      "title": "capture_queue",
+      "summary": "SQLite table managed by crates/polaris-core/src/db.rs.",
+      "source_refs": [
+        "crates/polaris-core/src/db.rs",
+        "docs/DATA_MODEL.md"
+      ],
+      "hot_path": false
+    },
+    {
+      "id": "theta",
+      "title": "theta",
+      "summary": "Current latent ability estimates.",
+      "source_refs": [
+        "crates/polaris-core/src/db.rs",
+        "docs/DATA_MODEL.md"
+      ],
+      "hot_path": false
+    },
+    {
+      "id": "theta_history",
+      "title": "theta_history",
+      "summary": "Historical latent ability snapshots for replay and trend analysis.",
+      "source_refs": [
+        "crates/polaris-core/src/db.rs",
+        "docs/DATA_MODEL.md"
+      ],
+      "hot_path": false
+    },
+    {
+      "id": "pack_theta",
+      "title": "pack_theta",
+      "summary": "SQLite table managed by crates/polaris-core/src/db.rs.",
+      "source_refs": [
+        "crates/polaris-core/src/db.rs",
+        "docs/DATA_MODEL.md"
+      ],
+      "hot_path": false
+    },
+    {
+      "id": "pack_theta_history",
+      "title": "pack_theta_history",
+      "summary": "SQLite table managed by crates/polaris-core/src/db.rs.",
+      "source_refs": [
+        "crates/polaris-core/src/db.rs",
+        "docs/DATA_MODEL.md"
+      ],
+      "hot_path": false
+    },
+    {
+      "id": "residual_stats",
+      "title": "residual_stats",
+      "summary": "Residual audit statistics for model fit and drift.",
+      "source_refs": [
+        "crates/polaris-core/src/db.rs",
+        "docs/DATA_MODEL.md"
+      ],
+      "hot_path": false
+    },
+    {
+      "id": "consolidation_runs",
+      "title": "consolidation_runs",
+      "summary": "Nightly consolidation run records.",
+      "source_refs": [
+        "crates/polaris-core/src/db.rs",
+        "docs/DATA_MODEL.md"
+      ],
+      "hot_path": false
+    },
+    {
+      "id": "moves_effects",
+      "title": "moves_effects",
+      "summary": "Move-level teaching effect estimates.",
+      "source_refs": [
+        "crates/polaris-core/src/db.rs",
+        "docs/DATA_MODEL.md"
+      ],
+      "hot_path": false
+    },
+    {
+      "id": "mrt_log",
+      "title": "mrt_log",
+      "summary": "Micro-randomized trial audit records.",
+      "source_refs": [
+        "crates/polaris-core/src/db.rs",
+        "docs/DATA_MODEL.md"
+      ],
+      "hot_path": false
+    },
+    {
+      "id": "bred_moves",
+      "title": "bred_moves",
+      "summary": "SQLite table managed by crates/polaris-core/src/db.rs.",
+      "source_refs": [
+        "crates/polaris-core/src/db.rs",
+        "docs/DATA_MODEL.md"
+      ],
+      "hot_path": false
+    },
+    {
+      "id": "param_tuning_runs",
+      "title": "param_tuning_runs",
+      "summary": "Parameter tuning proposals and accepted/rejected outcomes.",
+      "source_refs": [
+        "crates/polaris-core/src/db.rs",
+        "docs/DATA_MODEL.md"
+      ],
+      "hot_path": false
+    },
+    {
+      "id": "gu_rules",
+      "title": "gu_rules",
+      "summary": "Induced G_u rules with audit lifecycle state.",
+      "source_refs": [
+        "crates/polaris-core/src/db.rs",
+        "docs/DATA_MODEL.md"
+      ],
+      "hot_path": false
+    },
+    {
+      "id": "mirror_reports",
+      "title": "mirror_reports",
+      "summary": "Evidence-bound mirror reports and filtered assertions.",
+      "source_refs": [
+        "crates/polaris-core/src/db.rs",
+        "docs/DATA_MODEL.md"
+      ],
+      "hot_path": false
+    },
+    {
+      "id": "hazard_models",
+      "title": "hazard_models",
+      "summary": "Mental-dynamics hazard model fit records.",
+      "source_refs": [
+        "crates/polaris-core/src/db.rs",
+        "docs/DATA_MODEL.md"
+      ],
+      "hot_path": false
+    },
+    {
+      "id": "state_gate_evals",
+      "title": "state_gate_evals",
+      "summary": "HMM/state gate evaluations for participation decisions.",
+      "source_refs": [
+        "crates/polaris-core/src/db.rs",
+        "docs/DATA_MODEL.md"
+      ],
+      "hot_path": false
+    },
+    {
+      "id": "goals",
+      "title": "goals",
+      "summary": "SQLite table managed by crates/polaris-core/src/db.rs.",
+      "source_refs": [
+        "crates/polaris-core/src/db.rs",
+        "docs/DATA_MODEL.md"
+      ],
+      "hot_path": true
+    },
+    {
+      "id": "goal_dimensions",
+      "title": "goal_dimensions",
+      "summary": "SQLite table managed by crates/polaris-core/src/db.rs.",
+      "source_refs": [
+        "crates/polaris-core/src/db.rs",
+        "docs/DATA_MODEL.md"
+      ],
+      "hot_path": false
+    },
+    {
+      "id": "goal_milestones",
+      "title": "goal_milestones",
+      "summary": "SQLite table managed by crates/polaris-core/src/db.rs.",
+      "source_refs": [
+        "crates/polaris-core/src/db.rs",
+        "docs/DATA_MODEL.md"
+      ],
+      "hot_path": false
+    },
+    {
+      "id": "schema_migrations",
+      "title": "schema_migrations",
+      "summary": "SQLite table managed by crates/polaris-core/src/db.rs.",
+      "source_refs": [
+        "crates/polaris-core/src/db.rs",
+        "docs/DATA_MODEL.md"
+      ],
+      "hot_path": false
+    }
+  ],
+  "tickets": [
+    {
+      "id": "P01",
+      "title": "最小闭环",
+      "phase": "P01",
+      "status": "completed",
+      "service_loop": "",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P02A",
+      "title": "类型化超图",
+      "phase": "P02",
+      "status": "completed",
+      "service_loop": "定位模糊",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P02B",
+      "title": "图谱感知诊断",
+      "phase": "P02",
+      "status": "completed",
+      "service_loop": "定位模糊 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P02C",
+      "title": "MCP server",
+      "phase": "P02",
+      "status": "completed",
+      "service_loop": "验证真懂 → 定位模糊 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P03A",
+      "title": "MIRT 潜因子层",
+      "phase": "P03",
+      "status": "completed",
+      "service_loop": "定位模糊 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P03B",
+      "title": "夜间巩固 v1",
+      "phase": "P03",
+      "status": "completed",
+      "service_loop": "定位模糊 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P03C",
+      "title": "几何候选层 v1",
+      "phase": "P03",
+      "status": "completed",
+      "service_loop": "定位模糊 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P03D",
+      "title": "状态 HMM + 行为发射 + 离散时 hazard 放弃模型",
+      "phase": "P03",
+      "status": "completed",
+      "service_loop": "定位模糊 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P03E",
+      "title": "知识相图判定",
+      "phase": "P03",
+      "status": "completed",
+      "service_loop": "验证真懂 → 定位模糊 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P03F",
+      "title": "Moves Bloom 扩展",
+      "phase": "P03",
+      "status": "completed",
+      "service_loop": "验证真懂 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P03G",
+      "title": "交错调度",
+      "phase": "P03",
+      "status": "completed",
+      "service_loop": "定位模糊 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P03H",
+      "title": "G_u 自动归纳",
+      "phase": "P03",
+      "status": "completed",
+      "service_loop": "定位模糊 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P03I",
+      "title": "镜像报告 v1",
+      "phase": "P03",
+      "status": "completed",
+      "service_loop": "验证真懂 → 定位模糊",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P03J",
+      "title": "参数自调优 v1",
+      "phase": "P03",
+      "status": "completed",
+      "service_loop": "定位模糊 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P03K",
+      "title": "心智动力学拟合层激活",
+      "phase": "P03",
+      "status": "completed",
+      "service_loop": "定位模糊 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P03L",
+      "title": "索引审计",
+      "phase": "P03",
+      "status": "completed",
+      "service_loop": "全环节",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P03M",
+      "title": "多 pack latent 维度映射",
+      "phase": "P03",
+      "status": "completed",
+      "service_loop": "定位模糊 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P03N",
+      "title": "几何候选池确定性",
+      "phase": "P03",
+      "status": "completed",
+      "service_loop": "全环节（验证稳定性）",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P03O",
+      "title": "BKT-MIRT 融合不确定度传播 shadow gate",
+      "phase": "P03",
+      "status": "completed",
+      "service_loop": "定位模糊",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P04A",
+      "title": "桌面状态镜子契约（原规划标题含 Tauri，但未交付桌面应用）",
+      "phase": "P04",
+      "status": "completed",
+      "service_loop": "定位模糊 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P04B",
+      "title": "HTTP API 门",
+      "phase": "P04",
+      "status": "completed",
+      "service_loop": "验证真懂 → 定位模糊 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P04C",
+      "title": "MRT 微随机化引擎（预登记审计）+ 教法签名后验（F1）+ 个人摩擦曲线拟合（F3）",
+      "phase": "P04",
+      "status": "completed",
+      "service_loop": "验证真懂 → 定位模糊 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P04D",
+      "title": "目标引擎移植（goals/dimensions/milestones，参考 Polaris schema v9）",
+      "phase": "P04",
+      "status": "completed",
+      "service_loop": "验证真懂 → 定位模糊 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P04E",
+      "title": "学习模拟端到端测试",
+      "phase": "P04",
+      "status": "completed",
+      "service_loop": "验证真懂 → 定位模糊 → 针对性补缺（全闭环验证）",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P05A0",
+      "title": "课程接入协议 v1",
+      "phase": "P05",
+      "status": "completed",
+      "service_loop": "验证真懂 → 定位模糊 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P05A1",
+      "title": "算法 Domain Pack",
+      "phase": "P05",
+      "status": "completed",
+      "service_loop": "验证真懂 → 定位模糊 → 针对性补缺（第二域验证领域无关性）",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P05A",
+      "title": "英语示例 Domain Pack",
+      "phase": "P05",
+      "status": "completed",
+      "service_loop": "验证真懂 → 定位模糊 → 针对性补缺（跨域桥首测）",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P05B",
+      "title": "教法育种引擎",
+      "phase": "P05",
+      "status": "completed",
+      "service_loop": "针对性补缺（方法库扩展必须先验证真懂）",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P05C",
+      "title": "ingest 适配器插件化",
+      "phase": "P05",
+      "status": "completed",
+      "service_loop": "验证真懂（外部证据进入统一评分口径）",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P06A",
+      "title": "MCP 工具面补全",
+      "phase": "P06",
+      "status": "completed",
+      "service_loop": "验证真懂 → 定位模糊",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P06B",
+      "title": "数据主权运维",
+      "phase": "P06",
+      "status": "completed",
+      "service_loop": "全环节（Local-persistent 铁律）",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P06C",
+      "title": "属性测试扩面",
+      "phase": "P06",
+      "status": "completed",
+      "service_loop": "全环节（验证稳定性）",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P06D",
+      "title": "镜像报告 Tier 1 叙事润色",
+      "phase": "P06",
+      "status": "completed",
+      "service_loop": "定位模糊",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P06E",
+      "title": "性能预算回归",
+      "phase": "P06",
+      "status": "completed",
+      "service_loop": "全环节（Tier 0 预算铁律）",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P06F",
+      "title": "校准后验化",
+      "phase": "P06",
+      "status": "completed",
+      "service_loop": "验证真懂 → 定位模糊",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P06G",
+      "title": "theta AdaGrad 步长",
+      "phase": "P06",
+      "status": "completed",
+      "service_loop": "验证真懂 → 定位模糊",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P06H",
+      "title": "相变动力学 shadow gate",
+      "phase": "P06",
+      "status": "completed",
+      "service_loop": "定位模糊 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P06I",
+      "title": "G_u 层级 Beta 超先验 shadow gate",
+      "phase": "P06",
+      "status": "completed",
+      "service_loop": "定位模糊 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P06J",
+      "title": "FSRS 个人参数拟合",
+      "phase": "P06",
+      "status": "completed",
+      "service_loop": "定位模糊 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P07A",
+      "title": "相图产品化语义层",
+      "phase": "P07",
+      "status": "completed",
+      "service_loop": "验证真懂 → 用户读懂",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P07B",
+      "title": "学习者状态镜子 v1",
+      "phase": "P07",
+      "status": "completed",
+      "service_loop": "验证真懂 → 定位模糊",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P07C",
+      "title": "报告 top_signal + suggested_action",
+      "phase": "P07",
+      "status": "completed",
+      "service_loop": "定位模糊 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P07D",
+      "title": "行动闭环（相 → 任务响应策略）",
+      "phase": "P07",
+      "status": "completed",
+      "service_loop": "针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P07E",
+      "title": "学习者反馈通道扩展",
+      "phase": "P07",
+      "status": "completed",
+      "service_loop": "验证真懂",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P08A",
+      "title": "多 Pack 切换 + 数据隔离开关",
+      "phase": "P07",
+      "status": "completed",
+      "service_loop": "全环节（通用性）",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P09A",
+      "title": "engine.rs 模块化拆分",
+      "phase": "P07",
+      "status": "completed",
+      "service_loop": "全环节（可演进）",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P09B",
+      "title": "polaris config 浏览 CLI + 参数文档自动生成",
+      "phase": "P07",
+      "status": "completed",
+      "service_loop": "全环节（可治理）",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P09C",
+      "title": "polaris doctor --diagnose 全面诊断",
+      "phase": "P07",
+      "status": "completed",
+      "service_loop": "全环节（运维）",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P08B",
+      "title": "LLM 调用隐私清单 + 纯 Tier 0 模式",
+      "phase": "P07",
+      "status": "completed",
+      "service_loop": "信任前提",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P08C",
+      "title": "Pack 作者上手指南 + 模板 Pack",
+      "phase": "P07",
+      "status": "completed",
+      "service_loop": "生态可用性",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P10A",
+      "title": "五框架门状态面板 + 实验透明度",
+      "phase": "P07",
+      "status": "completed",
+      "service_loop": "验证真懂（验证门可见）",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P11A",
+      "title": "数据库 schema 版本化迁移",
+      "phase": "P11",
+      "status": "completed",
+      "service_loop": "全环节（Local-persistent / 可演进底座）",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P11B",
+      "title": "MCP/HTTP API 稳定性合约",
+      "phase": "P11",
+      "status": "completed",
+      "service_loop": "全环节（外部接口可演进底座）",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P11C",
+      "title": "Pack 作者沙箱模拟",
+      "phase": "P11",
+      "status": "completed",
+      "service_loop": "全环节（Pack 作者发布前验证）",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P11D",
+      "title": "交接状态收敛",
+      "phase": "P11",
+      "status": "completed",
+      "service_loop": "全环节（AI 协作可持续）",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P12A",
+      "title": "无感学习入口与外部知识入库规划",
+      "phase": "P12",
+      "status": "completed",
+      "service_loop": "验证真懂 → 定位模糊 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P12B",
+      "title": "学习项目声明 v1",
+      "phase": "P12",
+      "status": "completed",
+      "service_loop": "验证真懂 → 定位模糊",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P12C",
+      "title": "Capture Queue v1",
+      "phase": "P12",
+      "status": "completed",
+      "service_loop": "验证真懂 → 定位模糊",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P12D",
+      "title": "Learner Inbox v1",
+      "phase": "P12",
+      "status": "completed",
+      "service_loop": "验证真懂 → 定位模糊 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P12E",
+      "title": "Inbox Practice Bridge",
+      "phase": "P12",
+      "status": "completed",
+      "service_loop": "验证真懂 → 定位模糊 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P13A",
+      "title": "AI IDE MCP 项目发现与学习入口",
+      "phase": "P13",
+      "status": "completed",
+      "service_loop": "验证真懂 → 定位模糊 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P13B",
+      "title": "README 与 AI IDE 使用指南",
+      "phase": "P13",
+      "status": "completed",
+      "service_loop": "验证真懂 → 定位模糊 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P13C",
+      "title": "AI Interaction Profile v1",
+      "phase": "P13",
+      "status": "completed",
+      "service_loop": "针对性补缺 → 用户可控",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P14A",
+      "title": "真实使用 smoke v1",
+      "phase": "P14",
+      "status": "completed",
+      "service_loop": "验证真懂 → 定位模糊 → 针对性补缺 → 用户能实际用起来",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P14B",
+      "title": "MCP 真实会话 smoke v1",
+      "phase": "P14",
+      "status": "completed",
+      "service_loop": "验证真懂 → 定位模糊 → 针对性补缺 → AI IDE 真能接入",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P14C",
+      "title": "AI IDE 接入实战包 v1",
+      "phase": "P14",
+      "status": "completed",
+      "service_loop": "验证真懂 → 定位模糊 → 针对性补缺 → 用户能实际用起来",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P14D",
+      "title": "Learned 根目录自动接入 v1",
+      "phase": "P14",
+      "status": "completed",
+      "service_loop": "验证真懂 → 定位模糊 → 针对性补缺 → 用户打开学习根即可实际用起来",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P15A",
+      "title": "DeepTutor MCP stdio 双帧兼容",
+      "phase": "P15",
+      "status": "completed",
+      "service_loop": "验证真懂 → 定位模糊 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P15B",
+      "title": "Tier 2 可审计任务回合契约",
+      "phase": "P15",
+      "status": "completed",
+      "service_loop": "验证真懂 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P16A",
+      "title": "蓝图与 Atlas 收口",
+      "phase": "P16",
+      "status": "completed",
+      "service_loop": "全环节（工程事实可审计）",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P16B",
+      "title": "实时知识地图契约",
+      "phase": "P16",
+      "status": "queued",
+      "service_loop": "定位模糊",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P16C",
+      "title": "跨域预测地图",
+      "phase": "P16",
+      "status": "queued",
+      "service_loop": "定位模糊 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P16D",
+      "title": "Global Learner Profile 数据与治理",
+      "phase": "P16",
+      "status": "queued",
+      "service_loop": "验证真懂 → 定位模糊",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P16E",
+      "title": "Global Learner Profile 估计与验证",
+      "phase": "P16",
+      "status": "queued",
+      "service_loop": "定位模糊 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P16F",
+      "title": "目标产品契约",
+      "phase": "P16",
+      "status": "queued",
+      "service_loop": "针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P17A",
+      "title": "Tauri 产品底座",
+      "phase": "P17",
+      "status": "queued",
+      "service_loop": "全环节（正式产品承载）",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P17B",
+      "title": "常驻小窗与 Today",
+      "phase": "P17",
+      "status": "queued",
+      "service_loop": "定位模糊 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P17C",
+      "title": "知识地图工作区",
+      "phase": "P17",
+      "status": "queued",
+      "service_loop": "定位模糊",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P17D",
+      "title": "学习工作台",
+      "phase": "P17",
+      "status": "queued",
+      "service_loop": "验证真懂 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P17E",
+      "title": "画像与治理工作区",
+      "phase": "P17",
+      "status": "queued",
+      "service_loop": "全环节（学习者知情与控制）",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P17F",
+      "title": "桌面生命周期",
+      "phase": "P17",
+      "status": "queued",
+      "service_loop": "全环节（本地可靠性）",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P17G",
+      "title": "Windows 发布硬化",
+      "phase": "P17",
+      "status": "queued",
+      "service_loop": "全环节（公开发布）",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P12F",
+      "title": "Concept Suggestion + Overlay Pack",
+      "phase": "P18",
+      "status": "queued",
+      "service_loop": "定位模糊 → 针对性补缺",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P18A",
+      "title": "真实纵向验证",
+      "phase": "P18",
+      "status": "queued",
+      "service_loop": "验证真懂",
+      "source_refs": "docs/tickets/QUEUE.md"
+    },
+    {
+      "id": "P18B",
+      "title": "1.0 发布验收",
+      "phase": "P18",
+      "status": "queued",
+      "service_loop": "全环节（最终交付）",
+      "source_refs": "docs/tickets/QUEUE.md"
+    }
+  ],
+  "guardrails": [
+    {
+      "id": "sync-no-llm",
+      "title": "Synchronous path has no LLM dependency",
+      "summary": "Tier 0 learning actions must stay local, deterministic, and fast.",
+      "source_refs": [
+        "SPEC.md",
+        "docs/MASTER_PLAN.md"
+      ]
+    },
+    {
+      "id": "engine-owned-mastery",
+      "title": "External AI cannot write mastery",
+      "summary": "LLM output may teach or explain, but mastery state is owned by engine evidence and scoring.",
+      "source_refs": [
+        "SPEC.md",
+        "crates/polaris-cli/src/mcp.rs"
+      ]
+    },
+    {
+      "id": "strict-citation",
+      "title": "Mirror reports need strict citations",
+      "summary": "Assertions must carry evidence ids and confidence, or stay out of the report.",
+      "source_refs": [
+        "docs/DATA_MODEL.md",
+        "crates/polaris-core/src/citation.rs"
+      ]
+    },
+    {
+      "id": "local-persistent",
+      "title": "Local-persistent ledger",
+      "summary": "Facts are stored locally in SQLite and replayable through evidence and operation records.",
+      "source_refs": [
+        "SPEC.md",
+        "crates/polaris-core/src/db.rs"
+      ]
+    },
+    {
+      "id": "single-ticket",
+      "title": "Single-ticket discipline",
+      "summary": "Only one implementation ticket is in progress; queue state remains the source of truth.",
+      "source_refs": [
+        "AGENTS.md",
+        "docs/tickets/QUEUE.md"
+      ]
+    }
+  ],
+  "views": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "summary": "High-level loop, current status, and fastest paths into the system."
+    },
+    {
+      "id": "graph",
+      "title": "Architecture Graph",
+      "summary": "Clickable module and dependency graph with source-linked Inspector."
+    },
+    {
+      "id": "timeline",
+      "title": "Ticket Timeline",
+      "summary": "Ticket state is generated from QUEUE so completed, active, and remaining work stay distinct."
+    },
+    {
+      "id": "data",
+      "title": "Data Model",
+      "summary": "SQLite tables, indexes, facts, derived state, and audit surfaces."
+    },
+    {
+      "id": "guardrails",
+      "title": "Guardrails",
+      "summary": "Rules that keep Polaris evidence-bound, local, and ticket-disciplined."
+    }
+  ]
+}

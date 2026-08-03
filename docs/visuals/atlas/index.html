@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Polaris Core 瓷白智能图谱 | Porcelain Intelligence Atlas</title>
+    <meta
+      name="description"
+      content="Polaris Core architecture, data model, ticket timeline, and evidence guardrail atlas. Polaris Core 架构、数据模型、票据时间线与证据护栏图谱。"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <canvas class="ambient-field" aria-hidden="true"></canvas>
+
+    <header class="topbar">
+      <a class="brand" href="#overview" aria-label="Polaris Atlas home">
+        <span class="brand-mark">P</span>
+        <span>
+          <strong id="brand-title">Polaris Core 图谱</strong>
+          <small id="brand-subtitle">Porcelain Intelligence</small>
+        </span>
+      </a>
+
+      <label class="search" for="atlas-search">
+        <span id="search-label">检索 Search</span>
+        <input
+          id="atlas-search"
+          type="search"
+          autocomplete="off"
+          placeholder="搜索模块、票据、数据表、护栏..."
+        />
+      </label>
+
+      <div class="language-switch" aria-label="Language">
+        <button type="button" data-lang="zh" aria-pressed="true">中文</button>
+        <button type="button" data-lang="en" aria-pressed="false">EN</button>
+      </div>
+
+      <nav class="view-tabs" aria-label="Atlas views">
+        <button type="button" data-view="overview" aria-pressed="true">总览</button>
+        <button type="button" data-view="graph" aria-pressed="false">图谱</button>
+        <button type="button" data-view="timeline" aria-pressed="false">时间线</button>
+        <button type="button" data-view="data" aria-pressed="false">数据模型</button>
+        <button type="button" data-view="guardrails" aria-pressed="false">护栏</button>
+      </nav>
+    </header>
+
+    <main class="atlas-shell">
+      <aside class="module-tree" aria-label="Module tree">
+        <div class="panel-heading">
+          <p id="module-heading">系统索引</p>
+          <span id="module-count">加载中</span>
+        </div>
+        <div id="search-results" class="search-results" hidden></div>
+        <div id="module-tree"></div>
+      </aside>
+
+      <section class="atlas-canvas" aria-label="Architecture canvas">
+        <div id="atlas-view" class="view-panel">
+          <div class="loading-state">
+            <span class="loading-rule"></span>
+            <p>正在载入 Polaris 图谱</p>
+          </div>
+        </div>
+      </section>
+
+      <aside class="inspector" aria-label="Selected node details">
+        <div class="panel-heading">
+          <p id="inspector-heading">详情面板</p>
+          <span id="inspector-state">未选择</span>
+        </div>
+        <div id="inspector"></div>
+      </aside>
+    </main>
+
+    <noscript>
+      <section class="noscript">
+        <h1>Polaris Core 图谱</h1>
+        <p>请启用 JavaScript 以浏览交互式架构图谱。Enable JavaScript to explore the interactive architecture graph.</p>
+      </section>
+    </noscript>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
