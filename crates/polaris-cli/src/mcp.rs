@@ -83,6 +83,7 @@ impl McpSession {
                 "update_ai_interaction_profile" => self.update_ai_interaction_profile(arguments),
                 "get_learner_mirror" => self.get_learner_mirror(),
                 "submit_evidence" => self.submit_evidence(arguments),
+                "submit_task_response" => self.submit_task_response(arguments),
                 "get_teaching_instruction" => self.get_teaching_instruction(arguments),
                 other => Err(format!("unknown tool: {other}")),
             }
@@ -149,7 +150,8 @@ impl McpSession {
             return Ok(json!({ "task": null }));
         };
 
-        self.engine
+        let task_event_id = self
+            .engine
             .record_next_task_event(session, &task)
             .map_err(|error| error.to_string())?;
 
@@ -158,6 +160,7 @@ impl McpSession {
             .teaching_instruction(&task.concept_id)
             .map_err(|error| error.to_string())?;
         Ok(json!({
+            "task_event_id": task_event_id,
             "task": {
                 "concept_id": task.concept_id,
                 "task_type": task.task_type,
@@ -165,6 +168,27 @@ impl McpSession {
                 "reason": task.reason,
             },
             "teaching_instruction": instruction,
+        }))
+    }
+
+    fn submit_task_response(&mut self, arguments: &Value) -> Result<Value, String> {
+        let session = required_str(arguments, "session")?;
+        let task_event_id = required_str(arguments, "task_event_id")?;
+        let response = required_str(arguments, "response")?.to_owned();
+        let confidence = required_i64(arguments, "confidence")?;
+        if !(1..=5).contains(&confidence) {
+            return Err("confidence must be in 1..=5".to_owned());
+        }
+        let receipt = self
+            .engine
+            .submit_task_response(session, task_event_id, response, confidence as i32)
+            .map_err(|error| error.to_string())?;
+
+        Ok(json!({
+            "task_event_id": task_event_id,
+            "attempt_id": receipt.attempt_id,
+            "provisional_score": receipt.provisional_score,
+            "degraded": receipt.degraded,
         }))
     }
 
@@ -790,6 +814,20 @@ fn tool_definitions() -> Value {
             }
         },
         {
+            "name": "submit_task_response",
+            "description": "Submit the learner's own answer to a task receipt returned by get_next_task. Polaris verifies the receipt belongs to the same session, restores the scheduled concept, task type, and prompt, then runs engine-owned scoring. The receipt can be submitted only once.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "session": {"type": "string", "description": "Session id used with get_next_task."},
+                    "task_event_id": {"type": "string", "description": "Task receipt returned by get_next_task."},
+                    "response": {"type": "string", "description": "Learner's own response to the issued task."},
+                    "confidence": {"type": "integer", "minimum": 1, "maximum": 5, "description": "Learner self-confidence collected before feedback."}
+                },
+                "required": ["session", "task_event_id", "response", "confidence"]
+            }
+        },
+        {
             "name": "get_teaching_instruction",
             "description": "Return Tier 2 teaching guidance for a concept with focus, move, target_depth, do, dont, and anchor fields.",
             "inputSchema": {
@@ -1063,6 +1101,7 @@ mod tests {
                 "update_ai_interaction_profile",
                 "get_learner_mirror",
                 "submit_evidence",
+                "submit_task_response",
                 "get_teaching_instruction",
             ],
         );
@@ -1098,6 +1137,7 @@ mod tests {
             "polaris://trust",
             "get_next_task",
             "submit_evidence",
+            "submit_task_response",
             "record_learner_feedback",
             "get_trust_panel",
             "detect_project_manifest",
@@ -1740,6 +1780,7 @@ mod tests {
             .as_str()
             .unwrap();
         let next_payload: Value = serde_json::from_str(next_text).unwrap();
+        assert!(next_payload["task_event_id"].as_str().is_some());
         let concept_id = next_payload["task"]["concept_id"].as_str().unwrap();
         assert_eq!(next_payload["teaching_instruction"]["move"], "recall");
         assert_eq!(
@@ -1782,6 +1823,221 @@ mod tests {
             submit_payload["attempt_id"].as_str().is_some(),
             "submit response should accept concept_id and return attempt_id, got {submit_payload}"
         );
+    }
+
+    #[test]
+    fn mcp_audited_task_turn_restores_issued_task_and_records_linked_receipt() {
+        let mut session = test_session();
+        let next = call_tool_json(&mut session, "get_next_task", json!({"session": "turn-ok"}));
+        let task_event_id = next["task_event_id"].as_str().unwrap().to_owned();
+        let task = next["task"].clone();
+
+        let receipt = call_tool_json(
+            &mut session,
+            "submit_task_response",
+            json!({
+                "session": "turn-ok",
+                "task_event_id": task_event_id,
+                "response": "Ownership controls which binding is responsible for dropping a value.",
+                "confidence": 4,
+                "concept_id": "must-be-ignored",
+                "task_type": "transfer",
+                "prompt": "must-be-ignored"
+            }),
+        );
+        let attempt_id = receipt["attempt_id"].as_str().unwrap();
+        assert_eq!(receipt["task_event_id"], task_event_id);
+
+        let (concept_id, task_type, prompt_text): (String, String, String) = session
+            .engine()
+            .conn()
+            .query_row(
+                "SELECT concept_id, task_type, prompt_text FROM attempts WHERE id=?1",
+                [attempt_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(concept_id, task["concept_id"].as_str().unwrap());
+        assert_eq!(task_type, task["task_type"].as_str().unwrap());
+        assert_eq!(prompt_text, task["prompt"].as_str().unwrap());
+
+        let audit: (String, String) = session
+            .engine()
+            .conn()
+            .query_row(
+                "SELECT json_extract(payload_json, '$.task_event_id'),
+                        json_extract(payload_json, '$.attempt_id')
+                 FROM behavior_events
+                 WHERE type='tier2_submission'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(audit.0, receipt["task_event_id"].as_str().unwrap());
+        assert_eq!(audit.1, attempt_id);
+    }
+
+    #[test]
+    fn mcp_audited_task_turn_rejects_unknown_or_cross_session_receipts_without_attempts() {
+        let mut session = test_session();
+        let next = call_tool_json(
+            &mut session,
+            "get_next_task",
+            json!({"session": "turn-owner"}),
+        );
+        let task_event_id = next["task_event_id"].as_str().unwrap();
+        session
+            .engine()
+            .conn()
+            .execute(
+                "INSERT INTO behavior_events(id, session_id, at, type, concept_id, payload_json)
+                 VALUES ('turn-owner-hint', 'turn-owner', strftime('%Y-%m-%dT%H:%M:%SZ','now'),
+                         'hint', 'ownership', '{}')",
+                [],
+            )
+            .unwrap();
+
+        for (id, arguments) in [
+            (
+                401,
+                json!({
+                    "session": "turn-owner",
+                    "task_event_id": "missing-task-event",
+                    "response": "answer",
+                    "confidence": 4
+                }),
+            ),
+            (
+                402,
+                json!({
+                    "session": "another-session",
+                    "task_event_id": task_event_id,
+                    "response": "answer",
+                    "confidence": 4
+                }),
+            ),
+            (
+                403,
+                json!({
+                    "session": "turn-owner",
+                    "task_event_id": "turn-owner-hint",
+                    "response": "answer",
+                    "confidence": 4
+                }),
+            ),
+        ] {
+            let response = session
+                .handle_request(json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "method": "tools/call",
+                    "params": {"name": "submit_task_response", "arguments": arguments}
+                }))
+                .unwrap()
+                .unwrap();
+            assert_eq!(response["result"]["isError"], true, "{response}");
+        }
+
+        let attempts: i64 = session
+            .engine()
+            .conn()
+            .query_row("SELECT COUNT(*) FROM attempts", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(attempts, 0);
+    }
+
+    #[test]
+    fn mcp_audited_task_turn_rejects_replayed_receipt_without_second_attempt() {
+        let mut session = test_session();
+        let next = call_tool_json(
+            &mut session,
+            "get_next_task",
+            json!({"session": "turn-once"}),
+        );
+        let task_event_id = next["task_event_id"].as_str().unwrap();
+        let arguments = json!({
+            "session": "turn-once",
+            "task_event_id": task_event_id,
+            "response": "Ownership controls which binding drops a value.",
+            "confidence": 4
+        });
+        let _ = call_tool_json(&mut session, "submit_task_response", arguments.clone());
+        let replay = session
+            .handle_request(json!({
+                "jsonrpc": "2.0",
+                "id": 403,
+                "method": "tools/call",
+                "params": {"name": "submit_task_response", "arguments": arguments}
+            }))
+            .unwrap()
+            .unwrap();
+        assert_eq!(replay["result"]["isError"], true);
+        assert!(replay["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("already been submitted"));
+
+        let attempts: i64 = session
+            .engine()
+            .conn()
+            .query_row("SELECT COUNT(*) FROM attempts", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(attempts, 1);
+    }
+
+    #[test]
+    fn mcp_audited_task_turn_rolls_back_attempt_when_audit_write_fails() {
+        let mut session = test_session();
+        let next = call_tool_json(
+            &mut session,
+            "get_next_task",
+            json!({"session": "turn-rollback"}),
+        );
+        let task_event_id = next["task_event_id"].as_str().unwrap().to_owned();
+        session
+            .engine()
+            .conn()
+            .execute_batch(
+                "CREATE TEMP TRIGGER fail_tier2_submission
+                 BEFORE INSERT ON behavior_events
+                 WHEN NEW.type='tier2_submission'
+                 BEGIN
+                     SELECT RAISE(ABORT, 'forced tier2 audit failure');
+                 END;",
+            )
+            .unwrap();
+
+        let arguments = json!({
+            "session": "turn-rollback",
+            "task_event_id": task_event_id,
+            "response": "Ownership controls which binding drops a value.",
+            "confidence": 4
+        });
+        let failed = session
+            .handle_request(json!({
+                "jsonrpc": "2.0",
+                "id": 404,
+                "method": "tools/call",
+                "params": {"name": "submit_task_response", "arguments": arguments.clone()}
+            }))
+            .unwrap()
+            .unwrap();
+        assert_eq!(failed["result"]["isError"], true);
+
+        let attempts: i64 = session
+            .engine()
+            .conn()
+            .query_row("SELECT COUNT(*) FROM attempts", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(attempts, 0);
+
+        session
+            .engine()
+            .conn()
+            .execute_batch("DROP TRIGGER fail_tier2_submission")
+            .unwrap();
+        let receipt = call_tool_json(&mut session, "submit_task_response", arguments);
+        assert!(receipt["attempt_id"].as_str().is_some());
     }
 
     #[test]

@@ -363,6 +363,7 @@ MCP 使用 JSON-RPC 2.0。通知方法 `notifications/*` 返回空响应。未�
 - `update_ai_interaction_profile`
 - `get_learner_mirror`
 - `submit_evidence`
+- `submit_task_response`
 - `get_teaching_instruction`
 
 每个工具定义必须保留：
@@ -380,7 +381,7 @@ MCP 使用 JSON-RPC 2.0。通知方法 `notifications/*` 返回空响应。未�
 
 关键工具语义：
 
-- `get_next_task`: 与 HTTP `POST /next` 等价，缺省 session 为 `mcp`。
+- `get_next_task`: 与 HTTP `POST /next` 等价，缺省 session 为 `mcp`。MCP 返回额外的 `task_event_id`，它是该 session 已记录 `next` 事件的只读回执；可交给 `submit_task_response` 建立严格回合关联。
 - `detect_project_manifest`: 从 `path`（可选，缺省为 MCP server 当前目录）向上发现 `p-os.toml`。找到时返回 `found=true`、`project_root`、`manifest_path`、`manifest`；未找到时返回 `found=false`，不视为工具错误。
 - `discover_learning_projects`: 从 `root`（可选，缺省为 MCP server 当前目录；`path` 可作为 alias）向下只读扫描 `p-os.toml` 学习项目声明，返回 `root` 与 `projects`。扫描会跳过 `_worktrees`、`.git`、`target` 等非课程目录，找到一个项目后不继续深入该项目内部；该工具只发现课程项目，不修改课程仓库、不生成掌握度。
 - `capture_evidence`: 与 HTTP `POST /capture` 语义对齐，把外部学习资料保存为 pending raw capture；不得生成 attempt、不得改变 mastery、不得写 grade queue，外部评分字段不被信任。
@@ -392,6 +393,7 @@ MCP 使用 JSON-RPC 2.0。通知方法 `notifications/*` 返回空响应。未�
 - `update_ai_interaction_profile`: 与 HTTP `POST /ai-profile` 语义对齐；仅在用户要求改变 AI 性格、话量、解释深度、主动程度、介入频率、纠错风格或补充说明时调用，不影响 mastery。
 - `get_learner_mirror`: 与 HTTP `GET /learner-mirror` 对齐，返回 `generated_at`、`confidence_curve`、`phase_distribution`、`recent_assertions`。
 - `submit_evidence`: 请求字段和外层返回字段与 HTTP `POST /evidence` 对齐，但保留当前 MCP submit 路径语义：可使用引擎评分和后续提交流水线；外部评分字段仍不得作为掌握度权威。
+- `submit_task_response`: Tier 2 严格回合入口。必填 `session`、`task_event_id`、`response`、`confidence`（1..=5）。`task_event_id` 必须是同一 session 的未提交 `get_next_task` 回执；内核从该事件复原 concept、task type 与 prompt，宿主传入的同名字段不参与提交。成功后仍走 engine-owned scoring，并返回 `task_event_id`、`attempt_id`、`provisional_score`、`degraded`；同时写 `behavior_events(type='tier2_submission')` 关联回执与 attempt。不存在、跨 session、非 next 或已提交的回执必须拒绝且不得创建 attempt。旧 `submit_evidence` 不要求回执，保持兼容。
 - `record_learner_feedback`: 与 HTTP `POST /feedback` 等价，缺省 session 为 `mcp`。
 - `get_trust_panel`: 与 `polaris://trust` 资源读取返回同一顶层形状。
 

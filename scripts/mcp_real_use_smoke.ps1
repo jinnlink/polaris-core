@@ -319,7 +319,9 @@ try {
         "act_on_learner_inbox_item",
         "draft_inbox_practice",
         "submit_inbox_practice",
-        "get_learner_mirror"
+        "get_learner_mirror",
+        "get_next_task",
+        "submit_task_response"
     )) {
         Assert-Text ($toolNames -contains $required) "tools/list missing $required"
     }
@@ -350,7 +352,26 @@ try {
     Assert-Text ($profile.persona -eq "socratic_tutor") "get_ai_interaction_profile did not persist persona"
     Add-TranscriptLine "ai_profile: $($profile.persona), $($profile.verbosity), $($profile.intervention_frequency)"
 
-    $capture = Invoke-McpTool $process 6 "capture_evidence" @{
+    $issuedTask = Invoke-McpTool $process 6 "get_next_task" @{
+        session = "p15b-mcp-turn"
+    }
+    Assert-Text (-not [string]::IsNullOrWhiteSpace($issuedTask.task_event_id)) "get_next_task did not return task_event_id"
+    Assert-Text (-not [string]::IsNullOrWhiteSpace($issuedTask.task.concept_id)) "get_next_task did not return a concept"
+    $taskEventId = $issuedTask.task_event_id
+    Add-TranscriptLine "task_event_id: $taskEventId"
+    Add-TranscriptLine "task_concept: $($issuedTask.task.concept_id)"
+
+    $turnReceipt = Invoke-McpTool $process 7 "submit_task_response" @{
+        session = "p15b-mcp-turn"
+        task_event_id = $taskEventId
+        response = "A learner answer submitted through the issued Polaris task receipt."
+        confidence = 4
+    }
+    Assert-Text ($turnReceipt.task_event_id -eq $taskEventId) "submit_task_response did not echo task_event_id"
+    Assert-Text (-not [string]::IsNullOrWhiteSpace($turnReceipt.attempt_id)) "submit_task_response did not return attempt_id"
+    Add-TranscriptLine "turn_attempt_id: $($turnReceipt.attempt_id)"
+
+    $capture = Invoke-McpTool $process 8 "capture_evidence" @{
         session = "p14b-mcp"
         source = "mcp-real-use-smoke"
         content_type = "text/plain"
@@ -364,23 +385,23 @@ try {
     Add-TranscriptLine "capture_id: $captureId"
     Add-TranscriptLine "recorded_only: $($capture.recorded_only.ToString().ToLowerInvariant())"
 
-    $inbox = Invoke-McpTool $process 7 "list_learner_inbox" @{}
+    $inbox = Invoke-McpTool $process 9 "list_learner_inbox" @{}
     Assert-Text (@($inbox.items | Where-Object { $_.capture_id -eq $captureId }).Count -eq 1) "list_learner_inbox did not include capture"
 
-    $acted = Invoke-McpTool $process 8 "act_on_learner_inbox_item" @{
+    $acted = Invoke-McpTool $process 10 "act_on_learner_inbox_item" @{
         capture_id = $captureId
         action = "accept"
     }
     Assert-Text ($acted.status -eq "practice_ready") "act_on_learner_inbox_item did not mark practice_ready"
     Add-TranscriptLine "status: $($acted.status)"
 
-    $draft = Invoke-McpTool $process 9 "draft_inbox_practice" @{
+    $draft = Invoke-McpTool $process 11 "draft_inbox_practice" @{
         capture_id = $captureId
     }
     Assert-Text ($draft.prompt -match "Ownership") "draft_inbox_practice prompt did not mention Ownership"
     Add-TranscriptLine "prompt: $($draft.prompt)"
 
-    $submitted = Invoke-McpTool $process 10 "submit_inbox_practice" @{
+    $submitted = Invoke-McpTool $process 12 "submit_inbox_practice" @{
         capture_id = $captureId
         session = "p14b-mcp"
         response = "Ownership means one binding owns a value and is responsible for dropping it at scope end."
@@ -393,7 +414,7 @@ try {
     Add-TranscriptLine "attempt_id: $attemptId"
     Add-TranscriptLine ("provisional_score: " + ([double]$submitted.provisional_score).ToString("0.000", $invariantCulture))
 
-    $mirror = Invoke-McpTool $process 11 "get_learner_mirror" @{}
+    $mirror = Invoke-McpTool $process 13 "get_learner_mirror" @{}
     Assert-Text (@($mirror.confidence_curve).Count -ge 1) "get_learner_mirror missing confidence_curve"
     Assert-Text (@($mirror.confidence_curve | Where-Object { $_.concept_id -eq "ownership" }).Count -ge 1) "learner mirror missing ownership attempt"
     Add-TranscriptLine "confidence_curve: $(@($mirror.confidence_curve).Count)"

@@ -1,6 +1,6 @@
 # 票队列（单票制）
 
-状态：**无 In Progress；P15A 已实现、通过验收并提交；P14D 已实现、通过验收；P14C 已实现、通过验收并提交；P14B 已实现、通过验收并提交；P14A 已实现、通过验收并提交；P13C 已实现、通过验收并提交；P12E 已实现、通过验收并提交**。任何时刻只允许 1 张票 In Progress。
+状态：**无 In Progress；P15B 已实现、通过验收，等待用户确认后提交；P15A 已实现、通过验收并提交；P14D 已实现、通过验收；P14C 已实现、通过验收并提交；P14B 已实现、通过验收并提交；P14A 已实现、通过验收并提交；P13C 已实现、通过验收并提交；P12E 已实现、通过验收并提交**。任何时刻只允许 1 张票 In Progress。
 P12F-P12G 仍仅是 `docs/LEARNER_CAPTURE_ROADMAP.md` 与 P12 实施计划中的候选拆分，并非可直接认领的正式票，需用户裁决或新开正式票后才能认领。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 **Phase 7+ 产品形态轴线见 `docs/PRODUCT_ROADMAP.md`**（轴 6 学习者形态 / 轴 7 多 Pack 承载 / 轴 8 工程演进 / 轴 9 信任面板）。
@@ -110,6 +110,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 ## Phase 15 — 外部学习工作区接入
 
 - [x] **P15A DeepTutor MCP stdio 双帧兼容**（`TICKET_P15A_DEEPTUTOR_MCP_STDIO_COMPAT.md`）← 已实现、通过验收并提交；保留现有 `Content-Length` 客户端兼容，同时接受当前 MCP SDK 使用的 JSON Lines stdio，使 DeepTutor 能调用同一套稳定 Polaris tools；服务环节：验证真懂 → 定位模糊 → 针对性补缺
+- [x] **P15B Tier 2 可审计任务回合契约**（`TICKET_P15B_TIER2_AUDITED_TURN_CONTRACT.md`）← 已实现、通过验收，等待用户确认后提交；为外部导师把“取题 → 学生原始作答 → 引擎提交”关联为可校验、可审计的 MCP 回合，不改评分数学或调度权威；服务环节：验证真懂 → 针对性补缺
 
 ## Backlog（票外发现的问题记在这里，不顺手做）
 

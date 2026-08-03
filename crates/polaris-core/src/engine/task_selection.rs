@@ -40,7 +40,7 @@ impl Engine {
         }))
     }
 
-    pub fn record_next_task_event(&self, session_id: &str, task: &NextTask) -> Result<()> {
+    pub fn record_next_task_event(&self, session_id: &str, task: &NextTask) -> Result<String> {
         self.conn.execute(
             "INSERT INTO sessions(id, started_at, context_json)
              VALUES (?1, strftime('%Y-%m-%dT%H:%M:%SZ','now'), '{}')
@@ -57,12 +57,163 @@ impl Engine {
             "mrt_randomized": task.mrt_randomized,
         })
         .to_string();
+        let task_event_id = Uuid::new_v4().to_string();
         self.conn.execute(
             "INSERT INTO behavior_events(id, session_id, at, type, concept_id, payload_json)
-             VALUES (lower(hex(randomblob(16))), ?1, strftime('%Y-%m-%dT%H:%M:%SZ','now'), 'next', ?2, ?3)",
-            (session_id, task.concept_id.as_str(), payload.as_str()),
+              VALUES (?1, ?2, strftime('%Y-%m-%dT%H:%M:%SZ','now'), 'next', ?3, ?4)",
+            (
+                task_event_id.as_str(),
+                session_id,
+                task.concept_id.as_str(),
+                payload.as_str(),
+            ),
         )?;
-        Ok(())
+        Ok(task_event_id)
+    }
+
+    pub fn submit_task_response(
+        &mut self,
+        session_id: &str,
+        task_event_id: &str,
+        response_text: String,
+        self_confidence: i32,
+    ) -> Result<SubmitReceipt> {
+        if !(1..=5).contains(&self_confidence) {
+            return Err(PolarisError::InvalidTaskTurn(
+                "confidence must be in 1..=5".to_owned(),
+            ));
+        }
+
+        self.conn.execute_batch("BEGIN IMMEDIATE")?;
+        let result = (|| -> Result<SubmitReceipt> {
+            let (concept_id, task_type, prompt_text) =
+                self.issued_task_for_session(session_id, task_event_id)?;
+            let already_submitted: bool = self.conn.query_row(
+                "SELECT EXISTS(
+                     SELECT 1
+                     FROM behavior_events
+                     WHERE type='tier2_submission'
+                       AND json_extract(payload_json, '$.task_event_id')=?1
+                 )",
+                [task_event_id],
+                |row| row.get(0),
+            )?;
+            if already_submitted {
+                return Err(PolarisError::InvalidTaskTurn(
+                    "task_event_id has already been submitted".to_owned(),
+                ));
+            }
+
+            let (latency_ms, hint_count) =
+                self.task_response_observation(session_id, task_event_id, &concept_id)?;
+
+            let receipt = self.submit(SubmitInput {
+                session_id: session_id.to_owned(),
+                concept_id: concept_id.clone(),
+                task_type,
+                prompt_text,
+                response_text,
+                self_confidence,
+                latency_ms,
+                hint_count,
+            })?;
+            self.conn.execute(
+                "INSERT INTO behavior_events(id, session_id, at, type, concept_id, payload_json)
+                 VALUES (?1, ?2, strftime('%Y-%m-%dT%H:%M:%SZ','now'), 'tier2_submission', ?3, ?4)",
+                params![
+                    Uuid::new_v4().to_string(),
+                    session_id,
+                    concept_id,
+                    serde_json::json!({
+                        "task_event_id": task_event_id,
+                        "attempt_id": &receipt.attempt_id,
+                    })
+                    .to_string(),
+                ],
+            )?;
+            Ok(receipt)
+        })();
+
+        match result {
+            Ok(receipt) => {
+                self.conn.execute_batch("COMMIT")?;
+                Ok(receipt)
+            }
+            Err(error) => {
+                let _ = self.conn.execute_batch("ROLLBACK");
+                Err(error)
+            }
+        }
+    }
+
+    fn task_response_observation(
+        &self,
+        session_id: &str,
+        task_event_id: &str,
+        concept_id: &str,
+    ) -> Result<(i64, i64)> {
+        let next_at: String = self.conn.query_row(
+            "SELECT at
+             FROM behavior_events
+             WHERE id=?1 AND session_id=?2 AND concept_id=?3 AND type='next'",
+            params![task_event_id, session_id, concept_id],
+            |row| row.get(0),
+        )?;
+        let now: String =
+            self.conn
+                .query_row("SELECT strftime('%Y-%m-%dT%H:%M:%SZ','now')", [], |row| {
+                    row.get(0)
+                })?;
+        let latency_ms = self.conn.query_row(
+            "SELECT CAST(MAX(0, ROUND((julianday(?1)-julianday(?2))*86400000.0)) AS INTEGER)",
+            params![now, next_at],
+            |row| row.get(0),
+        )?;
+        let hint_count = self.conn.query_row(
+            "SELECT COUNT(*)
+             FROM behavior_events
+             WHERE session_id=?1 AND concept_id=?2 AND type='hint'
+               AND julianday(at) >= julianday(?3)
+               AND julianday(at) <= julianday(?4)",
+            params![session_id, concept_id, next_at, now],
+            |row| row.get(0),
+        )?;
+        Ok((latency_ms, hint_count))
+    }
+
+    fn issued_task_for_session(
+        &self,
+        session_id: &str,
+        task_event_id: &str,
+    ) -> Result<(String, String, String)> {
+        let Some((concept_id, payload_json)) = self
+            .conn
+            .query_row(
+                "SELECT concept_id, payload_json
+                 FROM behavior_events
+                 WHERE id=?1 AND session_id=?2 AND type='next'",
+                params![task_event_id, session_id],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+            .optional()?
+        else {
+            return Err(PolarisError::InvalidTaskTurn(
+                "task_event_id must reference a next event in the same session".to_owned(),
+            ));
+        };
+        let payload: serde_json::Value = serde_json::from_str(&payload_json)?;
+        let task_type = payload
+            .get("task_type")
+            .and_then(serde_json::Value::as_str)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| PolarisError::InvalidTaskTurn("task event has no task_type".to_owned()))?
+            .to_owned();
+        let prompt_text = payload
+            .get("prompt")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| PolarisError::InvalidTaskTurn("task event has no prompt".to_owned()))?
+            .to_owned();
+        Ok((concept_id, task_type, prompt_text))
     }
 
     pub fn get_interleaved_batch(&self, batch_size: usize) -> Result<Vec<TaskAssignment>> {
