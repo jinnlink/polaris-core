@@ -505,8 +505,8 @@ pub fn serve_stdio(engine: Engine) -> Result<(), Box<dyn std::error::Error>> {
     let mut writer = io::BufWriter::new(stdout.lock());
 
     while let Some(message) = read_message(&mut reader)? {
-        if let Some(response) = session.handle_request(message)? {
-            write_message(&mut writer, &response)?;
+        if let Some(response) = session.handle_request(message.payload)? {
+            write_message(&mut writer, &response, message.framing)?;
             writer.flush()?;
         }
     }
@@ -930,18 +930,54 @@ fn error_response(id: Value, code: i64, message: &str) -> Value {
     })
 }
 
-fn read_message<R: BufRead>(reader: &mut R) -> Result<Option<Value>, Box<dyn std::error::Error>> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StdioFraming {
+    ContentLength,
+    JsonLines,
+}
+
+#[derive(Debug, PartialEq)]
+struct StdioMessage {
+    payload: Value,
+    framing: StdioFraming,
+}
+
+fn read_message<R: BufRead>(
+    reader: &mut R,
+) -> Result<Option<StdioMessage>, Box<dyn std::error::Error>> {
     let mut content_length = None;
+    let mut saw_header = false;
     loop {
         let mut line = String::new();
         let read = reader.read_line(&mut line)?;
         if read == 0 {
+            if saw_header {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "unexpected EOF in MCP headers",
+                )
+                .into());
+            }
             return Ok(None);
         }
         let trimmed = line.trim_end_matches(['\r', '\n']);
         if trimmed.is_empty() {
+            if !saw_header {
+                continue;
+            }
             break;
         }
+
+        if content_length.is_none() {
+            if let Ok(payload) = serde_json::from_str::<Value>(trimmed) {
+                return Ok(Some(StdioMessage {
+                    payload,
+                    framing: StdioFraming::JsonLines,
+                }));
+            }
+        }
+
+        saw_header = true;
         if let Some((name, value)) = trimmed.split_once(':') {
             if name.eq_ignore_ascii_case("content-length") {
                 content_length = Some(value.trim().parse::<usize>()?);
@@ -954,16 +990,28 @@ fn read_message<R: BufRead>(reader: &mut R) -> Result<Option<Value>, Box<dyn std
     })?;
     let mut body = vec![0_u8; length];
     reader.read_exact(&mut body)?;
-    Ok(Some(serde_json::from_slice(&body)?))
+    Ok(Some(StdioMessage {
+        payload: serde_json::from_slice(&body)?,
+        framing: StdioFraming::ContentLength,
+    }))
 }
 
 fn write_message<W: Write>(
     writer: &mut W,
     message: &Value,
+    framing: StdioFraming,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let body = serde_json::to_vec(message)?;
-    write!(writer, "Content-Length: {}\r\n\r\n", body.len())?;
-    writer.write_all(&body)?;
+    match framing {
+        StdioFraming::ContentLength => {
+            write!(writer, "Content-Length: {}\r\n\r\n", body.len())?;
+            writer.write_all(&body)?;
+        }
+        StdioFraming::JsonLines => {
+            writer.write_all(&body)?;
+            writer.write_all(b"\n")?;
+        }
+    }
     Ok(())
 }
 
@@ -2137,11 +2185,48 @@ mod tests {
         let message = json!({"jsonrpc": "2.0", "id": 6, "method": "tools/list"});
         let mut bytes = Vec::new();
 
-        write_message(&mut bytes, &message).unwrap();
+        write_message(&mut bytes, &message, StdioFraming::ContentLength).unwrap();
         let mut cursor = Cursor::new(bytes);
         let decoded = read_message(&mut cursor).unwrap().unwrap();
 
-        assert_eq!(decoded, message);
+        assert_eq!(decoded.payload, message);
+        assert_eq!(decoded.framing, StdioFraming::ContentLength);
+    }
+
+    #[test]
+    fn mcp_stdio_json_lines_round_trips_json_rpc() {
+        let message = json!({"jsonrpc": "2.0", "id": 7, "method": "tools/list"});
+        let mut bytes = Vec::new();
+
+        write_message(&mut bytes, &message, StdioFraming::JsonLines).unwrap();
+        let mut cursor = Cursor::new(bytes);
+
+        let decoded = read_message(&mut cursor).unwrap().unwrap();
+
+        assert_eq!(decoded.payload, message);
+        assert_eq!(decoded.framing, StdioFraming::JsonLines);
+    }
+
+    #[test]
+    fn mcp_stdio_replies_using_request_framing() {
+        let request = json!({"jsonrpc": "2.0", "id": 8, "method": "tools/list"});
+        let mut incoming =
+            Cursor::new(format!("{}\n", serde_json::to_string(&request).unwrap()).into_bytes());
+        let framed_request = read_message(&mut incoming).unwrap().unwrap();
+        let mut session = test_session();
+        let response = session
+            .handle_request(framed_request.payload)
+            .unwrap()
+            .unwrap();
+        let mut outgoing = Vec::new();
+
+        write_message(&mut outgoing, &response, framed_request.framing).unwrap();
+
+        assert!(!outgoing.starts_with(b"Content-Length:"));
+        assert_eq!(outgoing.last(), Some(&b'\n'));
+        let decoded: Value = serde_json::from_slice(&outgoing).unwrap();
+        assert_eq!(decoded["id"], 8);
+        assert!(decoded["result"]["tools"].is_array());
     }
 
     fn test_session() -> McpSession {

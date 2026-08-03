@@ -1,6 +1,6 @@
 # 票队列（单票制）
 
-状态：**无 In Progress；P14D 已实现、通过验收；P14C 已实现、通过验收并提交；P14B 已实现、通过验收并提交；P14A 已实现、通过验收并提交；P13C 已实现、通过验收并提交；P12E 已实现、通过验收并提交**。任何时刻只允许 1 张票 In Progress。
+状态：**无 In Progress；P15A 已实现、通过验收并提交；P14D 已实现、通过验收；P14C 已实现、通过验收并提交；P14B 已实现、通过验收并提交；P14A 已实现、通过验收并提交；P13C 已实现、通过验收并提交；P12E 已实现、通过验收并提交**。任何时刻只允许 1 张票 In Progress。
 P12F-P12G 仍仅是 `docs/LEARNER_CAPTURE_ROADMAP.md` 与 P12 实施计划中的候选拆分，并非可直接认领的正式票，需用户裁决或新开正式票后才能认领。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 **Phase 7+ 产品形态轴线见 `docs/PRODUCT_ROADMAP.md`**（轴 6 学习者形态 / 轴 7 多 Pack 承载 / 轴 8 工程演进 / 轴 9 信任面板）。
@@ -106,6 +106,10 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 - [x] **P14B MCP 真实会话 smoke v1**（`TICKET_P14B_MCP_REAL_USE_SMOKE.md`）← 已实现、通过验收并提交；启动真实 `polaris.exe --db ... mcp` 子进程，用 JSON-RPC Content-Length framing 跑 AI IDE 会调用的项目发现、AI profile、capture、inbox、practice、submit、learner mirror；服务环节：验证真懂 → 定位模糊 → 针对性补缺 → AI IDE 真能接入
 - [x] **P14C AI IDE 接入实战包 v1**（`TICKET_P14C_AI_IDE_ONBOARDING_KIT.md`）← 已实现、通过验收并提交；生成 AI IDE MCP 配置块、学习开场提示和检查清单，并用真实课程路径验证接入材料；服务环节：验证真懂 → 定位模糊 → 针对性补缺 → 用户能实际用起来
 - [x] **P14D Learned 根目录自动接入 v1**（`TICKET_P14D_LEARNED_AUTO_CONNECT.md`）← 已实现、通过验收；从 `C:\MyProject\Learned` 只读扫描学习项目，生成无感 AI IDE 接入包；服务环节：验证真懂 → 定位模糊 → 针对性补缺 → 用户打开学习根即可实际用起来
+
+## Phase 15 — 外部学习工作区接入
+
+- [x] **P15A DeepTutor MCP stdio 双帧兼容**（`TICKET_P15A_DEEPTUTOR_MCP_STDIO_COMPAT.md`）← 已实现、通过验收并提交；保留现有 `Content-Length` 客户端兼容，同时接受当前 MCP SDK 使用的 JSON Lines stdio，使 DeepTutor 能调用同一套稳定 Polaris tools；服务环节：验证真懂 → 定位模糊 → 针对性补缺
 
 ## Backlog（票外发现的问题记在这里，不顺手做）
 

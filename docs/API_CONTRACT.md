@@ -314,6 +314,15 @@ MCP 使用 JSON-RPC 2.0。通知方法 `notifications/*` 返回空响应。未�
 }
 ```
 
+### stdio 传输
+
+`polaris mcp` 接受两种本地 stdio 帧：
+
+- `Content-Length: N\r\n\r\n<body>`，用于保留既有 AI IDE 客户端兼容。
+- 单行 UTF-8 JSON + 换行（JSON Lines），用于当前 MCP SDK/Host。
+
+每条有响应的请求使用该请求的输入帧格式回复；通知仍不产生响应。标准输出只写协议帧，不写日志或诊断文本。该兼容只属于传输层，不改变工具、资源、JSON-RPC 错误或业务 payload 契约。
+
 ### `initialize`
 
 用途：MCP 标准握手。

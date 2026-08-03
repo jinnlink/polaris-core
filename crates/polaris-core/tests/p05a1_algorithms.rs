@@ -135,7 +135,7 @@ fn failed_attempt_with_misconception_raises_repair_priority() {
         .conn()
         .execute(
             "INSERT INTO attempts(id, concept_id, task_type, final_score, misconception_id, depth, created_at)
-             VALUES ('greedy-misconception-attempt', 'greedy', 'apply', 0.2, 'greedy_always_optimal', 'apply', '2026-06-13T00:00:00Z')",
+             VALUES ('greedy-misconception-attempt', 'greedy', 'apply', 0.2, 'greedy_always_optimal', 'apply', strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
             [],
         )
         .unwrap();
