@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::time::Duration;
@@ -6,6 +7,7 @@ use polaris_core::ai_profile::AiInteractionProfileInput;
 use polaris_core::capture_queue::{CaptureEffect, CaptureInput, LearnerCaptureKind};
 use polaris_core::engine::{Engine, SubmitInput};
 use polaris_core::inbox_practice::InboxPracticeSubmissionInput;
+use polaris_core::knowledge_map::{KnowledgeMapDueStatus, KnowledgeMapQuery, KnowledgeMapScope};
 use polaris_core::learner_feedback::LearnerFeedbackInput;
 use polaris_core::learner_inbox::LearnerInboxAction;
 use serde_json::{json, Value};
@@ -41,7 +43,10 @@ impl HttpApi {
         path: &str,
         body: &str,
     ) -> Result<HttpResponse, Box<dyn std::error::Error>> {
-        let path = path.split('?').next().unwrap_or(path);
+        let (path, query_string) = path
+            .split_once('?')
+            .map(|(path, query)| (path, Some(query)))
+            .unwrap_or((path, None));
         match (method, path) {
             ("OPTIONS", _) => Ok(response(405, json!({"error": "method not allowed"}))),
             ("GET", "/health") => Ok(response(
@@ -55,6 +60,7 @@ impl HttpApi {
                 200,
                 serde_json::to_value(self.engine.status_snapshot()?)?,
             )),
+            ("GET", "/knowledge-map") => self.knowledge_map(query_string),
             ("GET", "/learner-mirror") => Ok(response(
                 200,
                 serde_json::to_value(self.engine.learner_mirror_snapshot()?)?,
@@ -85,10 +91,25 @@ impl HttpApi {
             | (_, "/inbox/practice/submit")
             | (_, "/capture")
             | ("POST", "/status")
+            | ("POST", "/knowledge-map")
             | ("POST", "/learner-mirror")
             | (_, "/trust") => Ok(response(405, json!({"error": "method not allowed"}))),
             (_, "/ai-profile") => Ok(response(405, json!({"error": "method not allowed"}))),
             _ => Ok(response(404, json!({"error": "not found"}))),
+        }
+    }
+
+    fn knowledge_map(
+        &self,
+        query_string: Option<&str>,
+    ) -> Result<HttpResponse, Box<dyn std::error::Error>> {
+        let query = match parse_knowledge_map_query(query_string) {
+            Ok(query) => query,
+            Err(error) => return Ok(response(400, json!({"error": error}))),
+        };
+        match self.engine.knowledge_map(query) {
+            Ok(snapshot) => Ok(response(200, serde_json::to_value(snapshot)?)),
+            Err(error) => Ok(response(400, json!({"error": error.to_string()}))),
         }
     }
 
@@ -547,6 +568,104 @@ fn json_body(body: &str) -> Result<Value, String> {
     serde_json::from_str(body).map_err(|error| format!("invalid JSON: {error}"))
 }
 
+fn parse_knowledge_map_query(query_string: Option<&str>) -> Result<KnowledgeMapQuery, String> {
+    let mut query = KnowledgeMapQuery::default();
+    let mut seen = BTreeSet::new();
+    let Some(query_string) = query_string.filter(|value| !value.is_empty()) else {
+        return Ok(query);
+    };
+
+    for pair in query_string.split('&') {
+        if pair.is_empty() {
+            continue;
+        }
+        let (raw_key, raw_value) = pair.split_once('=').unwrap_or((pair, ""));
+        let key = percent_decode_query_component(raw_key)?;
+        let value = percent_decode_query_component(raw_value)?;
+        if !seen.insert(key.clone()) {
+            return Err(format!("duplicate query parameter: {key}"));
+        }
+        match key.as_str() {
+            "scope" => {
+                query.scope = match value.as_str() {
+                    "pack" => KnowledgeMapScope::Pack,
+                    "global" => KnowledgeMapScope::Global,
+                    _ => return Err("scope must be one of pack, global".to_owned()),
+                };
+            }
+            "pack" => query.pack = Some(value),
+            "root" => query.root = Some(value),
+            "depth" => {
+                query.depth = Some(
+                    value
+                        .parse()
+                        .map_err(|_| "depth must be an unsigned integer".to_owned())?,
+                );
+            }
+            "phase" => query.phase = Some(value),
+            "due" => {
+                query.due = Some(match value.as_str() {
+                    "new" => KnowledgeMapDueStatus::New,
+                    "due" => KnowledgeMapDueStatus::Due,
+                    "scheduled" => KnowledgeMapDueStatus::Scheduled,
+                    "unscheduled" => KnowledgeMapDueStatus::Unscheduled,
+                    _ => {
+                        return Err("due must be one of new, due, scheduled, unscheduled".to_owned())
+                    }
+                });
+            }
+            "min_confidence" => {
+                query.min_confidence = Some(
+                    value
+                        .parse()
+                        .map_err(|_| "min_confidence must be a number".to_owned())?,
+                );
+            }
+            "limit" => {
+                query.limit = value
+                    .parse()
+                    .map_err(|_| "limit must be an unsigned integer".to_owned())?;
+            }
+            "cursor" => query.cursor = Some(value),
+            _ => return Err(format!("unknown query parameter: {key}")),
+        }
+    }
+    Ok(query)
+}
+
+fn percent_decode_query_component(value: &str) -> Result<String, String> {
+    let input = value.as_bytes();
+    let mut output = Vec::with_capacity(input.len());
+    let mut index = 0;
+    while index < input.len() {
+        match input[index] {
+            b'+' => output.push(b' '),
+            b'%' => {
+                let Some(high) = input.get(index + 1).and_then(|byte| hex_value(*byte)) else {
+                    return Err("invalid percent-encoding in query string".to_owned());
+                };
+                let Some(low) = input.get(index + 2).and_then(|byte| hex_value(*byte)) else {
+                    return Err("invalid percent-encoding in query string".to_owned());
+                };
+                output.push((high << 4) | low);
+                index += 2;
+            }
+            byte => output.push(byte),
+        }
+        index += 1;
+    }
+    String::from_utf8(output).map_err(|_| "query string must be valid UTF-8".to_owned())
+}
+
+fn hex_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
 fn optional_str<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
     value.get(key).and_then(Value::as_str)
 }
@@ -648,6 +767,7 @@ mod tests {
             "## HTTP v1",
             "GET /health",
             "GET /status",
+            "GET /knowledge-map",
             "GET /learner-mirror",
             "GET /trust",
             "GET /ai-profile",
@@ -686,6 +806,39 @@ mod tests {
                 "due_today",
                 "phase_counts",
                 "concepts",
+            ],
+        );
+
+        let knowledge_map = api
+            .handle("GET", "/knowledge-map?root=ownership&depth=0&limit=1", "")
+            .unwrap();
+        assert_eq!(knowledge_map.status, 200);
+        assert_fields(
+            &knowledge_map.body,
+            &[
+                "generated_at",
+                "model_version",
+                "query",
+                "summary",
+                "nodes",
+                "edges",
+                "next_cursor",
+            ],
+        );
+        assert_eq!(knowledge_map.body["model_version"], "knowledge-map-v1");
+        assert_eq!(knowledge_map.body["nodes"][0]["id"], "ownership");
+        assert_fields(
+            &knowledge_map.body["nodes"][0],
+            &[
+                "id",
+                "kind",
+                "pack",
+                "retrieval",
+                "p_known",
+                "phase",
+                "due_status",
+                "uncertainty",
+                "provenance",
             ],
         );
 
@@ -802,6 +955,44 @@ mod tests {
             .as_str()
             .unwrap()
             .starts_with("invalid JSON"));
+
+        let unknown_query = api
+            .handle("GET", "/knowledge-map?surprise=true", "")
+            .unwrap();
+        assert_eq!(unknown_query.status, 400);
+        assert_eq!(
+            unknown_query.body["error"],
+            "unknown query parameter: surprise"
+        );
+
+        let duplicate_query = api
+            .handle("GET", "/knowledge-map?limit=1&limit=2", "")
+            .unwrap();
+        assert_eq!(duplicate_query.status, 400);
+
+        let invalid_encoding = api.handle("GET", "/knowledge-map?root=%ZZ", "").unwrap();
+        assert_eq!(invalid_encoding.status, 400);
+
+        let knowledge_map_post = api.handle("POST", "/knowledge-map", "{}").unwrap();
+        assert_eq!(knowledge_map_post.status, 405);
+    }
+
+    #[test]
+    fn http_knowledge_map_supports_global_aggregate_and_validates_filters() {
+        let mut api = test_api();
+
+        let global = api
+            .handle("GET", "/knowledge-map?scope=global&limit=10", "")
+            .unwrap();
+        assert_eq!(global.status, 200);
+        assert_eq!(global.body["summary"]["scope"], "global");
+        assert_eq!(global.body["nodes"], json!([]));
+        assert!(global.body["summary"]["packs"].as_array().is_some());
+        assert!(global.body["summary"]["dimensions"].as_array().is_some());
+
+        let invalid = api.handle("GET", "/knowledge-map?depth=1", "").unwrap();
+        assert_eq!(invalid.status, 400);
+        assert!(invalid.body["error"].as_str().unwrap().contains("depth"));
     }
 
     #[test]

@@ -56,6 +56,38 @@ HTTP 响应体均为 JSON。成功响应使用 HTTP 200；客户端错误使用 
 
 兼容性说明：`packs`、`phase_counts`、`concepts` 内部字段允许 additive 扩展；客户端不得依赖数组顺序表达语义，除非字段本身声明排序。
 
+### `GET /knowledge-map`
+
+用途：读取由 Core 权威状态实时推导的当前知识地图。该入口只读，不创建第二份掌握度状态，也不接受手工“已掌握”写入。
+
+成功状态码：`200`
+
+查询参数：
+
+- `scope`: `pack | global`，可选，缺省为 `pack`。`global` 只返回 Pack/潜变量维度聚合，不返回节点与边。
+- `pack`: string，可选；Pack 视图缺省使用当前激活 Pack。
+- `root`: string，可选；限定根概念或图式。
+- `depth`: integer，可选，范围 `0..=8`，必须与 `root` 同时使用。
+- `phase`: string，可选；稳定枚举为 `undetermined | phantom | fluctuation | settling | solidification | transfer | generation | regression`。
+- `due`: string，可选；稳定枚举为 `new | due | scheduled | unscheduled`。
+- `min_confidence`: number，可选，范围 `0..=1`。
+- `limit`: integer，可选，范围 `1..=500`，缺省为 `100`。
+- `cursor`: string，可选；只能原样使用上一页的 `next_cursor`，客户端不得解析。
+
+未知或重复查询参数、非法编码、越界值及不兼容组合返回 `400`。
+
+稳定顶层字段：
+
+- `generated_at`
+- `model_version`
+- `query`
+- `summary`
+- `nodes`
+- `edges`
+- `next_cursor`
+
+节点稳定语义包括 concept/schema 类型、Pack、retrieval、`p_known`、校准、相、到期状态、尝试/证据计数、`uncertainty` 与 `provenance`。状态来源只使用 `observed | latent_prediction | inherited_prior`；P16B 当前只会产生 `observed` 或 `inherited_prior`。没有 provenance 的边不会返回，并计入 `summary.omitted_edges_missing_provenance`。
+
 ### `GET /learner-mirror`
 
 用途：读取学习者静态镜像面板。
@@ -345,6 +377,7 @@ MCP 使用 JSON-RPC 2.0。通知方法 `notifications/*` 返回空响应。未�
 - `get_next_task`
 - `get_interleaved_batch`
 - `get_phase_snapshot`
+- `get_knowledge_map`
 - `get_active_gu_rules`
 - `run_mirror_report`
 - `get_latest_mirror_report`
@@ -382,6 +415,7 @@ MCP 使用 JSON-RPC 2.0。通知方法 `notifications/*` 返回空响应。未�
 关键工具语义：
 
 - `get_next_task`: 与 HTTP `POST /next` 等价，缺省 session 为 `mcp`。MCP 返回额外的 `task_event_id`，它是该 session 已记录 `next` 事件的只读回执；可交给 `submit_task_response` 建立严格回合关联。
+- `get_knowledge_map`: 与 HTTP `GET /knowledge-map` 使用同一个 `KnowledgeMapQuery` 和 `KnowledgeMapSnapshot` 序列化契约；参数作为工具 arguments 传入，缺省为空对象。它只读取 Core 当前状态，不修改 mastery、调度或证据。
 - `detect_project_manifest`: 从 `path`（可选，缺省为 MCP server 当前目录）向上发现 `p-os.toml`。找到时返回 `found=true`、`project_root`、`manifest_path`、`manifest`；未找到时返回 `found=false`，不视为工具错误。
 - `discover_learning_projects`: 从 `root`（可选，缺省为 MCP server 当前目录；`path` 可作为 alias）向下只读扫描 `p-os.toml` 学习项目声明，返回 `root` 与 `projects`。扫描会跳过 `_worktrees`、`.git`、`target` 等非课程目录，找到一个项目后不继续深入该项目内部；该工具只发现课程项目，不修改课程仓库、不生成掌握度。
 - `capture_evidence`: 与 HTTP `POST /capture` 语义对齐，把外部学习资料保存为 pending raw capture；不得生成 attempt、不得改变 mastery、不得写 grade queue，外部评分字段不被信任。

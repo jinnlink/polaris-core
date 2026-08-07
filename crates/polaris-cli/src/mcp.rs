@@ -4,6 +4,7 @@ use polaris_core::ai_profile::AiInteractionProfileInput;
 use polaris_core::capture_queue::{CaptureEffect, CaptureInput, CaptureStatus, LearnerCaptureKind};
 use polaris_core::engine::{Engine, SubmitInput};
 use polaris_core::inbox_practice::InboxPracticeSubmissionInput;
+use polaris_core::knowledge_map::KnowledgeMapQuery;
 use polaris_core::learner_feedback::LearnerFeedbackInput;
 use polaris_core::learner_inbox::LearnerInboxAction;
 use polaris_core::project_manifest::{discover_learning_projects, discover_project_manifest};
@@ -63,6 +64,7 @@ impl McpSession {
                 "get_next_task" => self.get_next_task(arguments),
                 "get_interleaved_batch" => self.get_interleaved_batch(arguments),
                 "get_phase_snapshot" => self.get_phase_snapshot(),
+                "get_knowledge_map" => self.get_knowledge_map(arguments),
                 "get_active_gu_rules" => self.get_active_gu_rules(arguments),
                 "run_mirror_report" => self.run_mirror_report(arguments),
                 "get_latest_mirror_report" => self.get_latest_mirror_report(),
@@ -245,6 +247,20 @@ impl McpSession {
         serde_json::to_value(
             self.engine
                 .status_snapshot()
+                .map_err(|error| error.to_string())?,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    fn get_knowledge_map(&self, arguments: &Value) -> Result<Value, String> {
+        let query = if arguments.is_null() {
+            KnowledgeMapQuery::default()
+        } else {
+            serde_json::from_value(arguments.clone()).map_err(|error| error.to_string())?
+        };
+        serde_json::to_value(
+            self.engine
+                .knowledge_map(query)
                 .map_err(|error| error.to_string())?,
         )
         .map_err(|error| error.to_string())
@@ -580,6 +596,25 @@ fn tool_definitions() -> Value {
             "inputSchema": {
                 "type": "object",
                 "properties": {}
+            }
+        },
+        {
+            "name": "get_knowledge_map",
+            "description": "Return the read-only current knowledge map derived from authoritative Core state. Global scope is aggregate-only; node state includes uncertainty and provenance.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "scope": {"type": "string", "enum": ["pack", "global"], "description": "Pack nodes or global Pack/dimension aggregates. Defaults to pack."},
+                    "pack": {"type": "string", "description": "Pack id. Pack scope defaults to the active Pack."},
+                    "root": {"type": "string", "description": "Optional root concept/schema id for a bounded subgraph."},
+                    "depth": {"type": "integer", "minimum": 0, "maximum": 8, "description": "Traversal depth; requires root."},
+                    "phase": {"type": "string", "enum": ["undetermined", "phantom", "fluctuation", "settling", "solidification", "transfer", "generation", "regression"]},
+                    "due": {"type": "string", "enum": ["new", "due", "scheduled", "unscheduled"]},
+                    "min_confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 500, "description": "Page size. Defaults to 100."},
+                    "cursor": {"type": "string", "description": "Opaque next_cursor from a previous snapshot."}
+                },
+                "additionalProperties": false
             }
         },
         {
@@ -1083,6 +1118,7 @@ mod tests {
                 "get_next_task",
                 "get_interleaved_batch",
                 "get_phase_snapshot",
+                "get_knowledge_map",
                 "get_active_gu_rules",
                 "run_mirror_report",
                 "get_latest_mirror_report",
@@ -1136,6 +1172,7 @@ mod tests {
             "polaris://status",
             "polaris://trust",
             "get_next_task",
+            "get_knowledge_map",
             "submit_evidence",
             "submit_task_response",
             "record_learner_feedback",
@@ -1193,6 +1230,7 @@ mod tests {
                 "get_next_task",
                 "get_interleaved_batch",
                 "get_phase_snapshot",
+                "get_knowledge_map",
                 "get_active_gu_rules",
                 "run_mirror_report",
                 "get_latest_mirror_report",
@@ -2153,6 +2191,59 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("learner_feedback.kind"));
+    }
+
+    #[test]
+    fn mcp_knowledge_map_uses_shared_contract_and_rejects_unknown_fields() {
+        let mut session = test_session();
+
+        let payload = call_tool_json(
+            &mut session,
+            "get_knowledge_map",
+            json!({"root": "ownership", "depth": 0, "limit": 1}),
+        );
+        assert_fields(
+            &payload,
+            &[
+                "generated_at",
+                "model_version",
+                "query",
+                "summary",
+                "nodes",
+                "edges",
+                "next_cursor",
+            ],
+        );
+        assert_eq!(payload["model_version"], "knowledge-map-v1");
+        assert_eq!(payload["nodes"][0]["id"], "ownership");
+        assert_fields(
+            &payload["nodes"][0],
+            &[
+                "p_known",
+                "uncertainty",
+                "provenance",
+                "attempt_count",
+                "evidence_count",
+            ],
+        );
+
+        let response = session
+            .handle_request(json!({
+                "jsonrpc": "2.0",
+                "id": 39,
+                "method": "tools/call",
+                "params": {
+                    "name": "get_knowledge_map",
+                    "arguments": {"surprise": true}
+                }
+            }))
+            .unwrap()
+            .unwrap();
+        assert_eq!(response["result"]["isError"], true);
+        assert!(response["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("unknown field"));
     }
 
     #[test]

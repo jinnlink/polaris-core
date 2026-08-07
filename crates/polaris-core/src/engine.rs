@@ -44,6 +44,7 @@ use crate::inbox_practice::{
     draft_inbox_practice, mark_inbox_practice_submitted, InboxPracticeDraft,
     InboxPracticeSubmissionInput, InboxPracticeSubmissionReceipt,
 };
+use crate::knowledge_map::{knowledge_map_snapshot, KnowledgeMapQuery, KnowledgeMapSnapshot};
 use crate::learner_feedback::{
     record_learner_feedback, LearnerFeedbackInput, LearnerFeedbackReceipt,
 };
@@ -214,6 +215,10 @@ impl Engine {
 
     pub fn status_snapshot(&self) -> Result<StatusSnapshot> {
         status_snapshot(&self.conn)
+    }
+
+    pub fn knowledge_map(&self, query: KnowledgeMapQuery) -> Result<KnowledgeMapSnapshot> {
+        knowledge_map_snapshot(&self.conn, query)
     }
 
     pub fn list_packs(&self) -> Result<Vec<PackSummary>> {

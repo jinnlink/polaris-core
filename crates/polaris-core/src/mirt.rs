@@ -343,7 +343,7 @@ pub fn fused_p_known(conn: &Connection, concept_id: &str, task_type: &str) -> Re
     }
     .clamp(0.0, 1.0);
     let p_known = lambda * bkt_p_known + (1.0 - lambda) * prediction.p_hat;
-    let bkt_variance = bkt_shadow_variance(bkt_p_known, n);
+    let bkt_variance = bkt_p_known_variance(bkt_p_known, n);
     let mirt_variance = mirt_shadow_variance(conn, concept_id, prediction.p_hat);
     let shadow = inverse_variance_shadow(
         ShadowFusionInput {
@@ -373,7 +373,7 @@ pub fn fused_p_known(conn: &Connection, concept_id: &str, task_type: &str) -> Re
     })
 }
 
-fn bkt_shadow_variance(p_known: f64, attempt_count: f64) -> f64 {
+pub fn bkt_p_known_variance(p_known: f64, attempt_count: f64) -> f64 {
     let p = finite_probability(p_known).unwrap_or(0.5);
     let effective_n = attempt_count.max(0.0) + BKT_VARIANCE_PRIOR_N;
     clamp_shadow_variance(p * (1.0 - p) / effective_n)
