@@ -10,6 +10,7 @@ use polaris_core::inbox_practice::InboxPracticeSubmissionInput;
 use polaris_core::knowledge_map::{KnowledgeMapDueStatus, KnowledgeMapQuery, KnowledgeMapScope};
 use polaris_core::learner_feedback::LearnerFeedbackInput;
 use polaris_core::learner_inbox::LearnerInboxAction;
+use polaris_core::prediction_map::PredictionMapQuery;
 use serde_json::{json, Value};
 
 const MAX_REQUEST_BYTES: usize = 1_048_576;
@@ -61,6 +62,7 @@ impl HttpApi {
                 serde_json::to_value(self.engine.status_snapshot()?)?,
             )),
             ("GET", "/knowledge-map") => self.knowledge_map(query_string),
+            ("GET", "/prediction-map") => self.prediction_map(query_string),
             ("GET", "/learner-mirror") => Ok(response(
                 200,
                 serde_json::to_value(self.engine.learner_mirror_snapshot()?)?,
@@ -92,6 +94,7 @@ impl HttpApi {
             | (_, "/capture")
             | ("POST", "/status")
             | ("POST", "/knowledge-map")
+            | ("POST", "/prediction-map")
             | ("POST", "/learner-mirror")
             | (_, "/trust") => Ok(response(405, json!({"error": "method not allowed"}))),
             (_, "/ai-profile") => Ok(response(405, json!({"error": "method not allowed"}))),
@@ -108,6 +111,20 @@ impl HttpApi {
             Err(error) => return Ok(response(400, json!({"error": error}))),
         };
         match self.engine.knowledge_map(query) {
+            Ok(snapshot) => Ok(response(200, serde_json::to_value(snapshot)?)),
+            Err(error) => Ok(response(400, json!({"error": error.to_string()}))),
+        }
+    }
+
+    fn prediction_map(
+        &self,
+        query_string: Option<&str>,
+    ) -> Result<HttpResponse, Box<dyn std::error::Error>> {
+        let query: PredictionMapQuery = match parse_knowledge_map_query(query_string) {
+            Ok(query) => query,
+            Err(error) => return Ok(response(400, json!({"error": error}))),
+        };
+        match self.engine.prediction_map(query) {
             Ok(snapshot) => Ok(response(200, serde_json::to_value(snapshot)?)),
             Err(error) => Ok(response(400, json!({"error": error.to_string()}))),
         }
@@ -768,6 +785,7 @@ mod tests {
             "GET /health",
             "GET /status",
             "GET /knowledge-map",
+            "GET /prediction-map",
             "GET /learner-mirror",
             "GET /trust",
             "GET /ai-profile",
@@ -840,6 +858,34 @@ mod tests {
                 "uncertainty",
                 "provenance",
             ],
+        );
+
+        let prediction_map = api
+            .handle("GET", "/prediction-map?root=ownership&depth=0&limit=1", "")
+            .unwrap();
+        assert_eq!(prediction_map.status, 200);
+        assert_fields(
+            &prediction_map.body,
+            &[
+                "generated_at",
+                "model_version",
+                "query",
+                "summary",
+                "nodes",
+                "anchors",
+                "initial_paths",
+                "next_cursor",
+            ],
+        );
+        assert_eq!(prediction_map.body["model_version"], "prediction-map-v1");
+        assert_eq!(prediction_map.body["nodes"][0]["id"], "ownership");
+        assert_fields(
+            &prediction_map.body["nodes"][0],
+            &["observed", "latent_prediction", "inherited_prior"],
+        );
+        assert_eq!(
+            prediction_map.body["nodes"][0]["latent_prediction"]["source"],
+            "latent_prediction"
         );
 
         let mirror = api.handle("GET", "/learner-mirror", "").unwrap();
@@ -975,6 +1021,18 @@ mod tests {
 
         let knowledge_map_post = api.handle("POST", "/knowledge-map", "{}").unwrap();
         assert_eq!(knowledge_map_post.status, 405);
+
+        let prediction_unknown = api
+            .handle("GET", "/prediction-map?surprise=true", "")
+            .unwrap();
+        assert_eq!(prediction_unknown.status, 400);
+        assert_eq!(
+            prediction_unknown.body["error"],
+            "unknown query parameter: surprise"
+        );
+
+        let prediction_map_post = api.handle("POST", "/prediction-map", "{}").unwrap();
+        assert_eq!(prediction_map_post.status, 405);
     }
 
     #[test]

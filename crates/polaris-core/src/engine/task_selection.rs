@@ -432,6 +432,13 @@ impl Engine {
 
     fn ranked_task_candidates(&self) -> Result<Vec<RankedTaskCandidate>> {
         let active_pack = crate::pack_state::active_pack(&self.conn)?;
+        self.ranked_task_candidates_for_pack(active_pack.as_deref())
+    }
+
+    fn ranked_task_candidates_for_pack(
+        &self,
+        pack: Option<&str>,
+    ) -> Result<Vec<RankedTaskCandidate>> {
         let sql = format!(
             "SELECT c.id, c.name, c.seed_order,
                     COALESCE(ms.p_known, c.p_init, CAST((SELECT value FROM meta WHERE key='bkt.p_init') AS REAL)) AS p_known,
@@ -446,7 +453,7 @@ impl Engine {
              LEFT JOIN mastery_states ms ON ms.concept_id=c.id
              {}
              ORDER BY c.seed_order ASC, c.id ASC",
-            if active_pack.is_some() {
+            if pack.is_some() {
                 "WHERE c.pack=?1"
             } else {
                 ""
@@ -454,7 +461,7 @@ impl Engine {
         );
         let mut stmt = self.conn.prepare(&sql)?;
 
-        let mut rows = if let Some(pack) = active_pack.as_deref() {
+        let mut rows = if let Some(pack) = pack {
             stmt.query([pack])?
         } else {
             stmt.query([])?
@@ -505,6 +512,20 @@ impl Engine {
                 None => None,
             })
             .collect())
+    }
+
+    pub(crate) fn preview_learning_paths_for_pack(
+        &self,
+        pack: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<TaskAssignment>> {
+        let ranked = self.ranked_task_candidates_for_pack(pack)?;
+        let strategy = self.batch_strategy()?;
+        ranked
+            .iter()
+            .take(limit.min(3))
+            .map(|candidate| self.assignment_for_candidate(candidate, strategy))
+            .collect()
     }
 
     fn single_next_task_assignment(&self) -> Result<Vec<TaskAssignment>> {

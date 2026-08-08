@@ -74,6 +74,7 @@ use crate::pack_state::{
 use crate::pedagogy::{record_move_effect_for_attempt, select_move_for_concept};
 use crate::phase::{determine_phase, Depth, Phase, PhaseInput, PhaseParams};
 use crate::phase_dynamics::{phase_dynamics_summary, PhaseDynamicsSummary};
+use crate::prediction_map::{prediction_map_snapshot, PredictionMapQuery, PredictionMapSnapshot};
 use crate::report::{
     latest_mirror_report, record_report_feedback, run_mirror_report, run_mirror_report_with_config,
     run_mirror_report_with_static_narrative, MirrorReport,
@@ -219,6 +220,16 @@ impl Engine {
 
     pub fn knowledge_map(&self, query: KnowledgeMapQuery) -> Result<KnowledgeMapSnapshot> {
         knowledge_map_snapshot(&self.conn, query)
+    }
+
+    pub fn prediction_map(&self, query: PredictionMapQuery) -> Result<PredictionMapSnapshot> {
+        let knowledge = knowledge_map_snapshot(&self.conn, query)?;
+        let paths = if knowledge.summary.scope == crate::knowledge_map::KnowledgeMapScope::Pack {
+            self.preview_learning_paths_for_pack(knowledge.summary.resolved_pack.as_deref(), 3)?
+        } else {
+            Vec::new()
+        };
+        prediction_map_snapshot(&self.conn, knowledge, paths)
     }
 
     pub fn list_packs(&self) -> Result<Vec<PackSummary>> {

@@ -7,6 +7,7 @@ use polaris_core::inbox_practice::InboxPracticeSubmissionInput;
 use polaris_core::knowledge_map::KnowledgeMapQuery;
 use polaris_core::learner_feedback::LearnerFeedbackInput;
 use polaris_core::learner_inbox::LearnerInboxAction;
+use polaris_core::prediction_map::PredictionMapQuery;
 use polaris_core::project_manifest::{discover_learning_projects, discover_project_manifest};
 use serde_json::{json, Value};
 
@@ -65,6 +66,7 @@ impl McpSession {
                 "get_interleaved_batch" => self.get_interleaved_batch(arguments),
                 "get_phase_snapshot" => self.get_phase_snapshot(),
                 "get_knowledge_map" => self.get_knowledge_map(arguments),
+                "get_prediction_map" => self.get_prediction_map(arguments),
                 "get_active_gu_rules" => self.get_active_gu_rules(arguments),
                 "run_mirror_report" => self.run_mirror_report(arguments),
                 "get_latest_mirror_report" => self.get_latest_mirror_report(),
@@ -261,6 +263,20 @@ impl McpSession {
         serde_json::to_value(
             self.engine
                 .knowledge_map(query)
+                .map_err(|error| error.to_string())?,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    fn get_prediction_map(&self, arguments: &Value) -> Result<Value, String> {
+        let query = if arguments.is_null() {
+            PredictionMapQuery::default()
+        } else {
+            serde_json::from_value(arguments.clone()).map_err(|error| error.to_string())?
+        };
+        serde_json::to_value(
+            self.engine
+                .prediction_map(query)
                 .map_err(|error| error.to_string())?,
         )
         .map_err(|error| error.to_string())
@@ -605,6 +621,25 @@ fn tool_definitions() -> Value {
                 "type": "object",
                 "properties": {
                     "scope": {"type": "string", "enum": ["pack", "global"], "description": "Pack nodes or global Pack/dimension aggregates. Defaults to pack."},
+                    "pack": {"type": "string", "description": "Pack id. Pack scope defaults to the active Pack."},
+                    "root": {"type": "string", "description": "Optional root concept/schema id for a bounded subgraph."},
+                    "depth": {"type": "integer", "minimum": 0, "maximum": 8, "description": "Traversal depth; requires root."},
+                    "phase": {"type": "string", "enum": ["undetermined", "phantom", "fluctuation", "settling", "solidification", "transfer", "generation", "regression"]},
+                    "due": {"type": "string", "enum": ["new", "due", "scheduled", "unscheduled"]},
+                    "min_confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 500, "description": "Page size. Defaults to 100."},
+                    "cursor": {"type": "string", "description": "Opaque next_cursor from a previous snapshot."}
+                },
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "get_prediction_map",
+            "description": "Return the read-only prediction map with observed mastery, latent prediction, and inherited prior in separate fields. Includes uncertainty, gate status, structural teaching anchors, and up to three local scheduler paths.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "scope": {"type": "string", "enum": ["pack", "global"], "description": "Pack nodes or global aggregates. Defaults to pack."},
                     "pack": {"type": "string", "description": "Pack id. Pack scope defaults to the active Pack."},
                     "root": {"type": "string", "description": "Optional root concept/schema id for a bounded subgraph."},
                     "depth": {"type": "integer", "minimum": 0, "maximum": 8, "description": "Traversal depth; requires root."},
@@ -1119,6 +1154,7 @@ mod tests {
                 "get_interleaved_batch",
                 "get_phase_snapshot",
                 "get_knowledge_map",
+                "get_prediction_map",
                 "get_active_gu_rules",
                 "run_mirror_report",
                 "get_latest_mirror_report",
@@ -1173,6 +1209,7 @@ mod tests {
             "polaris://trust",
             "get_next_task",
             "get_knowledge_map",
+            "get_prediction_map",
             "submit_evidence",
             "submit_task_response",
             "record_learner_feedback",
@@ -1231,6 +1268,7 @@ mod tests {
                 "get_interleaved_batch",
                 "get_phase_snapshot",
                 "get_knowledge_map",
+                "get_prediction_map",
                 "get_active_gu_rules",
                 "run_mirror_report",
                 "get_latest_mirror_report",
@@ -2234,6 +2272,54 @@ mod tests {
                 "method": "tools/call",
                 "params": {
                     "name": "get_knowledge_map",
+                    "arguments": {"surprise": true}
+                }
+            }))
+            .unwrap()
+            .unwrap();
+        assert_eq!(response["result"]["isError"], true);
+        assert!(response["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("unknown field"));
+    }
+
+    #[test]
+    fn mcp_prediction_map_uses_shared_contract_and_rejects_unknown_fields() {
+        let mut session = test_session();
+
+        let payload = call_tool_json(
+            &mut session,
+            "get_prediction_map",
+            json!({"root": "ownership", "depth": 0, "limit": 1}),
+        );
+        assert_fields(
+            &payload,
+            &[
+                "generated_at",
+                "model_version",
+                "query",
+                "summary",
+                "nodes",
+                "anchors",
+                "initial_paths",
+                "next_cursor",
+            ],
+        );
+        assert_eq!(payload["model_version"], "prediction-map-v1");
+        assert_eq!(payload["nodes"][0]["id"], "ownership");
+        assert_fields(
+            &payload["nodes"][0],
+            &["observed", "latent_prediction", "inherited_prior"],
+        );
+
+        let response = session
+            .handle_request(json!({
+                "jsonrpc": "2.0",
+                "id": 391,
+                "method": "tools/call",
+                "params": {
+                    "name": "get_prediction_map",
                     "arguments": {"surprise": true}
                 }
             }))

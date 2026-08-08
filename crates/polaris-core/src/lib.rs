@@ -33,6 +33,7 @@ pub mod pack_state;
 pub mod pedagogy;
 pub mod phase;
 pub mod phase_dynamics;
+pub mod prediction_map;
 pub mod privacy;
 pub mod project_manifest;
 pub mod report;

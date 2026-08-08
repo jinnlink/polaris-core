@@ -1,6 +1,6 @@
 # API 稳定性合约
 
-状态：v1（2026-06-17）
+状态：v1（2026-08-08）
 
 本文定义 Polaris Core 当前对外公开面的稳定承诺。HTTP API 服务本地 UI 和本地客户端；MCP API 服务 Tier 2 外部导师。除非另有说明，本合约只承诺顶层字段、工具名、资源 URI、错误形状和只读/写入语义；深层对象允许 additive 扩展。
 
@@ -87,6 +87,27 @@ HTTP 响应体均为 JSON。成功响应使用 HTTP 200；客户端错误使用 
 - `next_cursor`
 
 节点稳定语义包括 concept/schema 类型、Pack、retrieval、`p_known`、校准、相、到期状态、尝试/证据计数、`uncertainty` 与 `provenance`。状态来源只使用 `observed | latent_prediction | inherited_prior`；P16B 当前只会产生 `observed` 或 `inherited_prior`。没有 provenance 的边不会返回，并计入 `summary.omitted_edges_missing_provenance`。
+
+### `GET /prediction-map`
+
+用途：读取跨域预测地图、结构教学锚点与初始学习路径。该入口纯只读，不创建 attempt、mastery 或 MRT 预注册。
+
+成功状态码：`200`
+
+查询参数与 `GET /knowledge-map` 完全相同，并复用同一 `KnowledgeMapQuery` 序列化契约。
+
+稳定顶层字段：
+
+- `generated_at`
+- `model_version`
+- `query`
+- `summary`
+- `nodes`
+- `anchors`
+- `initial_paths`
+- `next_cursor`
+
+每个节点稳定提供 `observed`、`latent_prediction`、`inherited_prior` 三个独立可空字段，客户端不得把 `latent_prediction` 或 `inherited_prior` 展示为已掌握。每个 estimate 携带值、95% 区间、来源、门状态、模型版本、θ 作用域与 provenance。P18A 真实纵向验证前 latent 保持 `shadow`；不确定度不可用时为 `unfit` 且区间为 `[0,1]`。isolated Pack 仅返回 Pack 本地 latent 结果，`cross_domain=false`，不读取 shared θ。`anchors` 只包含已持久化、通过当前结构门且有 provenance 的跨 Pack `maps_to` 边；`initial_paths` 是本地调度器给出的最多 3 个可选行动。`scope=global` 时不伪造节点级预测，`nodes/anchors/initial_paths` 为空，Pack 和潜变量维度聚合保留在 `summary.packs` 与 `summary.dimensions`。
 
 ### `GET /learner-mirror`
 
@@ -378,6 +399,7 @@ MCP 使用 JSON-RPC 2.0。通知方法 `notifications/*` 返回空响应。未�
 - `get_interleaved_batch`
 - `get_phase_snapshot`
 - `get_knowledge_map`
+- `get_prediction_map`
 - `get_active_gu_rules`
 - `run_mirror_report`
 - `get_latest_mirror_report`
@@ -416,6 +438,7 @@ MCP 使用 JSON-RPC 2.0。通知方法 `notifications/*` 返回空响应。未�
 
 - `get_next_task`: 与 HTTP `POST /next` 等价，缺省 session 为 `mcp`。MCP 返回额外的 `task_event_id`，它是该 session 已记录 `next` 事件的只读回执；可交给 `submit_task_response` 建立严格回合关联。
 - `get_knowledge_map`: 与 HTTP `GET /knowledge-map` 使用同一个 `KnowledgeMapQuery` 和 `KnowledgeMapSnapshot` 序列化契约；参数作为工具 arguments 传入，缺省为空对象。它只读取 Core 当前状态，不修改 mastery、调度或证据。
+- `get_prediction_map`: 与 HTTP `GET /prediction-map` 使用同一个查询和 `PredictionMapSnapshot` 序列化契约；缺省 arguments 为空对象。它只读取 Core 预测、锚点和调度预览，不修改 mastery、MRT 或证据。
 - `detect_project_manifest`: 从 `path`（可选，缺省为 MCP server 当前目录）向上发现 `p-os.toml`。找到时返回 `found=true`、`project_root`、`manifest_path`、`manifest`；未找到时返回 `found=false`，不视为工具错误。
 - `discover_learning_projects`: 从 `root`（可选，缺省为 MCP server 当前目录；`path` 可作为 alias）向下只读扫描 `p-os.toml` 学习项目声明，返回 `root` 与 `projects`。扫描会跳过 `_worktrees`、`.git`、`target` 等非课程目录，找到一个项目后不继续深入该项目内部；该工具只发现课程项目，不修改课程仓库、不生成掌握度。
 - `capture_evidence`: 与 HTTP `POST /capture` 语义对齐，把外部学习资料保存为 pending raw capture；不得生成 attempt、不得改变 mastery、不得写 grade queue，外部评分字段不被信任。
