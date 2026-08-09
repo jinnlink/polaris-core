@@ -1,6 +1,6 @@
 # 票队列（单票制）
 
-状态：**P16G1 In Progress；P16G 被真实红灯阻塞；P16D 已提交（`7a478cc`）；P16C 已提交（`7dc54f2`）；P16B 已提交（`60effc0`）；P16A 已提交（`fbcad7b`）；P15B 已提交（`a9fd13b`）**。任何时刻只允许 1 张票 In Progress。
+状态：**P16G1 已实现并通过验收，等待提交；当前无票 In Progress；P16G 被真实红灯阻塞；P16D 已提交（`7a478cc`）；P16C 已提交（`7dc54f2`）；P16B 已提交（`60effc0`）；P16A 已提交（`fbcad7b`）；P15B 已提交（`a9fd13b`）**。任何时刻只允许 1 张票 In Progress。
 P12F 已登记为正式排队票；P12G 是 `Learned` 仓库外部依赖门，必须另开该仓库正式票并取得写权限，不能从本队列直接认领。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 **Phase 7+ 产品形态轴线见 `docs/PRODUCT_ROADMAP.md`**（轴 6 学习者形态 / 轴 7 多 Pack 承载 / 轴 8 工程演进 / 轴 9 信任面板）。
@@ -121,7 +121,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 - [ ] **P16E Global Learner Profile 估计与验证**（`TICKET_P16E_GLOBAL_PROFILE_ESTIMATION.md`）← 依赖 P16D；行为画像、慢特质后验、EMA 调度与前瞻验证，未过门不影响 mastery/调度；服务环节：定位模糊 → 针对性补缺
 - [ ] **P16F 目标产品契约**（`TICKET_P16F_GOAL_PRODUCT_CONTRACT.md`）← 依赖 P16A；把已有 goals/dimensions/milestones 暴露为稳定契约，目标只限定候选范围；服务环节：针对性补缺
 - [ ] **P16G 还死板吗门**（`TICKET_P16G_RIGIDITY_GATE.md`）← **Blocked：等待 P16G1/P16G2**；依赖 P01/P03D/P03E/P03H/P04C；活性门已建立并真实检出 underconfidence 无动作、Flow 压住 PhantomChallenge 两处合同缺口；前置修复后回到本票复验；服务环节：全环节（主命题闭环活性判据）
-- [ ] **P16G1 低自信校准动作**（`TICKET_P16G1_UNDERCONFIDENCE_ACTION.md`）← **In Progress**；依赖 P01/P04C/P16G 红灯证据；不改 `U(c)`，对已掌握且证据充足的持续低自信提供可观察的 explain 校准动作；服务环节：定位模糊 → 针对性补缺
+- [x] **P16G1 低自信校准动作**（`TICKET_P16G1_UNDERCONFIDENCE_ACTION.md`）← 已实现并通过验收，等待提交；依赖 P01/P04C/P16G 红灯证据；不改 `U(c)`，对已掌握且证据充足的持续低自信提供只升一级的可观察校准动作；服务环节：定位模糊 → 针对性补缺
 - [ ] **P16G2 Flow 与幻影优先级**（`TICKET_P16G2_FLOW_PHANTOM_PRECEDENCE.md`）← 依赖 P03D/P03E/P07D/P16G 红灯证据；明确 Phantom 反证优先于 Flow 推断，保留 fatigue/bored 降负荷保护；服务环节：针对性补缺 → 验证真懂
 - [ ] **P16H 会话收口**（`TICKET_P16H_SESSION_CLOSEOUT.md`）← 依赖 P01/P03E；Tier 0 显式收口、最多 3 条 evidence-bound 小结与下一次入口；服务环节：定位模糊 → 针对性补缺
 - [ ] **P16I 未作答原因**（`TICKET_P16I_NO_ATTEMPT_REASON.md`）← 依赖 P01/P02B；把“不知道”作为一等信号，不污染 mastery，只改变教学处方；服务环节：定位模糊 → 针对性补缺

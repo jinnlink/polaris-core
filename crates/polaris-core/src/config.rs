@@ -156,6 +156,13 @@ pub fn default_registry() -> BTreeMap<&'static str, ParameterSpec> {
             TuningRoute::Manual,
         ),
         spec(
+            "calib.underconfidence_gap",
+            "0.25",
+            ParameterClass::A,
+            Some("[0.15,0.40]"),
+            TuningRoute::Manual,
+        ),
+        spec(
             "sched.w_r",
             "0.40",
             ParameterClass::B,

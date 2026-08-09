@@ -14,6 +14,8 @@ impl Engine {
             best.phase,
             phase_adjustment_protected(hmm_strategy),
         );
+        let (planned_move, decision_strategy) =
+            underconfidence_adjusted_move(planned_move, best.underconfident, phase_strategy);
         let selection = select_move_for_concept(
             &self.conn,
             &best.id,
@@ -21,7 +23,7 @@ impl Engine {
             planned_move,
             best.p_known,
             best.phase,
-            phase_strategy,
+            decision_strategy,
         )?;
         let selected_move = selection.selected_move;
         let template = move_template_for_concept(&self.conn, &best.id, selected_move.id)?
@@ -33,7 +35,7 @@ impl Engine {
             move_id: selected_move.id.to_owned(),
             task_type: selected_move.task_type.to_owned(),
             prompt_text,
-            reason: next_task_reason(best, selected_move, phase_strategy),
+            reason: next_task_reason(best, selected_move, decision_strategy),
             mrt_context_hash: selection.context_hash,
             mrt_prereg_id: selection.prereg_id,
             mrt_randomized: selection.randomized,
@@ -381,22 +383,26 @@ impl Engine {
         strategy: BatchStrategy,
     ) -> Result<f64> {
         let base_move = select_next_move_for_concept(&self.conn, &candidate.id)?;
-        let mut selected_move = phase_adjusted_move(
+        let (selected_move, phase_strategy) = phase_adjusted_move(
             base_move,
             candidate.phase,
             phase_adjustment_protected(strategy),
-        )
-        .0;
+        );
+        let mut selected_move =
+            underconfidence_adjusted_move(selected_move, candidate.underconfident, phase_strategy)
+                .0;
         let mut expected =
             self.expected_success(&candidate.id, selected_move.task_type, candidate.p_known)?;
         if is_new_or_weak(candidate) && expected < 0.50 {
             selected_move = easier_move(selected_move);
-            selected_move = phase_adjusted_move(
+            let (phase_move, phase_strategy) = phase_adjusted_move(
                 selected_move,
                 candidate.phase,
                 phase_adjustment_protected(strategy),
-            )
-            .0;
+            );
+            selected_move =
+                underconfidence_adjusted_move(phase_move, candidate.underconfident, phase_strategy)
+                    .0;
             expected =
                 self.expected_success(&candidate.id, selected_move.task_type, candidate.p_known)?;
         }
@@ -466,6 +472,9 @@ impl Engine {
         } else {
             stmt.query([])?
         };
+        let underconfidence_gap = meta_f64(&self.conn, "calib.underconfidence_gap")?;
+        let mastery_cut = meta_f64(&self.conn, "bkt.cut_hi")?;
+        let minimum_calibration_evidence = meta_i64(&self.conn, "calib.phantom_n")?;
         let mut schedule_candidates = Vec::new();
         let mut details = BTreeMap::new();
         while let Some(row) = rows.next()? {
@@ -493,7 +502,13 @@ impl Engine {
                 prerequisites_met: self.prerequisites_met(&concept_id)?,
                 phase,
             });
-            details.insert(concept_id, (name, p_known, attempt_count > 0, phase));
+            let underconfident = p_known >= mastery_cut
+                && attempt_count >= minimum_calibration_evidence
+                && calib_gap <= -underconfidence_gap;
+            details.insert(
+                concept_id,
+                (name, p_known, attempt_count > 0, phase, underconfident),
+            );
         }
 
         let scheduler_params = SchedulerParams::from_conn(&self.conn)?;
@@ -501,14 +516,17 @@ impl Engine {
         Ok(ranked
             .into_iter()
             .filter_map(|item| match details.get(&item.id) {
-                Some((name, p_known, has_attempts, phase)) => Some(RankedTaskCandidate {
-                    id: item.id,
-                    name: name.clone(),
-                    utility: item.utility,
-                    p_known: *p_known,
-                    has_attempts: *has_attempts,
-                    phase: *phase,
-                }),
+                Some((name, p_known, has_attempts, phase, underconfident)) => {
+                    Some(RankedTaskCandidate {
+                        id: item.id,
+                        name: name.clone(),
+                        utility: item.utility,
+                        p_known: *p_known,
+                        has_attempts: *has_attempts,
+                        phase: *phase,
+                        underconfident: *underconfident,
+                    })
+                }
                 None => None,
             })
             .collect())
@@ -561,22 +579,26 @@ impl Engine {
         strategy: BatchStrategy,
     ) -> Result<TaskAssignment> {
         let base_move = select_next_move_for_concept(&self.conn, &candidate.id)?;
-        let mut selected_move = phase_adjusted_move(
+        let (selected_move, phase_strategy) = phase_adjusted_move(
             base_move,
             candidate.phase,
             phase_adjustment_protected(strategy),
-        )
-        .0;
+        );
+        let mut selected_move =
+            underconfidence_adjusted_move(selected_move, candidate.underconfident, phase_strategy)
+                .0;
         let mut expected =
             self.expected_success(&candidate.id, selected_move.task_type, candidate.p_known)?;
         if is_new_or_weak(candidate) && expected < 0.50 {
             selected_move = easier_move(selected_move);
-            selected_move = phase_adjusted_move(
+            let (phase_move, phase_strategy) = phase_adjusted_move(
                 selected_move,
                 candidate.phase,
                 phase_adjustment_protected(strategy),
-            )
-            .0;
+            );
+            selected_move =
+                underconfidence_adjusted_move(phase_move, candidate.underconfident, phase_strategy)
+                    .0;
             expected =
                 self.expected_success(&candidate.id, selected_move.task_type, candidate.p_known)?;
         }
@@ -897,6 +919,26 @@ fn phase_adjusted_move(
     }
 }
 
+fn underconfidence_adjusted_move(
+    selected_move: SelectedMove,
+    underconfident: bool,
+    existing_strategy: Option<&'static str>,
+) -> (SelectedMove, Option<&'static str>) {
+    if existing_strategy.is_some() || !underconfident {
+        return (selected_move, existing_strategy);
+    }
+    let selected_move = match selected_move.id {
+        "recall" => bloom_move("explain"),
+        "explain" => bloom_move("apply"),
+        "apply" => bloom_move("analyze"),
+        "analyze" => bloom_move("evaluate"),
+        "evaluate" => bloom_move("create"),
+        "create" => bloom_move("transfer"),
+        _ => selected_move,
+    };
+    (selected_move, Some("underconfidence_calibration"))
+}
+
 fn next_task_reason(
     candidate: &RankedTaskCandidate,
     selected_move: SelectedMove,
@@ -906,6 +948,9 @@ fn next_task_reason(
         Some("phantom_challenge") => "\n相响应：用迁移题确认是否真懂。",
         Some("settling_probe") => "\n相响应：用迁移题补新情境证据。",
         Some("regression_recovery") => "\n相响应：先降到回忆或解释任务恢复证据。",
+        Some("underconfidence_calibration") => {
+            "\n低自信校准：用高一级证据确认已经会了，把正确表现变成可自我确认的理解。"
+        }
         _ => "",
     };
     format!(

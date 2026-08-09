@@ -94,10 +94,10 @@ pub fn select_move_for_concept(
             }
         }
     }
-    let selected_by = if phase_strategy.is_some() {
-        "phase_action_loop"
-    } else {
-        "signature_friction"
+    let selected_by = match phase_strategy {
+        Some("underconfidence_calibration") => "underconfidence_calibration",
+        Some(_) => "phase_action_loop",
+        None => "signature_friction",
     };
     let main_effect_hypothesis = phase_strategy
         .map(phase_strategy_hypothesis)
@@ -646,6 +646,9 @@ fn phase_strategy_hypothesis(phase_strategy: &str) -> &'static str {
         }
         "regression_recovery" => {
             "regression recovery improves 7d success by lowering friction before rebuilding depth"
+        }
+        "underconfidence_calibration" => {
+            "one-step-deeper evidence helps calibrated confidence catch up with demonstrated mastery"
         }
         _ => "phase action loop improves 7d success under this phase context",
     }

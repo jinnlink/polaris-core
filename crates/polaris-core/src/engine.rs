@@ -15,7 +15,7 @@ use crate::breeding::{
 };
 use crate::calibration::{calibration_samples, posterior_from_samples};
 use crate::capture_queue::{capture_learning_evidence, CaptureInput, CaptureRecord};
-use crate::config::meta_f64;
+use crate::config::{meta_f64, meta_i64};
 use crate::consolidation::{run_nightly_consolidation, ConsolidationSummary};
 use crate::diagnosis::{diagnose_concept, GraphDiagnosis};
 use crate::error::{PolarisError, Result};
@@ -179,6 +179,7 @@ struct RankedTaskCandidate {
     p_known: f64,
     has_attempts: bool,
     phase: Phase,
+    underconfident: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

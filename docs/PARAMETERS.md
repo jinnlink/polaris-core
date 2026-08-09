@@ -19,6 +19,7 @@
 | `calib.phantom_gap` | `0.25` | B | `[0.15,0.40]` | Replay |
 | `calib.phantom_n` | `2` | B | `[2,5]` | Replay |
 | `calib.phantom_p` | `0.60` | B | `[0.4,0.8]` | Replay |
+| `calib.underconfidence_gap` | `0.25` | A | `[0.15,0.40]` | Manual |
 | `consol.accept_margin` | `0.01` | A | - | Manual |
 | `consol.holdout_frac` | `0.20` | A | - | Manual |
 | `embedding.dim` | `0` | C | `[0,8192]` | Fit |

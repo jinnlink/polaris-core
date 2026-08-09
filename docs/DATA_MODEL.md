@@ -174,6 +174,7 @@ P12C 写入规则：
 **校准**：`conf_norm=(self_confidence−1)/4`；`gap = conf_norm − score`；`calib_gap ← 0.7·calib_gap + 0.3·gap`。
 Brier 用二值结果（≥0.75→1，≤0.40→0，死区跳过）：`brier_ewma ← 0.7·brier_ewma + 0.3·(conf_norm − 结果01)²`。
 **幻影标记（P01 粗版）**：`attempt_count ≥ 2 ∧ calib_gap ≥ 0.25 ∧ p_known < 0.6`。
+**低自信动作（P16G1）**：`p_known ≥ bkt.cut_hi ∧ attempt_count ≥ calib.phantom_n ∧ calib_gap ≤ −calib.underconfidence_gap` 时，不改变 `U(c)` 排序；基础 move 沿 `recall→explain→apply→analyze→evaluate→create→transfer` 只提升一级并登记 `underconfidence_calibration`，transfer 封顶，绝不降级。
 
 **misconception_active(c)**：存在近 14 天内带 misconception_id 的 attempt，且其后该概念无 final_score ≥ 0.75 的 attempt。
 
@@ -290,6 +291,7 @@ Brier 用二值结果（≥0.75→1，≤0.40→0，死区跳过）：`brier_ewm
 | bkt.cut_hi / cut_lo | 0.75/0.40 | B | [0.60,0.90]/[0.20,0.50] | 手动（改标签语义，谨慎） | 判对/判错阈 |
 | calib.ewma | 0.30 | B | [0.10,0.50] | 重放(P03H) | 校准步长 |
 | calib.phantom_gap / _p / _n | 0.25/0.60/2 | B | [0.15,0.40]/[0.4,0.8]/[2,5] | 重放(P03H，目标=幻影标记的前瞻验证率) | 幻影判据 |
+| calib.underconfidence_gap | 0.25 | A | [0.15,0.40] | 手动（改用户可见动作门） | 已掌握但持续低自信时触发解释校准动作 |
 | sched.w_r/w_cal/w_mis/w_new | .40/.30/.20/.10 | B | 单纯形(和=1) | **MRT**（影响给什么任务，无反事实） | U(c) 权重；P04C 后渐被签名选法取代 |
 | sched.mis_window_days / prereq_p | 14 / 0.60 | B | [7,30]/[0.4,0.8] | 重放 / MRT | 窗口与门槛 |
 | grade.provisional_base / slope | 0.10/0.80 | B | — | **重放**（直接回归历史 (conf, final) 对） | 乐观落账 |
