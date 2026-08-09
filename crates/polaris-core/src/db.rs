@@ -5,7 +5,7 @@ use rusqlite::{Connection, OpenFlags};
 use crate::config::default_registry;
 use crate::error::{PolarisError, Result};
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 5;
+pub const CURRENT_SCHEMA_VERSION: i64 = 6;
 
 const BASELINE_SCHEMA_VERSION: i64 = 1;
 const BASELINE_MIGRATION_NAME: &str = "baseline_current_schema";
@@ -17,6 +17,8 @@ const SESSION_CLOSEOUT_SCHEMA_VERSION: i64 = 4;
 const SESSION_CLOSEOUT_MIGRATION_NAME: &str = "session_closeout";
 const NO_ATTEMPT_SCHEMA_VERSION: i64 = 5;
 const NO_ATTEMPT_MIGRATION_NAME: &str = "no_attempt_reason";
+const TEACHING_TURN_SCHEMA_VERSION: i64 = 6;
+const TEACHING_TURN_MIGRATION_NAME: &str = "teaching_turn_context";
 
 pub fn open_database(path: impl AsRef<Path>) -> Result<Connection> {
     let path = path.as_ref();
@@ -419,6 +421,7 @@ pub fn migrate(conn: &Connection) -> Result<()> {
     migrate_global_profile_schema(conn)?;
     migrate_session_closeout_schema(conn)?;
     migrate_no_attempt_schema(conn)?;
+    migrate_teaching_turn_schema(conn)?;
 
     Ok(())
 }
@@ -557,6 +560,38 @@ fn migrate_no_attempt_schema(conn: &Connection) -> Result<()> {
     record_schema_migration(&tx, NO_ATTEMPT_SCHEMA_VERSION, NO_ATTEMPT_MIGRATION_NAME)?;
     if schema_version(&tx)? < NO_ATTEMPT_SCHEMA_VERSION {
         set_schema_version(&tx, NO_ATTEMPT_SCHEMA_VERSION)?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+fn migrate_teaching_turn_schema(conn: &Connection) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    tx.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS teaching_turns(
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL REFERENCES sessions(id),
+            concept_id TEXT NOT NULL REFERENCES concepts(id),
+            attempt_id TEXT REFERENCES attempts(id),
+            instruction_json TEXT NOT NULL CHECK(json_valid(instruction_json)),
+            explanation_evidence_id TEXT REFERENCES evidence_items(id),
+            created_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_teaching_turns_concept_created
+            ON teaching_turns(concept_id, created_at DESC, id);
+        CREATE INDEX IF NOT EXISTS idx_teaching_turns_session_attempt
+            ON teaching_turns(session_id, attempt_id, created_at DESC);
+        "#,
+    )?;
+    record_schema_migration(
+        &tx,
+        TEACHING_TURN_SCHEMA_VERSION,
+        TEACHING_TURN_MIGRATION_NAME,
+    )?;
+    if schema_version(&tx)? < TEACHING_TURN_SCHEMA_VERSION {
+        set_schema_version(&tx, TEACHING_TURN_SCHEMA_VERSION)?;
     }
     tx.commit()?;
     Ok(())
@@ -751,7 +786,7 @@ mod tests {
             })
             .unwrap();
         assert_eq!(p_init, "0.33");
-        assert_eq!(first_count, 5);
+        assert_eq!(first_count, 6);
         assert_eq!(second_count, first_count);
     }
 
@@ -873,7 +908,7 @@ mod tests {
 
         assert_eq!(user_version, CURRENT_SCHEMA_VERSION);
         assert_eq!(p_init, "0.33");
-        assert_eq!(migration_count, 5);
+        assert_eq!(migration_count, 6);
         assert_eq!(journal_mode.to_lowercase(), "wal");
     }
 

@@ -3779,7 +3779,7 @@ mod tests {
         cleanup_db_path(&db_path);
 
         assert_eq!(user_version, polaris_core::db::CURRENT_SCHEMA_VERSION);
-        assert_eq!(migration_count, 5);
+        assert_eq!(migration_count, 6);
         assert_eq!(active_pack, "rust");
     }
 
@@ -4054,7 +4054,7 @@ mod tests {
         assert!(report.ok);
         let text = doctor_report_text(&report);
         assert!(text.contains("schema_version="));
-        assert!(text.contains("migration_count=5"));
+        assert!(text.contains("migration_count=6"));
         assert!(text.contains("integrity=ok"));
         assert!(text.contains("replay_checked=0"));
 

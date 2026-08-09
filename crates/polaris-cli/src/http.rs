@@ -85,6 +85,7 @@ impl HttpApi {
             ("POST", "/inbox/practice/submit") => self.inbox_practice_submit(body),
             ("POST", "/capture") => self.capture(body),
             ("POST", "/next") => self.next(body),
+            ("POST", "/teaching-turn/explanation") => self.teaching_explanation(body),
             ("POST", "/evidence") => self.evidence(body),
             ("POST", "/feedback") => self.feedback(body),
             ("GET", "/next")
@@ -95,6 +96,7 @@ impl HttpApi {
             | (_, "/inbox/practice")
             | (_, "/inbox/practice/submit")
             | (_, "/capture")
+            | ("GET", "/teaching-turn/explanation")
             | ("POST", "/status")
             | ("POST", "/knowledge-map")
             | ("POST", "/prediction-map")
@@ -169,9 +171,14 @@ impl HttpApi {
             return Ok(response(200, json!({ "task": null })));
         };
 
-        self.engine.record_next_task_event(session, &task)?;
+        let task_event_id = self.engine.record_next_task_event(session, &task)?;
 
         let instruction = self.engine.teaching_instruction(&task.concept_id)?;
+        let teaching_turn =
+            self.engine
+                .begin_teaching_turn(session, &task.concept_id, &instruction)?;
+        self.engine
+            .associate_teaching_turn_with_task_event(&task_event_id, &teaching_turn.id)?;
         Ok(response(
             200,
             json!({
@@ -180,10 +187,38 @@ impl HttpApi {
                     "task_type": task.task_type,
                     "prompt": task.prompt_text,
                     "reason": task.reason,
+                    "context": task.context,
                 },
+                "teaching_turn_id": teaching_turn.id,
                 "teaching_instruction": instruction,
             }),
         ))
+    }
+
+    fn teaching_explanation(&self, body: &str) -> Result<HttpResponse, Box<dyn std::error::Error>> {
+        let arguments = match json_body(body) {
+            Ok(arguments) => arguments,
+            Err(error) => return Ok(response(400, json!({"error": error}))),
+        };
+        let Some(teaching_turn_id) = optional_str(&arguments, "teaching_turn_id") else {
+            return Ok(response(
+                400,
+                json!({"error": "missing string field: teaching_turn_id"}),
+            ));
+        };
+        let Some(text) = optional_str(&arguments, "text") else {
+            return Ok(response(
+                400,
+                json!({"error": "missing string field: text"}),
+            ));
+        };
+        match self
+            .engine
+            .record_teaching_explanation(teaching_turn_id, text)
+        {
+            Ok(receipt) => Ok(response(200, serde_json::to_value(receipt)?)),
+            Err(error) => Ok(response(400, json!({"error": error.to_string()}))),
+        }
     }
 
     fn capture(&mut self, body: &str) -> Result<HttpResponse, Box<dyn std::error::Error>> {
@@ -1053,10 +1088,13 @@ mod tests {
             .handle("POST", "/next", &json!({"session": "contract"}).to_string())
             .unwrap();
         assert_eq!(next.status, 200);
-        assert_fields(&next.body, &["task", "teaching_instruction"]);
+        assert_fields(
+            &next.body,
+            &["task", "teaching_turn_id", "teaching_instruction"],
+        );
         assert_fields(
             &next.body["task"],
-            &["concept_id", "task_type", "prompt", "reason"],
+            &["concept_id", "task_type", "prompt", "reason", "context"],
         );
 
         let evidence = api
@@ -1691,6 +1729,12 @@ mod tests {
         assert_eq!(response.status, 200);
         let concept_id = response.body["task"]["concept_id"].as_str().unwrap();
         assert_eq!(response.body["teaching_instruction"]["target"], concept_id);
+        assert!(response.body["teaching_turn_id"].as_str().is_some());
+        assert_eq!(response.body["task"]["context"], Value::Null);
+        assert_eq!(
+            response.body["teaching_instruction"]["context"],
+            Value::Null
+        );
         let next_events: i64 = api
             .engine()
             .conn()
@@ -1702,6 +1746,47 @@ mod tests {
             )
             .unwrap();
         assert_eq!(next_events, 1);
+    }
+
+    #[test]
+    fn p16j_http_records_explanation_without_creating_learner_attempt() {
+        let mut api = test_api();
+        let next = api
+            .handle(
+                "POST",
+                "/next",
+                &json!({"session": "http-teaching"}).to_string(),
+            )
+            .unwrap();
+        let teaching_turn_id = next.body["teaching_turn_id"].as_str().unwrap();
+
+        let response = api
+            .handle(
+                "POST",
+                "/teaching-turn/explanation",
+                &json!({
+                    "teaching_turn_id": teaching_turn_id,
+                    "text": "A tutor explanation, not a learner answer."
+                })
+                .to_string(),
+            )
+            .unwrap();
+
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body["teaching_turn_id"], teaching_turn_id);
+        assert!(response.body["evidence_id"].as_str().is_some());
+        let counts: (i64, i64) = api
+            .engine()
+            .conn()
+            .query_row(
+                "SELECT
+                    (SELECT COUNT(*) FROM attempts),
+                    (SELECT COUNT(*) FROM evidence_items WHERE source='teaching_explanation')",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(counts, (0, 1));
     }
 
     #[test]

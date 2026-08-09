@@ -91,6 +91,7 @@ impl McpSession {
                 "submit_evidence" => self.submit_evidence(arguments),
                 "submit_task_response" => self.submit_task_response(arguments),
                 "get_teaching_instruction" => self.get_teaching_instruction(arguments),
+                "record_teaching_explanation" => self.record_teaching_explanation(arguments),
                 other => Err(format!("unknown tool: {other}")),
             }
         })();
@@ -165,13 +166,22 @@ impl McpSession {
             .engine
             .teaching_instruction(&task.concept_id)
             .map_err(|error| error.to_string())?;
+        let teaching_turn = self
+            .engine
+            .begin_teaching_turn(session, &task.concept_id, &instruction)
+            .map_err(|error| error.to_string())?;
+        self.engine
+            .associate_teaching_turn_with_task_event(&task_event_id, &teaching_turn.id)
+            .map_err(|error| error.to_string())?;
         Ok(json!({
             "task_event_id": task_event_id,
+            "teaching_turn_id": teaching_turn.id,
             "task": {
                 "concept_id": task.concept_id,
                 "task_type": task.task_type,
                 "prompt": task.prompt_text,
                 "reason": task.reason,
+                "context": task.context,
             },
             "teaching_instruction": instruction,
         }))
@@ -602,6 +612,15 @@ impl McpSession {
         )
         .map_err(|error| error.to_string())
     }
+
+    fn record_teaching_explanation(&self, arguments: &Value) -> Result<Value, String> {
+        let teaching_turn_id = required_str(arguments, "teaching_turn_id")?;
+        let text = required_str(arguments, "text")?;
+        self.engine
+            .record_teaching_explanation(teaching_turn_id, text)
+            .map_err(|error| error.to_string())
+            .and_then(|receipt| serde_json::to_value(receipt).map_err(|error| error.to_string()))
+    }
 }
 
 pub fn serve_stdio(engine: Engine) -> Result<(), Box<dyn std::error::Error>> {
@@ -973,13 +992,26 @@ fn tool_definitions() -> Value {
         },
         {
             "name": "get_teaching_instruction",
-            "description": "Return Tier 2 teaching guidance for a concept with focus, move, target_depth, do, dont, and anchor fields.",
+            "description": "Return Tier 2 teaching guidance for a concept with focus, move, target_depth, do, dont, anchor, and read-only prior context fields.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "concept": {"type": "string", "description": "Concept id to diagnose and teach."}
                 },
                 "required": ["concept"]
+            }
+        },
+        {
+            "name": "record_teaching_explanation",
+            "description": "Record the explanation just delivered by the external tutor as evidence linked to a teaching_turn_id returned by get_next_task. This records facts only and never becomes learner-answer citation evidence.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "teaching_turn_id": {"type": "string", "description": "Teaching turn receipt returned by get_next_task."},
+                    "text": {"type": "string", "description": "The tutor explanation exactly as delivered."}
+                },
+                "required": ["teaching_turn_id", "text"],
+                "additionalProperties": false
             }
         }
     ])
@@ -1252,6 +1284,7 @@ mod tests {
                 "submit_evidence",
                 "submit_task_response",
                 "get_teaching_instruction",
+                "record_teaching_explanation",
             ],
         );
 
@@ -1410,6 +1443,7 @@ mod tests {
                 "get_learner_mirror",
                 "submit_evidence",
                 "get_teaching_instruction",
+                "record_teaching_explanation",
             ],
         );
         for tool in tools {
@@ -2022,6 +2056,9 @@ mod tests {
             .unwrap();
         let next_payload: Value = serde_json::from_str(next_text).unwrap();
         assert!(next_payload["task_event_id"].as_str().is_some());
+        assert!(next_payload["teaching_turn_id"].as_str().is_some());
+        assert_eq!(next_payload["task"]["context"], Value::Null);
+        assert_eq!(next_payload["teaching_instruction"]["context"], Value::Null);
         let concept_id = next_payload["task"]["concept_id"].as_str().unwrap();
         assert_eq!(next_payload["teaching_instruction"]["move"], "recall");
         assert_eq!(
@@ -2063,6 +2100,51 @@ mod tests {
         assert!(
             submit_payload["attempt_id"].as_str().is_some(),
             "submit response should accept concept_id and return attempt_id, got {submit_payload}"
+        );
+    }
+
+    #[test]
+    fn p16j_mcp_records_teaching_explanation_and_links_following_attempt() {
+        let mut session = test_session();
+        let next = call_tool_json(
+            &mut session,
+            "get_next_task",
+            json!({"session": "mcp-teaching"}),
+        );
+        let teaching_turn_id = next["teaching_turn_id"].as_str().unwrap();
+        let explanation = call_tool_json(
+            &mut session,
+            "record_teaching_explanation",
+            json!({
+                "teaching_turn_id": teaching_turn_id,
+                "text": "The tutor explained ownership with a concrete move example."
+            }),
+        );
+        assert_eq!(explanation["teaching_turn_id"], teaching_turn_id);
+        assert!(explanation["evidence_id"].as_str().is_some());
+
+        let submitted = call_tool_json(
+            &mut session,
+            "submit_task_response",
+            json!({
+                "session": "mcp-teaching",
+                "task_event_id": next["task_event_id"],
+                "response": "Ownership determines who may drop and move a value.",
+                "confidence": 4
+            }),
+        );
+        let linked_attempt_id: Option<String> = session
+            .engine()
+            .conn()
+            .query_row(
+                "SELECT attempt_id FROM teaching_turns WHERE id=?1",
+                [teaching_turn_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            linked_attempt_id.as_deref(),
+            submitted["attempt_id"].as_str()
         );
     }
 

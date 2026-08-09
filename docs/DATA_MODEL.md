@@ -22,8 +22,8 @@
 
 ### 1.1 Schema 版本与迁移账本
 
-- SQLite schema 版本权威源 = `PRAGMA user_version`，当前由 `db::CURRENT_SCHEMA_VERSION` 定义（P16I 后为 5）。
-- `schema_migrations(version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)` 是迁移账本；version 1 为 baseline，version 2 为 `capture_queue`，version 3 为 `global_profile_governance`，version 4 为 `session_closeout`，version 5 为 `no_attempt_reason`。
+- SQLite schema 版本权威源 = `PRAGMA user_version`，当前由 `db::CURRENT_SCHEMA_VERSION` 定义（P16J 后为 6）。
+- `schema_migrations(version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)` 是迁移账本；version 1 为 baseline，version 2 为 `capture_queue`，version 3 为 `global_profile_governance`，version 4 为 `session_closeout`，version 5 为 `no_attempt_reason`，version 6 为 `teaching_turn_context`。
 - `migrate()` 对空库和旧的未版本化库都必须幂等：先补齐当前 schema，再写 baseline 与后续迁移账本并设置 `user_version`。
 - 旧库已有业务行和用户手动 `meta` 参数不得被迁移覆盖；默认参数继续使用 `INSERT OR IGNORE`。
 - 若数据库 `user_version` 高于当前二进制支持版本，写路径必须拒绝打开并提示版本不支持，避免旧程序误写新库。
@@ -140,6 +140,23 @@ profile_data_actions(
 - v5 为 `attempts` 增加可空 `no_attempt_reason`，稳定枚举为 `not_understood_prompt | no_recall | out_of_time | skipped`；非法值在写入前拒绝。
 - 非空原因表示没有形成作答证据：该行分数、rating 与 graded_at 保持 NULL，不进入 mastery fold、θ、校准、FSRS、相图、G_u 或调度尝试计数。
 - 同次显式提交只写 evidence、`behavior_events(type='no_attempt')` 与 attempt；`not_understood_prompt` 仅改变教学处方，诊断只读暴露最新原因。
+
+### P16J 教学回合与上下文
+
+```sql
+teaching_turns(
+       id TEXT PRIMARY KEY,
+       session_id TEXT NOT NULL REFERENCES sessions(id),
+       concept_id TEXT NOT NULL REFERENCES concepts(id),
+       attempt_id TEXT REFERENCES attempts(id),
+       instruction_json TEXT NOT NULL,
+       explanation_evidence_id TEXT REFERENCES evidence_items(id),
+       created_at TEXT NOT NULL)
+```
+
+- v6 DDL、迁移台账与 `user_version` 原子提交；教学回合只保存实际交付的 instruction、可选讲解 evidence 关联和可选后续 attempt 关联，不保存讲解有效性推断。
+- `TeachingInstruction.context` 与 `NextTask.context` 只读回取同概念最近 `teaching.context_attempt_limit` 条 attempt（默认 3）、最近失败作答摘要、`status='active'` 的 G_u 和上次交付 anchor；查询不得激活 validated G_u，也不得改变选题或 mastery。
+- `source='teaching_explanation'` 的 evidence 只通过 `teaching_turns.explanation_evidence_id` 关联；grader 的 `evidence_for_attempt` 仍只允许 `attempts.response_evidence_id`，绝不把导师讲解加入 strict-citation 集合。
 
 P08A pack 状态放在 `meta`：`active_pack` 表示当前 pack；`pack.<id>.title` 保存显示名；`pack.<id>.theta_mode` 取 `shared|isolated`，默认 `shared`。
 

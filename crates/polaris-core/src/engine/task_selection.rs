@@ -30,6 +30,7 @@ impl Engine {
             .map(|item| item.template)
             .unwrap_or_else(|| fallback_template(selected_move.id).to_owned());
         let prompt_text = render_move_prompt(&template, &best.name);
+        let context = crate::teaching::teaching_context(&self.conn, &best.id)?;
         Ok(Some(NextTask {
             concept_id: best.id.clone(),
             move_id: selected_move.id.to_owned(),
@@ -39,6 +40,7 @@ impl Engine {
             mrt_context_hash: selection.context_hash,
             mrt_prereg_id: selection.prereg_id,
             mrt_randomized: selection.randomized,
+            context,
         }))
     }
 
@@ -119,6 +121,11 @@ impl Engine {
                 latency_ms,
                 hint_count,
             })?;
+            crate::teaching_turn::link_task_teaching_turn_to_attempt(
+                &self.conn,
+                task_event_id,
+                &receipt.attempt_id,
+            )?;
             self.conn.execute(
                 "INSERT INTO behavior_events(id, session_id, at, type, concept_id, payload_json)
                  VALUES (?1, ?2, strftime('%Y-%m-%dT%H:%M:%SZ','now'), 'tier2_submission', ?3, ?4)",
@@ -198,6 +205,11 @@ impl Engine {
                     hint_count,
                 },
                 reason,
+            )?;
+            crate::teaching_turn::link_task_teaching_turn_to_attempt(
+                &self.conn,
+                task_event_id,
+                &receipt.attempt_id,
             )?;
             self.conn.execute(
                 "INSERT INTO behavior_events(id, session_id, at, type, concept_id, payload_json)

@@ -1,6 +1,6 @@
 # P16J 教学回合对象与上下文回取（Teaching Turn + Context Recall）
 
-状态：Queued；依赖 P01、P03H、P15B。P16D 提交前不得认领。
+状态：已实现并通过验收，待提交；依赖 P01、P03H、P15B。P16D 已提交（`7a478cc`）。
 
 服务主命题：针对性补缺 → 验证真懂。
 
@@ -71,3 +71,52 @@ cargo test --workspace
 ## 回滚
 
 移除 `context` 字段与 `teaching_turns` 表；恢复 P11B 合同基线；删除测试。A 部分与 B 部分可分别回滚。
+
+## 开工记录（2026-08-09）
+
+- 范围：只读回取最近 3 条概念历史、最近失败原文摘要、活跃 G_u 与上次 anchor；新增最小 `teaching_turns` 关联对象和讲解 evidence 登记入口。
+- 禁区：不改选题、评分、mastery、`U(c)`，不自动归因讲解有效性，讲解 evidence 永不进入 strict-citation 可引用集合。
+- 验收：实跑票面 fmt、workspace clippy、P16J 专项与 workspace 全测，并更新 P11B HTTP/MCP 合同稳定面。
+- 预计修改面：schema v6/迁移、Core 教学上下文与教学回合 API、CLI/HTTP/MCP 契约、DATA_MODEL/API 文档及测试。
+
+## 交付记录（2026-08-09）
+
+### 变更清单
+
+- schema v6 新增 `teaching_turns`、两条查询索引与原子迁移；新增 A 类参数 `teaching.context_attempt_limit=3`。
+- `TeachingInstruction` / `NextTask` 增加同一只读 `context`：最近 N 条 attempt、最近失败作答摘要、活跃 G_u、上次实际交付 anchor；无历史序列化为 `null`。
+- 新增教学回合与讲解登记：HTTP `/next`、MCP `get_next_task` 返回 `teaching_turn_id`；HTTP `/teaching-turn/explanation`、MCP `record_teaching_explanation` 只记录导师讲解事实。
+- 严格任务回执通过 `next` 事件精确关联对应教学回合与后续 attempt；多个未提交回合不会错连。
+- grader 可引用集合仍只查询 `attempts.response_evidence_id`；讲解 evidence 引用会降级并进入重试，不参与评分闭环。
+- 更新 P11B HTTP/MCP 稳定合同、数据模型、参数文档、迁移计数回归及 P16J 专项测试。
+
+### 验收实跑
+
+```text
+> cargo fmt --check
+exit 0
+
+> cargo clippy --workspace --all-targets -- -D warnings
+Finished `dev` profile ...
+exit 0
+
+> cargo test -p polaris-core --test p16j_teaching_turn_context
+running 6 tests
+test result: ok. 6 passed; 0 failed
+
+> cargo test -p polaris-cli p16j_
+running 2 tests
+test result: ok. 2 passed; 0 failed
+
+> cargo test --workspace --quiet
+polaris-cli: 115 passed; polaris-core: 81 passed
+p16j_teaching_turn_context: 6 passed
+all discovered suites: exit 0
+
+> git diff --check
+exit 0（仅工作区既有 CRLF 转换警告）
+```
+
+### 回滚
+
+- 执行 `git revert <P16J-commit-sha>` 移除上下文、教学回合与 API；已升级真实库不做破坏性降级，使用升级前备份恢复，旧二进制会按 P11A 拒绝写入 schema v6。

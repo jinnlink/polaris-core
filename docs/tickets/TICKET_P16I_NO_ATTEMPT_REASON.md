@@ -116,4 +116,4 @@ polaris session close --session cli-no-attempt
 ... 未作答 1 次。
 ```
 
-- 回滚：执行 `git revert <P16I-commit-sha>` 移除提交分支、处方与出口；已升级真实库不做破坏性降级，使用升级前备份恢复。旧二进制按 P11A 拒绝写入 schema v5。
+- 回滚：执行 `git revert 7cbbd0b` 移除提交分支、处方与出口；已升级真实库不做破坏性降级，使用升级前备份恢复。旧二进制按 P11A 拒绝写入 schema v5。

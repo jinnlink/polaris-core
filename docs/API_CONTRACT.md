@@ -339,6 +339,7 @@ HTTP 响应体均为 JSON。成功响应使用 HTTP 200；客户端错误使用 
 稳定顶层字段：
 
 - `task`: object 或 null。
+- `teaching_turn_id`: string，当 `task` 非 null 时存在；供外部导师登记本次实际讲解。
 - `teaching_instruction`: object，当 `task` 非 null 时存在。
 
 `task` 稳定子字段：
@@ -347,6 +348,28 @@ HTTP 响应体均为 JSON。成功响应使用 HTTP 200；客户端错误使用 
 - `task_type`
 - `prompt`
 - `reason`
+- `context`: object 或 null；与 `teaching_instruction.context` 使用同一只读历史 DTO。
+
+`teaching_instruction.context` 非空时稳定子字段：
+
+- `recent_attempts`: array，最多 `teaching.context_attempt_limit` 条，默认 3，按时间倒序。
+- `latest_failed_response`: string 或 null，只含最近失败的学习者原文摘要。
+- `active_gu_rules`: array，只含当前 `status='active'` 的规则。
+- `previous_anchor`: string 或 null，上一次实际交付的教学 anchor。
+
+### `POST /teaching-turn/explanation`
+
+用途：外部导师把刚才实际交付的讲解原文登记为 evidence，并关联到 `POST /next` 返回的教学回合。只记录事实，不判断讲解有效性，不进入学习者作答的 strict-citation 集合。
+
+请求字段：
+
+- `teaching_turn_id`: string，必填。
+- `text`: string，必填且去空白后非空。
+
+稳定顶层字段：
+
+- `teaching_turn_id`: string。
+- `evidence_id`: string。
 
 ### `POST /evidence`
 
@@ -459,6 +482,7 @@ MCP 使用 JSON-RPC 2.0。通知方法 `notifications/*` 返回空响应。未�
 - `submit_evidence`
 - `submit_task_response`
 - `get_teaching_instruction`
+- `record_teaching_explanation`
 
 每个工具定义必须保留：
 
@@ -475,7 +499,7 @@ MCP 使用 JSON-RPC 2.0。通知方法 `notifications/*` 返回空响应。未�
 
 关键工具语义：
 
-- `get_next_task`: 与 HTTP `POST /next` 等价，缺省 session 为 `mcp`。MCP 返回额外的 `task_event_id`，它是该 session 已记录 `next` 事件的只读回执；可交给 `submit_task_response` 建立严格回合关联。
+- `get_next_task`: 与 HTTP `POST /next` 等价，缺省 session 为 `mcp`。MCP 返回额外的 `task_event_id` 与 `teaching_turn_id`；前者可交给 `submit_task_response` 建立严格作答回合，后者可交给 `record_teaching_explanation` 登记实际讲解。
 - `get_knowledge_map`: 与 HTTP `GET /knowledge-map` 使用同一个 `KnowledgeMapQuery` 和 `KnowledgeMapSnapshot` 序列化契约；参数作为工具 arguments 传入，缺省为空对象。它只读取 Core 当前状态，不修改 mastery、调度或证据。
 - `get_prediction_map`: 与 HTTP `GET /prediction-map` 使用同一个查询和 `PredictionMapSnapshot` 序列化契约；缺省 arguments 为空对象。它只读取 Core 预测、锚点和调度预览，不修改 mastery、MRT 或证据。
 - `get_global_profile`: 与 HTTP `GET /profile` 使用同一无原始回答摘要；本地分享未开启时返回工具级 `isError=true`。该工具没有参数，不暴露回答、导出、重置或全部删除能力。
@@ -487,6 +511,7 @@ MCP 使用 JSON-RPC 2.0。通知方法 `notifications/*` 返回空响应。未�
 - `act_on_learner_inbox_item`: 与 HTTP `POST /inbox/action` 语义对齐；`accept` 只标记 `practice_ready`，`defer` 保留稍后处理，`ignore` 隐藏，`archive` 归档。不得生成 attempt、mastery 或 grade queue。
 - `draft_inbox_practice`: 与 HTTP `POST /inbox/practice` 语义对齐，从 `practice_ready` capture 生成学生可答的小题草稿；不得生成 attempt、mastery 或 grade queue，不暴露内部掌握度参数。
 - `submit_inbox_practice`: 与 HTTP `POST /inbox/practice/submit` 语义对齐，提交学生回答和 `confidence`，复用引擎自有评分路径并把 capture 标为 `practiced`；外部评分字段仍不得作为掌握度权威。
+- `record_teaching_explanation`: 与 HTTP `POST /teaching-turn/explanation` 等价；只接受 `get_next_task` 返回的教学回合并保存讲解原文 evidence，不自动归因、不改变 mastery，也不扩大 grader 可引用集合。
 - `get_ai_interaction_profile`: 与 HTTP `GET /ai-profile` 语义对齐，返回本地 AI 交互偏好和 `guidance`；只读，不影响学习事实。
 - `update_ai_interaction_profile`: 与 HTTP `POST /ai-profile` 语义对齐；仅在用户要求改变 AI 性格、话量、解释深度、主动程度、介入频率、纠错风格或补充说明时调用，不影响 mastery。
 - `get_learner_mirror`: 与 HTTP `GET /learner-mirror` 对齐，返回 `generated_at`、`confidence_curve`、`phase_distribution`、`recent_assertions`。

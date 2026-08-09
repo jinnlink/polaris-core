@@ -240,6 +240,13 @@ pub fn default_registry() -> BTreeMap<&'static str, ParameterSpec> {
             TuningRoute::Manual,
         ),
         spec(
+            "teaching.context_attempt_limit",
+            "3",
+            ParameterClass::A,
+            Some("[1,10]"),
+            TuningRoute::Manual,
+        ),
+        spec(
             "fsrs.r_again",
             "0.5",
             ParameterClass::B,

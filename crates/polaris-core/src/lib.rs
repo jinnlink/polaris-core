@@ -44,6 +44,7 @@ pub mod session;
 pub mod simulation;
 pub mod status;
 pub mod teaching;
+pub mod teaching_turn;
 pub mod trust;
 pub mod tuning;
 

@@ -183,7 +183,7 @@ fn parse_and_validate(
     Ok(raw)
 }
 
-fn evidence_for_attempt(conn: &Connection, attempt_id: &str) -> Result<Vec<EvidenceText>> {
+pub fn evidence_for_attempt(conn: &Connection, attempt_id: &str) -> Result<Vec<EvidenceText>> {
     let mut stmt = conn.prepare(
         "SELECT e.id, e.text
          FROM attempts a

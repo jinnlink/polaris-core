@@ -90,7 +90,11 @@ use crate::report::{
 use crate::scheduler::{rank_candidates_with_params, ScheduleCandidate, SchedulerParams};
 use crate::session::{close_session, session_close_summary, SessionCloseSummary};
 use crate::status::{status_snapshot, StatusSnapshot};
-use crate::teaching::{teaching_instruction, TeachingInstruction};
+use crate::teaching::{teaching_instruction, TeachingContext, TeachingInstruction};
+use crate::teaching_turn::{
+    associate_teaching_turn_with_task_event, begin_teaching_turn, record_teaching_explanation,
+    TeachingExplanationReceipt, TeachingTurn,
+};
 use crate::trust::{trust_panel, TrustPanel};
 use crate::tuning::{run_param_tuning, TuningSummary};
 
@@ -102,7 +106,7 @@ pub struct Engine {
     conn: Connection,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct NextTask {
     pub concept_id: String,
     pub move_id: String,
@@ -112,6 +116,7 @@ pub struct NextTask {
     pub mrt_context_hash: String,
     pub mrt_prereg_id: String,
     pub mrt_randomized: bool,
+    pub context: Option<TeachingContext>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -404,6 +409,31 @@ impl Engine {
 
     pub fn teaching_instruction(&self, concept_id: &str) -> Result<TeachingInstruction> {
         teaching_instruction(&self.conn, concept_id)
+    }
+
+    pub fn begin_teaching_turn(
+        &self,
+        session_id: &str,
+        concept_id: &str,
+        instruction: &TeachingInstruction,
+    ) -> Result<TeachingTurn> {
+        begin_teaching_turn(&self.conn, session_id, concept_id, instruction)
+    }
+
+    pub fn record_teaching_explanation(
+        &self,
+        teaching_turn_id: &str,
+        text: &str,
+    ) -> Result<TeachingExplanationReceipt> {
+        record_teaching_explanation(&self.conn, teaching_turn_id, text)
+    }
+
+    pub fn associate_teaching_turn_with_task_event(
+        &self,
+        task_event_id: &str,
+        teaching_turn_id: &str,
+    ) -> Result<()> {
+        associate_teaching_turn_with_task_event(&self.conn, task_event_id, teaching_turn_id)
     }
 
     pub fn latent_prediction(&self, concept_id: &str, task_type: &str) -> Result<LatentPrediction> {

@@ -104,6 +104,7 @@
 | `sched.w_phase` | `0.0` | B | `[0,1]` | Mrt |
 | `sched.w_r` | `0.40` | B | `simplex` | Mrt |
 | `sig.shrink_n0` | `10` | B | `[5,30]` | Replay |
+| `teaching.context_attempt_limit` | `3` | A | `[1,10]` | Manual |
 | `thompson.prior_n` | `10` | B | `[5,30]` | Replay |
 | `tuning.accept_margin` | `0.005` | A | - | Manual |
 | `tuning.holdout_frac` | `0.20` | A | - | Manual |
