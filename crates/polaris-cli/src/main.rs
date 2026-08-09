@@ -34,6 +34,7 @@ use polaris_core::project_manifest::{
     discover_learning_projects, discover_project_manifest, DiscoveredProjectManifest,
 };
 use polaris_core::sandbox::{run_pack_sandbox, SandboxLearner, SandboxOptions, SandboxReport};
+use polaris_core::session::SessionCloseSummary;
 use polaris_core::status::StatusSnapshot;
 use polaris_core::trust::{TrustPanel, TrustParameter};
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
@@ -121,6 +122,10 @@ enum Commands {
         #[arg(long, default_value = "cli")]
         session: String,
     },
+    Session {
+        #[command(subcommand)]
+        command: SessionCommands,
+    },
     Status {
         #[arg(long)]
         json: bool,
@@ -200,6 +205,22 @@ enum Commands {
     Project {
         #[command(subcommand)]
         command: ProjectCommands,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum SessionCommands {
+    Close {
+        #[arg(long)]
+        session: String,
+        #[arg(long)]
+        json: bool,
+    },
+    Show {
+        #[arg(long)]
+        session: String,
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -878,6 +899,25 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                         (&session, &concept),
                     )?;
                     println!("abandoned");
+                }
+                Commands::Session { command } => {
+                    let summary = match &command {
+                        SessionCommands::Close { session, .. } => engine.close_session(session)?,
+                        SessionCommands::Show { session, .. } => {
+                            engine.session_close_summary(session)?.ok_or_else(|| {
+                                adapter_error(format!("session is not closed: {session}"))
+                            })?
+                        }
+                    };
+                    let json = match &command {
+                        SessionCommands::Close { json, .. }
+                        | SessionCommands::Show { json, .. } => *json,
+                    };
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&summary)?);
+                    } else {
+                        print!("{}", session_close_summary_text(&summary));
+                    }
                 }
                 Commands::Status { json } => {
                     let snapshot = engine.status_snapshot()?;
@@ -1820,6 +1860,25 @@ fn status_snapshot_json(snapshot: &StatusSnapshot) -> serde_json::Result<String>
     serde_json::to_string_pretty(snapshot)
 }
 
+fn session_close_summary_text(summary: &SessionCloseSummary) -> String {
+    let mut text = format!(
+        "会话 {} 已收口：{} 次作答，触及 {} 个概念。\n",
+        summary.session_id,
+        summary.attempts_count,
+        summary.concepts_touched.len()
+    );
+    if let Some(concept) = &summary.top_stuck_concept_id {
+        text.push_str(&format!("最需要补缺：{concept}\n"));
+    }
+    if let Some(concept) = &summary.next_entry_concept_id {
+        text.push_str(&format!("下次从这里接：{concept}\n"));
+    }
+    for assertion in &summary.assertions {
+        text.push_str(&format!("- {}\n", assertion.text));
+    }
+    text
+}
+
 fn pack_list_json(packs: &[PackSummary]) -> serde_json::Result<String> {
     serde_json::to_string_pretty(packs)
 }
@@ -2379,6 +2438,8 @@ mod tests {
                 "4",
             ],
             vec!["polaris", "hint", "--concept", "ownership"],
+            vec!["polaris", "session", "close", "--session", "cli", "--json"],
+            vec!["polaris", "session", "show", "--session", "cli"],
             vec!["polaris", "abandon", "--concept", "ownership"],
             vec!["polaris", "status"],
             vec!["polaris", "status", "--json"],
@@ -3678,7 +3739,7 @@ mod tests {
         cleanup_db_path(&db_path);
 
         assert_eq!(user_version, polaris_core::db::CURRENT_SCHEMA_VERSION);
-        assert_eq!(migration_count, 3);
+        assert_eq!(migration_count, 4);
         assert_eq!(active_pack, "rust");
     }
 
@@ -3953,7 +4014,7 @@ mod tests {
         assert!(report.ok);
         let text = doctor_report_text(&report);
         assert!(text.contains("schema_version="));
-        assert!(text.contains("migration_count=3"));
+        assert!(text.contains("migration_count=4"));
         assert!(text.contains("integrity=ok"));
         assert!(text.contains("replay_checked=0"));
 

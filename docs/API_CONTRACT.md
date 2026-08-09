@@ -123,6 +123,27 @@ HTTP 响应体均为 JSON。成功响应使用 HTTP 200；客户端错误使用 
 
 `dimensions[]` 稳定包含 scope、均值、方差、证据数、模型版本、门状态、provenance 和 evidence ids。该入口永不返回 `behavior_events(type='profile_measurement')`、题目回答或完整导出；不存在 POST/重置/删除 HTTP 入口。
 
+### `GET /session`
+
+用途：按 session id 读取已经显式收口的确定性小结。该入口只读，不会关闭 session，也不修改掌握度或调度。
+
+查询参数：`session`，string，必填且不可重复。未找到已收口小结返回 `404`；不存在 POST 入口。
+
+稳定顶层字段：
+
+- `session_id`
+- `started_at`
+- `ended_at`
+- `closed_at`
+- `concepts_touched`
+- `attempts_count`
+- `top_stuck_concept_id`
+- `next_entry_concept_id`
+- `assertions`
+- `generated_at`
+
+`assertions` 最多 3 条，每条稳定包含 `concept_id`、`kind`、`text` 与非空 `evidence_ids`。
+
 ### `GET /learner-mirror`
 
 用途：读取学习者静态镜像面板。
@@ -412,6 +433,7 @@ MCP 使用 JSON-RPC 2.0。通知方法 `notifications/*` 返回空响应。未�
 - `get_next_task`
 - `get_interleaved_batch`
 - `get_phase_snapshot`
+- `get_session_summary`
 - `get_knowledge_map`
 - `get_prediction_map`
 - `get_global_profile`
@@ -455,6 +477,7 @@ MCP 使用 JSON-RPC 2.0。通知方法 `notifications/*` 返回空响应。未�
 - `get_knowledge_map`: 与 HTTP `GET /knowledge-map` 使用同一个 `KnowledgeMapQuery` 和 `KnowledgeMapSnapshot` 序列化契约；参数作为工具 arguments 传入，缺省为空对象。它只读取 Core 当前状态，不修改 mastery、调度或证据。
 - `get_prediction_map`: 与 HTTP `GET /prediction-map` 使用同一个查询和 `PredictionMapSnapshot` 序列化契约；缺省 arguments 为空对象。它只读取 Core 预测、锚点和调度预览，不修改 mastery、MRT 或证据。
 - `get_global_profile`: 与 HTTP `GET /profile` 使用同一无原始回答摘要；本地分享未开启时返回工具级 `isError=true`。该工具没有参数，不暴露回答、导出、重置或全部删除能力。
+- `get_session_summary`: 与 HTTP `GET /session` 使用同一小结序列化契约；必填 `session`。只读取已显式关闭的小结，未找到时返回 JSON `null`，不得关闭 session 或改变学习状态。
 - `detect_project_manifest`: 从 `path`（可选，缺省为 MCP server 当前目录）向上发现 `p-os.toml`。找到时返回 `found=true`、`project_root`、`manifest_path`、`manifest`；未找到时返回 `found=false`，不视为工具错误。
 - `discover_learning_projects`: 从 `root`（可选，缺省为 MCP server 当前目录；`path` 可作为 alias）向下只读扫描 `p-os.toml` 学习项目声明，返回 `root` 与 `projects`。扫描会跳过 `_worktrees`、`.git`、`target` 等非课程目录，找到一个项目后不继续深入该项目内部；该工具只发现课程项目，不修改课程仓库、不生成掌握度。
 - `capture_evidence`: 与 HTTP `POST /capture` 语义对齐，把外部学习资料保存为 pending raw capture；不得生成 attempt、不得改变 mastery、不得写 grade queue，外部评分字段不被信任。

@@ -65,6 +65,7 @@ impl HttpApi {
             ("GET", "/knowledge-map") => self.knowledge_map(query_string),
             ("GET", "/prediction-map") => self.prediction_map(query_string),
             ("GET", "/profile") => self.global_profile(),
+            ("GET", "/session") => self.session_summary(query_string),
             ("GET", "/learner-mirror") => Ok(response(
                 200,
                 serde_json::to_value(self.engine.learner_mirror_snapshot()?)?,
@@ -98,6 +99,7 @@ impl HttpApi {
             | ("POST", "/knowledge-map")
             | ("POST", "/prediction-map")
             | ("POST", "/profile")
+            | ("POST", "/session")
             | ("POST", "/learner-mirror")
             | (_, "/trust") => Ok(response(405, json!({"error": "method not allowed"}))),
             (_, "/ai-profile") => Ok(response(405, json!({"error": "method not allowed"}))),
@@ -140,6 +142,20 @@ impl HttpApi {
                 Ok(response(403, json!({"error": error.to_string()})))
             }
             Err(error) => Err(Box::new(error)),
+        }
+    }
+
+    fn session_summary(
+        &self,
+        query_string: Option<&str>,
+    ) -> Result<HttpResponse, Box<dyn std::error::Error>> {
+        let session_id = match parse_required_session_query(query_string) {
+            Ok(session_id) => session_id,
+            Err(error) => return Ok(response(400, json!({"error": error}))),
+        };
+        match self.engine.session_close_summary(&session_id)? {
+            Some(summary) => Ok(response(200, serde_json::to_value(summary)?)),
+            None => Ok(response(404, json!({"error": "session summary not found"}))),
         }
     }
 
@@ -663,6 +679,29 @@ fn parse_knowledge_map_query(query_string: Option<&str>) -> Result<KnowledgeMapQ
     Ok(query)
 }
 
+fn parse_required_session_query(query_string: Option<&str>) -> Result<String, String> {
+    let query_string = query_string.ok_or_else(|| "missing query parameter: session".to_owned())?;
+    let mut session = None;
+    for pair in query_string.split('&') {
+        let (key, value) = pair
+            .split_once('=')
+            .ok_or_else(|| "invalid query parameter".to_owned())?;
+        let key = percent_decode_query_component(key)?;
+        if key != "session" {
+            return Err(format!("unknown query parameter: {key}"));
+        }
+        if session.is_some() {
+            return Err("duplicate query parameter: session".to_owned());
+        }
+        let value = percent_decode_query_component(value)?;
+        if value.trim().is_empty() {
+            return Err("session must not be empty".to_owned());
+        }
+        session = Some(value);
+    }
+    session.ok_or_else(|| "missing query parameter: session".to_owned())
+}
+
 fn percent_decode_query_component(value: &str) -> Result<String, String> {
     let input = value.as_bytes();
     let mut output = Vec::with_capacity(input.len());
@@ -840,6 +879,7 @@ mod tests {
             "GET /knowledge-map",
             "GET /prediction-map",
             "GET /profile",
+            "GET /session",
             "GET /learner-mirror",
             "GET /trust",
             "GET /ai-profile",
@@ -1087,6 +1127,42 @@ mod tests {
 
         let prediction_map_post = api.handle("POST", "/prediction-map", "{}").unwrap();
         assert_eq!(prediction_map_post.status, 405);
+    }
+
+    #[test]
+    fn http_session_summary_is_read_only_and_validates_query() {
+        let mut api = test_api();
+        api.engine()
+            .conn()
+            .execute(
+                "INSERT INTO sessions(id, started_at, context_json) VALUES ('http-close', '2026-08-09T00:00:00Z', '{}')",
+                [],
+            )
+            .unwrap();
+        api.engine().close_session("http-close").unwrap();
+
+        let found = api
+            .handle("GET", "/session?session=http-close", "")
+            .unwrap();
+        assert_eq!(found.status, 200);
+        assert_eq!(found.body["session_id"], "http-close");
+        assert_fields(
+            &found.body,
+            &[
+                "concepts_touched",
+                "attempts_count",
+                "assertions",
+                "generated_at",
+            ],
+        );
+        assert_eq!(api.handle("GET", "/session", "").unwrap().status, 400);
+        assert_eq!(
+            api.handle("GET", "/session?session=missing", "")
+                .unwrap()
+                .status,
+            404
+        );
+        assert_eq!(api.handle("POST", "/session", "{}").unwrap().status, 405);
     }
 
     #[test]

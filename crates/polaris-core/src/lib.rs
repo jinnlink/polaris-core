@@ -40,6 +40,7 @@ pub mod project_manifest;
 pub mod report;
 pub mod sandbox;
 pub mod scheduler;
+pub mod session;
 pub mod simulation;
 pub mod status;
 pub mod teaching;

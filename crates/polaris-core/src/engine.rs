@@ -88,6 +88,7 @@ use crate::report::{
     run_mirror_report_with_static_narrative, MirrorReport,
 };
 use crate::scheduler::{rank_candidates_with_params, ScheduleCandidate, SchedulerParams};
+use crate::session::{close_session, session_close_summary, SessionCloseSummary};
 use crate::status::{status_snapshot, StatusSnapshot};
 use crate::teaching::{teaching_instruction, TeachingInstruction};
 use crate::trust::{trust_panel, TrustPanel};
@@ -205,6 +206,14 @@ impl Engine {
 
     pub fn conn(&self) -> &Connection {
         &self.conn
+    }
+
+    pub fn close_session(&self, session_id: &str) -> Result<SessionCloseSummary> {
+        close_session(self, session_id)
+    }
+
+    pub fn session_close_summary(&self, session_id: &str) -> Result<Option<SessionCloseSummary>> {
+        session_close_summary(&self.conn, session_id)
     }
 
     pub fn structural_mapping_score(&self, left: &str, right: &str) -> Result<StructuralMapping> {

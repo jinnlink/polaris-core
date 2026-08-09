@@ -484,7 +484,7 @@ mod tests {
         let clean = super::doctor_report(engine.conn()).unwrap();
         assert!(clean.ok);
         assert_eq!(clean.schema_version, crate::db::CURRENT_SCHEMA_VERSION);
-        assert_eq!(clean.migration_count, 3);
+        assert_eq!(clean.migration_count, 4);
         assert_eq!(clean.replay_checked, 1);
         assert!(clean.replay_mismatches.is_empty());
 

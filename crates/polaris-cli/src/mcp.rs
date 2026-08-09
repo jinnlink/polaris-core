@@ -65,6 +65,7 @@ impl McpSession {
                 "get_next_task" => self.get_next_task(arguments),
                 "get_interleaved_batch" => self.get_interleaved_batch(arguments),
                 "get_phase_snapshot" => self.get_phase_snapshot(),
+                "get_session_summary" => self.get_session_summary(arguments),
                 "get_knowledge_map" => self.get_knowledge_map(arguments),
                 "get_prediction_map" => self.get_prediction_map(arguments),
                 "get_global_profile" => self.get_global_profile(),
@@ -250,6 +251,16 @@ impl McpSession {
         serde_json::to_value(
             self.engine
                 .status_snapshot()
+                .map_err(|error| error.to_string())?,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    fn get_session_summary(&self, arguments: &Value) -> Result<Value, String> {
+        let session_id = required_str(arguments, "session")?;
+        serde_json::to_value(
+            self.engine
+                .session_close_summary(session_id)
                 .map_err(|error| error.to_string())?,
         )
         .map_err(|error| error.to_string())
@@ -622,6 +633,18 @@ fn tool_definitions() -> Value {
             "inputSchema": {
                 "type": "object",
                 "properties": {}
+            }
+        },
+        {
+            "name": "get_session_summary",
+            "description": "Return a previously closed deterministic session summary. Read-only; never closes a session or changes learning state.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "session": {"type": "string", "description": "Closed session id."}
+                },
+                "required": ["session"],
+                "additionalProperties": false
             }
         },
         {
@@ -1173,6 +1196,7 @@ mod tests {
                 "get_next_task",
                 "get_interleaved_batch",
                 "get_phase_snapshot",
+                "get_session_summary",
                 "get_knowledge_map",
                 "get_prediction_map",
                 "get_global_profile",
@@ -2690,6 +2714,36 @@ mod tests {
 
         assert_eq!(decoded.payload, message);
         assert_eq!(decoded.framing, StdioFraming::ContentLength);
+    }
+
+    #[test]
+    fn mcp_session_summary_is_read_only() {
+        let mut session = test_session();
+        session
+            .engine()
+            .conn()
+            .execute(
+                "INSERT INTO sessions(id, started_at, context_json) VALUES ('mcp-close', '2026-08-09T00:00:00Z', '{}')",
+                [],
+            )
+            .unwrap();
+        session.engine().close_session("mcp-close").unwrap();
+
+        let payload = call_tool_json(
+            &mut session,
+            "get_session_summary",
+            json!({"session": "mcp-close"}),
+        );
+        assert_eq!(payload["session_id"], "mcp-close");
+        assert!(payload["closed_at"].as_str().is_some());
+        assert_eq!(
+            call_tool_json(
+                &mut session,
+                "get_session_summary",
+                json!({"session": "missing"}),
+            ),
+            Value::Null
+        );
     }
 
     #[test]

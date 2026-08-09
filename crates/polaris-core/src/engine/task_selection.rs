@@ -444,6 +444,21 @@ impl Engine {
         self.ranked_task_candidates_for_pack(active_pack.as_deref())
     }
 
+    pub(crate) fn ranked_concept_ids_for_all_packs(&self) -> Result<Vec<String>> {
+        Ok(self
+            .ranked_task_candidates_for_pack(None)?
+            .into_iter()
+            .map(|candidate| candidate.id)
+            .collect())
+    }
+
+    pub(crate) fn next_task_concept_id(&self) -> Result<Option<String>> {
+        Ok(self
+            .ranked_task_candidates()?
+            .first()
+            .map(|candidate| candidate.id.clone()))
+    }
+
     fn ranked_task_candidates_for_pack(
         &self,
         pack: Option<&str>,

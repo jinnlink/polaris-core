@@ -5,7 +5,7 @@ use rusqlite::{Connection, OpenFlags};
 use crate::config::default_registry;
 use crate::error::{PolarisError, Result};
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 3;
+pub const CURRENT_SCHEMA_VERSION: i64 = 4;
 
 const BASELINE_SCHEMA_VERSION: i64 = 1;
 const BASELINE_MIGRATION_NAME: &str = "baseline_current_schema";
@@ -13,6 +13,8 @@ const CAPTURE_QUEUE_SCHEMA_VERSION: i64 = 2;
 const CAPTURE_QUEUE_MIGRATION_NAME: &str = "capture_queue";
 const GLOBAL_PROFILE_SCHEMA_VERSION: i64 = 3;
 const GLOBAL_PROFILE_MIGRATION_NAME: &str = "global_profile_governance";
+const SESSION_CLOSEOUT_SCHEMA_VERSION: i64 = 4;
+const SESSION_CLOSEOUT_MIGRATION_NAME: &str = "session_closeout";
 
 pub fn open_database(path: impl AsRef<Path>) -> Result<Connection> {
     let path = path.as_ref();
@@ -413,6 +415,7 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         CAPTURE_QUEUE_MIGRATION_NAME,
     )?;
     migrate_global_profile_schema(conn)?;
+    migrate_session_closeout_schema(conn)?;
 
     Ok(())
 }
@@ -501,7 +504,41 @@ fn migrate_global_profile_schema(conn: &Connection) -> Result<()> {
         GLOBAL_PROFILE_SCHEMA_VERSION,
         GLOBAL_PROFILE_MIGRATION_NAME,
     )?;
-    set_schema_version(&tx, CURRENT_SCHEMA_VERSION)?;
+    if schema_version(&tx)? < GLOBAL_PROFILE_SCHEMA_VERSION {
+        set_schema_version(&tx, GLOBAL_PROFILE_SCHEMA_VERSION)?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+fn migrate_session_closeout_schema(conn: &Connection) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    ensure_column(&tx, "sessions", "ended_at", "TEXT")?;
+    ensure_column(&tx, "sessions", "closed_at", "TEXT")?;
+    tx.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS session_summaries(
+            session_id TEXT PRIMARY KEY REFERENCES sessions(id),
+            concepts_touched_json TEXT NOT NULL,
+            attempts_count INTEGER NOT NULL CHECK(attempts_count >= 0),
+            top_stuck_concept_id TEXT,
+            next_entry_concept_id TEXT,
+            assertions_json TEXT NOT NULL,
+            generated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_session_summaries_generated
+            ON session_summaries(generated_at DESC, session_id);
+        "#,
+    )?;
+    record_schema_migration(
+        &tx,
+        SESSION_CLOSEOUT_SCHEMA_VERSION,
+        SESSION_CLOSEOUT_MIGRATION_NAME,
+    )?;
+    if schema_version(&tx)? < SESSION_CLOSEOUT_SCHEMA_VERSION {
+        set_schema_version(&tx, SESSION_CLOSEOUT_SCHEMA_VERSION)?;
+    }
     tx.commit()?;
     Ok(())
 }
@@ -618,6 +655,7 @@ mod tests {
             "profile_dimensions",
             "profile_validation_runs",
             "profile_data_actions",
+            "session_summaries",
             "schema_migrations",
         ] {
             let exists: i64 = conn
@@ -694,7 +732,7 @@ mod tests {
             })
             .unwrap();
         assert_eq!(p_init, "0.33");
-        assert_eq!(first_count, 3);
+        assert_eq!(first_count, 4);
         assert_eq!(second_count, first_count);
     }
 
@@ -816,7 +854,7 @@ mod tests {
 
         assert_eq!(user_version, CURRENT_SCHEMA_VERSION);
         assert_eq!(p_init, "0.33");
-        assert_eq!(migration_count, 3);
+        assert_eq!(migration_count, 4);
         assert_eq!(journal_mode.to_lowercase(), "wal");
     }
 

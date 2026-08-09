@@ -1,6 +1,6 @@
 # P16H 会话收口（Session Close-out）
 
-状态：Queued；依赖 P01、P03E。P16D 提交前不得认领。
+状态：已通过验收，待提交；依赖 P01、P03E。P16G 已提交（`b558fae`）。
 
 服务主命题：定位模糊 → 针对性补缺。
 
@@ -53,6 +53,64 @@ cargo test --workspace
 - 不与镜像报告合并，周报仍是周报。
 - 不修改冻结仓库。
 
+## 开工前复述（2026-08-09）
+
+- 范围：schema v4、确定性 close/show、最多 3 条 evidence-bound 断言、复用 next_task 的下一入口、CLI 与 HTTP/MCP 只读出口。
+- 禁区：不调用 LLM，不改 mastery/调度/相图/评分，不自动关闭，不提供 3 条上限参数，不合并周报。
+- 验收命令：票内专项、`cargo fmt --check`、workspace Clippy `-D warnings`、`cargo test --workspace`、`git diff --check`。
+- 预计修改面：`db.rs`、独立 session 模块、Engine facade、CLI/HTTP/MCP、API/DATA_MODEL、专项与合同测试、QUEUE 与本票。
+
 ## 回滚
 
 删除 `session_summaries` 表与 `sessions` 新增列（schema 版本回退按 P11A 策略：旧二进制拒绝 + 备份恢复）；移除 CLI/HTTP/MCP 出口与测试。
+
+## AI 交付记录（2026-08-09）
+
+- schema 升至 v4：`sessions` 增加 `closed_at`，新增 `session_summaries`、查询索引与原子迁移；故障注入证明 v4 失败时保持 v3 台账、`user_version` 和列形状。
+- Core 新增确定性 `close_session` / `session_close_summary`：只折叠当前 session 的 attempts 与 behavior events，统计概念、分数区间、hint/abandon、卡点；下一入口复用 `next_task`。
+- 强制最多 3 条断言，按既有效用排序，且每条断言携带非空 evidence ids；重复关闭返回同一小结，不生成第二行。
+- CLI 新增 `session close/show`；HTTP 新增只读 `GET /session?session=...`；MCP 新增只读 `get_session_summary`。HTTP/MCP 均不能关闭 session。
+- API 合约与数据模型已更新；schema v4 引起的 doctor/P16D 固定版本断言同步升级。
+
+### 最终验收输出
+
+```text
+> cargo test -p polaris-core --test p16h_session_closeout
+running 3 tests
+test schema_v4_adds_closeout_fields_table_and_atomic_migration ... ok
+test multi_concept_closeout_is_session_bound_evidence_bound_and_idempotent ... ok
+test empty_and_single_attempt_sessions_close_with_stable_shapes ... ok
+test result: ok. 3 passed; 0 failed
+
+> cargo fmt --check
+exit 0
+
+> cargo clippy --workspace --all-targets -- -D warnings
+Finished `dev` profile ...
+exit 0
+
+> cargo test --workspace
+polaris-cli: 110 passed; polaris-core: 81 passed
+p16d_global_profile_governance: 12 passed
+p16h_session_closeout: 3 passed
+all discovered suites: exit 0
+
+> git diff --check
+exit 0
+```
+
+### 真实 CLI 冒烟
+
+```text
+polaris --db <temp> init --pack packs/rust
+initialized
+polaris --db <temp> next --session cli-smoke
+concept: ownership
+polaris --db <temp> session close --session cli-smoke --json
+"session_id": "cli-smoke", "attempts_count": 0, "next_entry_concept_id": "ownership"
+polaris --db <temp> session show --session cli-smoke
+会话 cli-smoke 已收口：0 次作答，触及 1 个概念。
+下次从这里接：ownership
+```
+
+- 回滚：执行 `git revert <P16H-commit-sha>` 移除代码与出口；已升级的真实数据库不做破坏性降级，按 P11A 策略使用升级前备份恢复，旧二进制会拒绝写入 v4 数据库。

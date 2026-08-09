@@ -22,8 +22,8 @@
 
 ### 1.1 Schema 版本与迁移账本
 
-- SQLite schema 版本权威源 = `PRAGMA user_version`，当前由 `db::CURRENT_SCHEMA_VERSION` 定义（P16D 后为 3）。
-- `schema_migrations(version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)` 是迁移账本；version 1 为 baseline，version 2 为 `capture_queue`，version 3 为 `global_profile_governance`。
+- SQLite schema 版本权威源 = `PRAGMA user_version`，当前由 `db::CURRENT_SCHEMA_VERSION` 定义（P16H 后为 4）。
+- `schema_migrations(version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)` 是迁移账本；version 1 为 baseline，version 2 为 `capture_queue`，version 3 为 `global_profile_governance`，version 4 为 `session_closeout`。
 - `migrate()` 对空库和旧的未版本化库都必须幂等：先补齐当前 schema，再写 baseline 与后续迁移账本并设置 `user_version`。
 - 旧库已有业务行和用户手动 `meta` 参数不得被迁移覆盖；默认参数继续使用 `INSERT OR IGNORE`。
 - 若数据库 `user_version` 高于当前二进制支持版本，写路径必须拒绝打开并提示版本不支持，避免旧程序误写新库。
@@ -71,7 +71,12 @@ mastery_states(concept_id TEXT PRIMARY KEY, p_known REAL, fsrs_json TEXT, next_d
        last_depth TEXT, max_depth TEXT, attempt_count INTEGER DEFAULT 0,
        lapses INTEGER DEFAULT 0, updated_at TEXT)
 
-sessions(id TEXT PRIMARY KEY, started_at TEXT, ended_at TEXT, context_json TEXT)
+sessions(id TEXT PRIMARY KEY, started_at TEXT, ended_at TEXT, closed_at TEXT, context_json TEXT)
+
+session_summaries(session_id TEXT PRIMARY KEY REFERENCES sessions(id),
+       concepts_touched_json TEXT NOT NULL, attempts_count INTEGER NOT NULL,
+       top_stuck_concept_id TEXT, next_entry_concept_id TEXT,
+       assertions_json TEXT NOT NULL, generated_at TEXT NOT NULL)
 
 behavior_events(id TEXT PRIMARY KEY, session_id TEXT, at TEXT,
        type TEXT,    -- latency|hint|abandon|resume|edit|profile_measurement
@@ -122,6 +127,12 @@ profile_data_actions(
 - `profile_data_actions` 只保留画像重置的非敏感计数，不复制回答内容。完整删除会移除数据库本身，因此只返回调用方回执，不制造无法留存的“审计行”。
 - 完整删除在 Engine 关闭后先建立临时一致性恢复快照，再把旧主库与 SQLite sidecar 隔离，执行调用方注入的本机密钥清理，并在原路径建立当前 schema 的空库；密钥清理失败时恢复原文件，旧文件清理失败时优先从一致性快照恢复逻辑数据库。成功后立即删除临时快照，回执报告真实删除的密钥数量，不伪造“已清理”布尔值。
 - v3 画像 DDL、默认设置、迁移台账与 `user_version` 在同一事务提交；失败时保持 v2，不留下半套画像表。
+
+### P16H 会话收口
+
+- v4 为 `sessions` 增加 `closed_at`，并新增 `session_summaries`；DDL、迁移台账与 `user_version` 原子提交，失败时保持 v3。
+- 小结只折叠当前 session 的 `attempts` 与 `behavior_events`；每条断言必须有证据，最多 3 条。
+- `next_entry_concept_id` 复用既有 `next_task`，不构成第二套调度状态；重复关闭同一 session 返回同一行。
 
 P08A pack 状态放在 `meta`：`active_pack` 表示当前 pack；`pack.<id>.title` 保存显示名；`pack.<id>.theta_mode` 取 `shared|isolated`，默认 `shared`。
 

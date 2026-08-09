@@ -16,6 +16,8 @@ pub enum PolarisError {
     MissingConcept(String),
     #[error("missing goal {0}")]
     MissingGoal(String),
+    #[error("missing session {0}")]
+    MissingSession(String),
     #[error("invalid graph node {id}: expected {expected}")]
     InvalidGraphNode { id: String, expected: String },
     #[error("invalid grader response: {0}")]
