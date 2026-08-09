@@ -1,6 +1,6 @@
 # P16G 还死板吗门（Rigidity Gate）
 
-状态：Blocked；依赖 P01、P03D、P03E、P03H、P04C。P16D 已提交（`7a478cc`）；等待 P16G1、P16G2 完成后复验。
+状态：已实现并通过验收，等待提交；依赖 P01、P03D、P03E、P03H、P04C。P16G1（`825f8a7`）、P16G2（`2735169`）已完成。
 
 ## 本轮范围（2026-08-09）
 
@@ -124,7 +124,7 @@ git diff --check
 
 ## 回滚
 
-删除 `crates/polaris-core/tests/p16g_rigidity_gate.rs` 与其夹具；恢复 `docs/tickets/QUEUE.md` 中 P16G 条目；删除本票文件。
+删除 `crates/polaris-core/tests/p16g_rigidity_gate.rs`，并恢复 `docs/tickets/QUEUE.md` 与本票状态。
 
 无 schema 变更、无产品行为变更，回滚零影响。
 
@@ -179,3 +179,52 @@ exit 0
 
 - 未跑验证：全 workspace 测试；P16G 专项已确定红灯，workspace 必然包含同一失败，不能伪报全绿。
 - 裁决结果：保持门和失败证据不变，P16G1 定义 underconfidence 的可验证动作契约，P16G2 裁决 Flow 与 PhantomChallenge 的优先级；两票完成后回到 P16G 复验。用户已于 2026-08-09 明确同意该方案并要求继续。
+
+## AI 交付记录（2026-08-09）
+
+- 最终状态：P16G1（`825f8a7`）让 underconfident 与 mastery 输出分离；P16G2（`2735169`）让 Phantom 反证优先于 Flow；本票只提交确定性活性门测试与状态记录，不再改产品代码。
+- A 稳定性：7 个 arm 各自重放两次，next 与有序 batch 签名完全一致。
+- B 响应性：7 个 arm 得到 7 个不同输出签名；mastery/fail、mastery/underconfident、mastery/behavioral 均明确分歧。
+- C 方向性：mastery 前进；fail 整体降深；underconfident 的 ownership 从 analyze 升为 evaluate；phantom 的 next/batch 均为 ownership transfer；misconception 提升 borrowing；behavioral 改变 batch 顺序。
+- 最终分歧矩阵：
+
+```text
+arm            col mas fai und pha mis beh
+cold           0   1   1   1   1   1   1
+mastery        1   0   1   1   1   1   1
+fail           1   1   0   1   1   1   1
+underconfident 1   1   1   0   1   1   1
+phantom        1   1   1   1   0   1   1
+misconception  1   1   1   1   1   0   1
+behavioral     1   1   1   1   1   1   0
+```
+
+- 人为死板化：设置 `POLARIS_P16G_FORCE_RIGID=1` 后所有 arm 被压成 cold 输出，矩阵全 0，响应性测试以 `at least five distinct targeted outputs are required, got 1` 失败，退出 101。
+
+### 最终验收输出
+
+```text
+> cargo test -p polaris-core --test p16g_rigidity_gate -- --nocapture
+test directionality_each_divergence_hits_its_expected_target ... ok
+test responsiveness_different_evidence_arms_diverge ... ok
+test stability_same_evidence_sequence_replays_identically ... ok
+test result: ok. 3 passed; 0 failed
+
+> cargo fmt --check
+exit 0
+
+> cargo clippy --workspace --all-targets -- -D warnings
+Finished `dev` profile ...
+exit 0
+
+> cargo test --workspace
+polaris-cli: 108 passed; polaris-core: 81 passed
+p03g_interleaved: 16 passed; p16g1_underconfidence_action: 4 passed
+p16g_rigidity_gate: 3 passed; 0 failed
+all discovered suites: exit 0
+
+> git diff --check
+exit 0
+```
+
+- 回滚：只撤销本票执行 `git revert <P16G-commit-sha>`，会移除活性门但不改变产品行为；若要连同两处行为裁决一起回滚，再按逆序撤销 `2735169`、`825f8a7`。无 schema 变更。
