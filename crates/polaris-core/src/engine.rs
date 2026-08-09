@@ -714,8 +714,8 @@ impl Engine {
 
         for concept in &pack.concepts {
             tx.execute(
-                "INSERT OR REPLACE INTO concepts(id, pack, name, kind, seed_order, p_init, q, provenance, evidence_ids_json, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, COALESCE((SELECT q FROM concepts WHERE id=?1), ?7), 'pack-seed', '[]', strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
+                "INSERT OR REPLACE INTO concepts(id, pack, name, kind, seed_order, p_init, q, generativity, provenance, evidence_ids_json, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, COALESCE((SELECT q FROM concepts WHERE id=?1), ?7), ?8, 'pack-seed', '[]', strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
                 params![
                     concept.id,
                     pack.id,
@@ -723,7 +723,8 @@ impl Engine {
                     concept.kind,
                     concept.seed_order,
                     concept.p_init,
-                    initial_q
+                    initial_q,
+                    concept.generativity
                 ],
             )?;
         }

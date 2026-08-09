@@ -63,6 +63,7 @@ lang = "en"
 | `seed_order` | 是 | pack 内确定性排序。调度平手时先按 `seed_order`，再按 `id`。 |
 | `kind` | 否 | 默认 `concept`。当前合法值：`concept`、`schema`、`misconception_induced`。课程作者通常只写 `concept` 或 `schema`。 |
 | `p_init` | 否 | 初始 `p_known` 覆盖值。缺省使用 `meta('bkt.p_init')`。 |
+| `generativity` | 否 | 默认 `unknown`。合法值：`generative`（可由规则推出未见同族实例）、`item`（逐项记忆）、`unknown`。只改变教学处方，不改变调度、难度或先验掌握度。 |
 
 ### `[[edge]]`
 
@@ -84,6 +85,7 @@ lang = "en"
 id = "arrays_lists"
 name = "Arrays and linked lists"
 seed_order = 1
+generativity = "generative"
 
 [[concept]]
 id = "hash_tables"
@@ -249,7 +251,7 @@ strict-citation 要求评分或报告引用 `{evidence_id, quote}`，其中 quot
 
 - 必须存在 `pack.toml`、`concepts.toml`、`misconceptions.toml`、`rubric.md`、`moves.toml`。
 - `pack.toml` 能解析，且 `id`、`title` 非空。
-- `concepts.toml` 能解析，所有 concept kind 合法。
+- `concepts.toml` 能解析，所有 concept kind 与 generativity 枚举合法。
 - 所有 edge type 合法。
 - 所有 edge 的 `src`、`dst` 都引用已声明 concept。
 - 所有 misconception 的 `concept_id` 都引用已声明 concept。

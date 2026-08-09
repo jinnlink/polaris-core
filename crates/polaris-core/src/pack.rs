@@ -47,6 +47,11 @@ pub enum PackError {
     },
     #[error("concept {concept_id} has invalid kind {kind}")]
     InvalidConceptKind { concept_id: String, kind: String },
+    #[error("concept {concept_id} has invalid generativity {generativity}")]
+    InvalidGenerativity {
+        concept_id: String,
+        generativity: String,
+    },
     #[error("edge {edge_id} has invalid type {edge_type}")]
     InvalidEdgeType { edge_id: String, edge_type: String },
     #[error("pack must contain at least one move template")]
@@ -76,6 +81,8 @@ pub struct ConceptToml {
     pub kind: String,
     pub seed_order: i64,
     pub p_init: Option<f64>,
+    #[serde(default = "default_generativity")]
+    pub generativity: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -169,6 +176,15 @@ pub fn validate_pack_path(path: impl AsRef<Path>) -> Result<PackValidationReport
             return Err(PackError::InvalidConceptKind {
                 concept_id: concept.id.clone(),
                 kind: concept.kind.clone(),
+            });
+        }
+        if !matches!(
+            concept.generativity.as_str(),
+            "generative" | "item" | "unknown"
+        ) {
+            return Err(PackError::InvalidGenerativity {
+                concept_id: concept.id.clone(),
+                generativity: concept.generativity.clone(),
             });
         }
     }
@@ -265,6 +281,10 @@ fn read_text(root: &Path, file_name: &str) -> Result<String, PackError> {
 
 fn default_kind() -> String {
     "concept".to_owned()
+}
+
+fn default_generativity() -> String {
+    "unknown".to_owned()
 }
 
 fn default_weight() -> f64 {

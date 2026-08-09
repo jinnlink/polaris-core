@@ -10,7 +10,7 @@ use rusqlite::{params, Connection};
 #[test]
 fn schema_v6_and_empty_history_are_safe() {
     let engine = seeded_engine();
-    assert_eq!(CURRENT_SCHEMA_VERSION, 6);
+    assert_eq!(CURRENT_SCHEMA_VERSION, 7);
     assert!(table_exists(engine.conn(), "teaching_turns"));
     assert!(teaching_context(engine.conn(), "ownership")
         .unwrap()

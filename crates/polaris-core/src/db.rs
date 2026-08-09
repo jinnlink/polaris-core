@@ -5,7 +5,7 @@ use rusqlite::{Connection, OpenFlags};
 use crate::config::default_registry;
 use crate::error::{PolarisError, Result};
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 6;
+pub const CURRENT_SCHEMA_VERSION: i64 = 7;
 
 const BASELINE_SCHEMA_VERSION: i64 = 1;
 const BASELINE_MIGRATION_NAME: &str = "baseline_current_schema";
@@ -19,6 +19,8 @@ const NO_ATTEMPT_SCHEMA_VERSION: i64 = 5;
 const NO_ATTEMPT_MIGRATION_NAME: &str = "no_attempt_reason";
 const TEACHING_TURN_SCHEMA_VERSION: i64 = 6;
 const TEACHING_TURN_MIGRATION_NAME: &str = "teaching_turn_context";
+const GENERATIVITY_SCHEMA_VERSION: i64 = 7;
+const GENERATIVITY_MIGRATION_NAME: &str = "concept_generativity";
 
 pub fn open_database(path: impl AsRef<Path>) -> Result<Connection> {
     let path = path.as_ref();
@@ -422,6 +424,7 @@ pub fn migrate(conn: &Connection) -> Result<()> {
     migrate_session_closeout_schema(conn)?;
     migrate_no_attempt_schema(conn)?;
     migrate_teaching_turn_schema(conn)?;
+    migrate_generativity_schema(conn)?;
 
     Ok(())
 }
@@ -592,6 +595,26 @@ fn migrate_teaching_turn_schema(conn: &Connection) -> Result<()> {
     )?;
     if schema_version(&tx)? < TEACHING_TURN_SCHEMA_VERSION {
         set_schema_version(&tx, TEACHING_TURN_SCHEMA_VERSION)?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+fn migrate_generativity_schema(conn: &Connection) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    ensure_column(
+        &tx,
+        "concepts",
+        "generativity",
+        "TEXT NOT NULL DEFAULT 'unknown' CHECK(generativity IN ('generative','item','unknown'))",
+    )?;
+    record_schema_migration(
+        &tx,
+        GENERATIVITY_SCHEMA_VERSION,
+        GENERATIVITY_MIGRATION_NAME,
+    )?;
+    if schema_version(&tx)? < GENERATIVITY_SCHEMA_VERSION {
+        set_schema_version(&tx, GENERATIVITY_SCHEMA_VERSION)?;
     }
     tx.commit()?;
     Ok(())
@@ -786,7 +809,7 @@ mod tests {
             })
             .unwrap();
         assert_eq!(p_init, "0.33");
-        assert_eq!(first_count, 6);
+        assert_eq!(first_count, 7);
         assert_eq!(second_count, first_count);
     }
 
@@ -908,7 +931,7 @@ mod tests {
 
         assert_eq!(user_version, CURRENT_SCHEMA_VERSION);
         assert_eq!(p_init, "0.33");
-        assert_eq!(migration_count, 6);
+        assert_eq!(migration_count, 7);
         assert_eq!(journal_mode.to_lowercase(), "wal");
     }
 

@@ -10,6 +10,7 @@ id = "template_core_terms"
 name = "Core terms"
 seed_order = 2
 p_init = 0.20
+generativity = "generative"
 
 [[concept]]
 id = "template_boundary_cases"
@@ -22,6 +23,7 @@ id = "template_worked_example"
 name = "Worked example"
 seed_order = 4
 p_init = 0.18
+generativity = "item"
 
 [[concept]]
 id = "template_transfer_context"

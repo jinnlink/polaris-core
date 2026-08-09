@@ -18,7 +18,7 @@ fn schema_v3_creates_profile_tables_and_default_local_settings() {
 
     migrate(&conn).unwrap();
 
-    assert_eq!(CURRENT_SCHEMA_VERSION, 6);
+    assert_eq!(CURRENT_SCHEMA_VERSION, 7);
     for table in [
         "profile_settings",
         "profile_dimensions",
@@ -69,7 +69,7 @@ fn schema_v3_upgrades_v2_without_losing_learning_facts_and_is_idempotent() {
     migrate(&conn).unwrap();
 
     assert_eq!(table_count(&conn, "attempts"), 1);
-    assert_eq!(table_count(&conn, "schema_migrations"), 6);
+    assert_eq!(table_count(&conn, "schema_migrations"), 7);
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();

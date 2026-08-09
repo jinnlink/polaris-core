@@ -179,6 +179,16 @@ pub fn teaching_instruction(conn: &Connection, concept_id: &str) -> Result<Teach
         |row| row.get(0),
     )?;
     let selected_move = select_next_move_for_concept(conn, concept_id)?;
+    let generativity: String = conn.query_row(
+        "SELECT generativity FROM concepts WHERE id=?1",
+        [concept_id],
+        |row| row.get(0),
+    )?;
+    let selected_move = if generativity == "generative" {
+        crate::moves::bloom_move("transfer")
+    } else {
+        selected_move
+    };
     let template = move_template_for_concept(conn, concept_id, selected_move.id)?
         .map(|item| item.template)
         .unwrap_or_else(|| fallback_template(selected_move.id).to_owned());
@@ -191,7 +201,11 @@ pub fn teaching_instruction(conn: &Connection, concept_id: &str) -> Result<Teach
         move_name: selected_move.id.to_owned(),
         target_depth: selected_move.target_depth.to_owned(),
         target: concept_id.to_owned(),
-        do_text: "先让学习者作答：用自己的话说明核心约束，再追问证据。".to_owned(),
+        do_text: if generativity == "generative" {
+            "给一个没教过的同族实例，让学习者推断并说明依据；先收回答，再追问证据。".to_owned()
+        } else {
+            "先让学习者作答：用自己的话说明核心约束，再追问证据。".to_owned()
+        },
         dont: "不要替学习者完成回答；不要直接改掌握度或调度。".to_owned(),
         anchor: render_move_prompt(&template, &name),
         context,

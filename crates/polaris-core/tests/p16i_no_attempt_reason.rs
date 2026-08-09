@@ -124,14 +124,14 @@ fn normal_submission_and_session_stuck_behavior_remain_explicit() {
 fn schema_v5_registers_the_nullable_enum_column() {
     let conn = Connection::open_in_memory().unwrap();
     migrate(&conn).unwrap();
-    assert_eq!(CURRENT_SCHEMA_VERSION, 6);
+    assert_eq!(CURRENT_SCHEMA_VERSION, 7);
     assert!(column_exists(&conn, "attempts", "no_attempt_reason"));
     let migrations: i64 = conn
         .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| {
             row.get(0)
         })
         .unwrap();
-    assert_eq!(migrations, 6);
+    assert_eq!(migrations, 7);
 }
 
 fn seeded_engine() -> Engine {
