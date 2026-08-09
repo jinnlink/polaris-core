@@ -1,6 +1,17 @@
+use std::time::{Duration, Instant};
+
 use polaris_core::db::{open_database, CURRENT_SCHEMA_VERSION};
-use polaris_desktop_lib::state::DesktopState;
+use polaris_core::engine::Engine;
+use polaris_desktop_lib::state::{notification_receipt, DesktopState};
 use tempfile::tempdir;
+
+fn workspace_path(path: &str) -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("..")
+        .join(path)
+}
 
 #[test]
 fn fresh_database_opens_and_returns_status() {
@@ -13,6 +24,108 @@ fn fresh_database_opens_and_returns_status() {
     assert!(database.exists());
     assert!(snapshot.current_pack.is_none());
     assert!(snapshot.concepts.is_empty());
+}
+
+#[test]
+fn today_always_offers_three_legal_fallbacks_without_a_pack() {
+    let dir = tempdir().unwrap();
+    let state = DesktopState::open(dir.path().join("today-empty.sqlite")).unwrap();
+
+    let today = state.today().unwrap();
+
+    assert_eq!(today.actions.len(), 3);
+    assert_eq!(
+        today
+            .actions
+            .iter()
+            .map(|action| action.kind.as_str())
+            .collect::<Vec<_>>(),
+        ["evidence", "inbox", "rest"]
+    );
+    assert!(today.actions.iter().all(|action| !action.title.is_empty()));
+}
+
+#[test]
+fn today_uses_scheduler_and_pack_switch_is_immediate() {
+    let dir = tempdir().unwrap();
+    let database = dir.path().join("today-packs.sqlite");
+    let connection = open_database(&database).unwrap();
+    let mut engine = Engine::new(connection);
+    engine.init_pack(workspace_path("packs/rust")).unwrap();
+    engine
+        .init_pack(workspace_path("packs/algorithms"))
+        .unwrap();
+    drop(engine);
+    let state = DesktopState::open(&database).unwrap();
+
+    let receipt = state.switch_pack("algorithms", Some("isolated")).unwrap();
+    let today = state.today().unwrap();
+
+    assert_eq!(receipt.active_pack, "algorithms");
+    assert_eq!(receipt.theta_mode, "isolated");
+    assert_eq!(today.current_pack.as_deref(), Some("algorithms"));
+    assert_eq!(today.theta_mode.as_deref(), Some("isolated"));
+    assert_eq!(today.actions.len(), 3);
+    assert!(today.actions.iter().any(|action| action.kind == "practice"));
+}
+
+#[test]
+fn flow_gate_suppresses_info_but_never_errors() {
+    let dir = tempdir().unwrap();
+    let database = dir.path().join("flow.sqlite");
+    let connection = open_database(&database).unwrap();
+    connection
+        .execute(
+            "INSERT INTO behavior_events(id, at, type, payload_json)
+             VALUES('flow-1', '2026-08-09T09:00:00Z', 'mental_state', ?1)",
+            [r#"{"strategy_enabled":true,"dominant_state":"flow"}"#],
+        )
+        .unwrap();
+    drop(connection);
+    let state = DesktopState::open(&database).unwrap();
+    let policy = state.notification_policy().unwrap();
+
+    let info = notification_receipt("info", &policy).unwrap();
+    let error = notification_receipt("error", &policy).unwrap();
+
+    assert!(policy.suppress_non_error);
+    assert!(!info.emitted);
+    assert!(info.suppressed_by_flow);
+    assert!(error.emitted);
+    assert!(!error.suppressed_by_flow);
+}
+
+#[test]
+fn tier_zero_startup_and_today_reads_stay_inside_budget() {
+    let dir = tempdir().unwrap();
+    let mut cold_starts = Vec::new();
+    for index in 0..20 {
+        let started = Instant::now();
+        DesktopState::open(dir.path().join(format!("startup-{index}.sqlite"))).unwrap();
+        cold_starts.push(started.elapsed());
+    }
+    cold_starts.sort_unstable();
+    let cold_start_p95 = cold_starts[18];
+    let state = DesktopState::open(dir.path().join("today.sqlite")).unwrap();
+    let mut reads = Vec::new();
+    for _ in 0..20 {
+        let started = Instant::now();
+        let today = state.today().unwrap();
+        reads.push(started.elapsed());
+        assert_eq!(today.actions.len(), 3);
+    }
+    reads.sort_unstable();
+    let today_p95 = reads[18];
+
+    eprintln!("cold start p95={cold_start_p95:?}; Today p95={today_p95:?}");
+    assert!(
+        cold_start_p95 < Duration::from_secs(2),
+        "cold start p95: {cold_start_p95:?}"
+    );
+    assert!(
+        today_p95 < Duration::from_millis(250),
+        "Today p95: {today_p95:?}"
+    );
 }
 
 #[test]

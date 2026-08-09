@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { NavLink, Outlet } from "react-router-dom";
 
@@ -6,9 +7,11 @@ import {
   commandKeys,
   getStatus,
   normalizeCommandError,
+  setWindowMode,
 } from "../lib/commands";
 
 export function AppShell() {
+  const [windowMode, setLocalWindowMode] = useState<"compact" | "workspace">("compact");
   const status = useQuery({
     queryKey: commandKeys.status,
     queryFn: getStatus,
@@ -18,7 +21,7 @@ export function AppShell() {
   const error = status.error ? normalizeCommandError(status.error) : null;
 
   return (
-    <div className="app-frame">
+    <div className="app-frame" data-window-mode={windowMode}>
       <a className="skip-link" href="#main-content">跳到主要内容</a>
       <aside className="sidebar" aria-label="主导航">
         <header className="brand">
@@ -27,6 +30,18 @@ export function AppShell() {
             <strong>Polaris</strong>
             <span>Porcelain Intelligence</span>
           </div>
+          <button
+            className="window-mode-button"
+            type="button"
+            onClick={() => {
+              const nextMode = windowMode === "compact" ? "workspace" : "compact";
+              void setWindowMode(nextMode).then(() => {
+                setLocalWindowMode(nextMode);
+              });
+            }}
+          >
+            {windowMode === "compact" ? "展开" : "小窗"}
+          </button>
         </header>
         <nav className="navigation">
           {routeDefinitions.map((route) => (

@@ -28,6 +28,7 @@ pub mod mental_fit;
 pub mod mental_state;
 pub mod mirt;
 pub mod moves;
+pub mod notification;
 pub mod ops;
 pub mod pack;
 pub mod pack_state;

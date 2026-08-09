@@ -1,4 +1,6 @@
+use polaris_core::notification::NotificationPolicy;
 use polaris_core::pack_state::PackSummary;
+use polaris_core::pack_state::PackSwitchReceipt;
 use polaris_core::status::{ConceptStatus, PhaseCount, StatusSnapshot};
 use serde::Serialize;
 use ts_rs::TS;
@@ -8,6 +10,46 @@ pub struct CommandError {
     pub code: String,
     pub message: String,
     pub retryable: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+pub struct TodayAction {
+    pub id: String,
+    pub kind: String,
+    pub title: String,
+    pub detail: String,
+    pub route: Option<String>,
+    pub concept_id: Option<String>,
+    pub expected_success: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+pub struct TodaySignal {
+    pub claim: String,
+    pub confidence: f64,
+    pub suggested_action: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+pub struct TodaySnapshot {
+    pub generated_at: String,
+    pub current_pack: Option<String>,
+    pub theta_mode: Option<String>,
+    pub packs: Vec<PackSummary>,
+    pub top_signal: Option<TodaySignal>,
+    pub actions: Vec<TodayAction>,
+    pub notification_policy: NotificationPolicy,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct WindowModeReceipt {
+    pub mode: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct NotificationReceipt {
+    pub emitted: bool,
+    pub suppressed_by_flow: bool,
 }
 
 impl std::fmt::Display for CommandError {
@@ -43,6 +85,13 @@ pub fn generated_typescript_contracts() -> String {
         PhaseCount::decl(&config),
         ConceptStatus::decl(&config),
         StatusSnapshot::decl(&config),
+        PackSwitchReceipt::decl(&config),
+        NotificationPolicy::decl(&config),
+        TodayAction::decl(&config),
+        TodaySignal::decl(&config),
+        TodaySnapshot::decl(&config),
+        WindowModeReceipt::decl(&config),
+        NotificationReceipt::decl(&config),
         CommandError::decl(&config),
     ];
     format!(

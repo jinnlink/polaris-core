@@ -11,6 +11,7 @@ pnpm lint
 pnpm typecheck
 pnpm test
 pnpm build
+pnpm contracts:check
 pnpm tauri dev
 ```
 

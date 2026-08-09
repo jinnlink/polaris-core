@@ -69,6 +69,7 @@ use crate::moves::{
     bloom_move, fallback_template, move_template_for_concept, render_move_prompt,
     select_next_move_for_concept, task_type_target_depth, SelectedMove,
 };
+use crate::notification::{notification_policy, NotificationPolicy};
 use crate::pack::load_pack;
 use crate::pack_state::{
     list_packs as list_pack_state, switch_pack_metadata, PackSummary, PackSwitchReceipt, ThetaMode,
@@ -282,6 +283,10 @@ impl Engine {
 
     pub fn status_snapshot(&self) -> Result<StatusSnapshot> {
         status_snapshot(&self.conn)
+    }
+
+    pub fn notification_policy(&self) -> Result<NotificationPolicy> {
+        notification_policy(&self.conn)
     }
 
     pub fn knowledge_map(&self, query: KnowledgeMapQuery) -> Result<KnowledgeMapSnapshot> {

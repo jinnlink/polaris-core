@@ -2,6 +2,7 @@ import { createHashRouter } from "react-router-dom";
 
 import { AppShell } from "../components/AppShell";
 import { RoutePlaceholder } from "../components/RoutePlaceholder";
+import { TodayPage } from "../components/TodayPage";
 
 export const routeDefinitions = [
   { path: "/", key: "today", label: "Today", description: "今天最值得完成的 2–3 个行动。" },
@@ -20,7 +21,9 @@ export const router = createHashRouter([
     element: <AppShell />,
     children: routeDefinitions.map((route) => ({
       path: route.path,
-      element: (
+      element: route.key === "today" ? (
+        <TodayPage />
+      ) : (
         <RoutePlaceholder
           eyebrow={route.key}
           title={route.label}

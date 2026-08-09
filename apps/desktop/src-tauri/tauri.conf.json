@@ -15,11 +15,12 @@
       {
         "label": "main",
         "title": "Polaris",
-        "width": 1180,
-        "height": 760,
-        "minWidth": 900,
-        "minHeight": 620,
-        "resizable": true,
+        "width": 420,
+        "height": 640,
+        "minWidth": 380,
+        "minHeight": 520,
+        "resizable": false,
+        "alwaysOnTop": true,
         "fullscreen": false
       }
     ],

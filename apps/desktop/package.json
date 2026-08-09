@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "contracts": "cargo run --manifest-path src-tauri/Cargo.toml --bin generate-contracts",
+    "contracts:check": "cargo run --manifest-path src-tauri/Cargo.toml --bin generate-contracts -- --check",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",

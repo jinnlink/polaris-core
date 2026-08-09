@@ -41,6 +41,7 @@ pub struct PackSummary {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "desktop-bindings", derive(ts_rs::TS))]
 pub struct PackSwitchReceipt {
     pub active_pack: String,
     pub theta_mode: String,
