@@ -146,6 +146,42 @@ pub struct SubmitReceipt {
     pub degraded: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NoAttemptReason {
+    NotUnderstoodPrompt,
+    NoRecall,
+    OutOfTime,
+    Skipped,
+}
+
+impl NoAttemptReason {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "not_understood_prompt" => Some(Self::NotUnderstoodPrompt),
+            "no_recall" => Some(Self::NoRecall),
+            "out_of_time" => Some(Self::OutOfTime),
+            "skipped" => Some(Self::Skipped),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NotUnderstoodPrompt => "not_understood_prompt",
+            Self::NoRecall => "no_recall",
+            Self::OutOfTime => "out_of_time",
+            Self::Skipped => "skipped",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct NoAttemptReceipt {
+    pub attempt_id: String,
+    pub no_attempt_reason: NoAttemptReason,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GradePendingSummary {
     pub processed: i64,

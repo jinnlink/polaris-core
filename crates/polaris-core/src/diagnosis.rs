@@ -8,6 +8,7 @@ use crate::error::{PolarisError, Result};
 pub struct GraphDiagnosis {
     pub concept_id: String,
     pub latest_score: Option<f64>,
+    pub latest_no_attempt_reason: Option<String>,
     pub latest_failed: bool,
     pub focus: Option<DiagnosisFocus>,
     pub unmet_prerequisites: Vec<PrerequisiteGap>,
@@ -44,6 +45,7 @@ pub fn diagnose_concept(conn: &Connection, concept_id: &str) -> Result<GraphDiag
     ensure_concept(conn, concept_id)?;
 
     let latest_score = latest_score(conn, concept_id)?;
+    let latest_no_attempt_reason = latest_no_attempt_reason(conn, concept_id)?;
     let cut_lo = meta_f64(conn, "bkt.cut_lo")?;
     let latest_failed = latest_score.is_some_and(|score| score <= cut_lo);
     let unmet_prerequisites = unmet_prerequisites(conn, concept_id)?;
@@ -60,11 +62,27 @@ pub fn diagnose_concept(conn: &Connection, concept_id: &str) -> Result<GraphDiag
     Ok(GraphDiagnosis {
         concept_id: concept_id.to_owned(),
         latest_score,
+        latest_no_attempt_reason,
         latest_failed,
         focus,
         unmet_prerequisites,
         confusion_tasks: confusion_tasks(conn, concept_id)?,
     })
+}
+
+fn latest_no_attempt_reason(conn: &Connection, concept_id: &str) -> Result<Option<String>> {
+    conn.query_row(
+        "SELECT no_attempt_reason
+         FROM attempts
+         WHERE concept_id=?1
+         ORDER BY COALESCE(created_at, '1970-01-01T00:00:00Z') DESC, id DESC
+         LIMIT 1",
+        [concept_id],
+        |row| row.get::<_, Option<String>>(0),
+    )
+    .optional()
+    .map(Option::flatten)
+    .map_err(Into::into)
 }
 
 fn ensure_concept(conn: &Connection, concept_id: &str) -> Result<()> {

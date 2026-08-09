@@ -182,8 +182,22 @@ impl McpSession {
         let task_event_id = required_str(arguments, "task_event_id")?;
         let response = required_str(arguments, "response")?.to_owned();
         let confidence = required_i64(arguments, "confidence")?;
+        let no_attempt_reason = optional_ai_profile_str(arguments, "no_attempt_reason")?;
         if !(1..=5).contains(&confidence) {
             return Err("confidence must be in 1..=5".to_owned());
+        }
+        if let Some(reason) = no_attempt_reason {
+            let receipt = self
+                .engine
+                .submit_task_no_attempt(session, task_event_id, response, confidence as i32, reason)
+                .map_err(|error| error.to_string())?;
+            return Ok(json!({
+                "task_event_id": task_event_id,
+                "attempt_id": receipt.attempt_id,
+                "provisional_score": null,
+                "degraded": false,
+                "no_attempt_reason": receipt.no_attempt_reason,
+            }));
         }
         let receipt = self
             .engine
@@ -195,6 +209,7 @@ impl McpSession {
             "attempt_id": receipt.attempt_id,
             "provisional_score": receipt.provisional_score,
             "degraded": receipt.degraded,
+            "no_attempt_reason": null,
         }))
     }
 
@@ -203,6 +218,7 @@ impl McpSession {
         let concept = concept_id_argument(arguments)?.to_owned();
         let response = required_str(arguments, "response")?.to_owned();
         let confidence = required_i64(arguments, "confidence")?;
+        let no_attempt_reason = optional_ai_profile_str(arguments, "no_attempt_reason")?;
         if !(1..=5).contains(&confidence) {
             return Err("confidence must be in 1..=5".to_owned());
         }
@@ -216,24 +232,38 @@ impl McpSession {
             concept.as_str(),
         )
         .map_err(|error| error.to_string())?;
+        let input = SubmitInput {
+            session_id: session,
+            concept_id: concept,
+            task_type,
+            prompt_text: prompt,
+            response_text: response,
+            self_confidence: confidence as i32,
+            latency_ms: observation.latency_ms,
+            hint_count: observation.hint_count,
+        };
+        if let Some(reason) = no_attempt_reason {
+            let receipt = self
+                .engine
+                .submit_no_attempt(input, reason)
+                .map_err(|error| error.to_string())?;
+            return Ok(json!({
+                "attempt_id": receipt.attempt_id,
+                "provisional_score": null,
+                "degraded": false,
+                "no_attempt_reason": receipt.no_attempt_reason,
+            }));
+        }
         let receipt = self
             .engine
-            .submit(SubmitInput {
-                session_id: session,
-                concept_id: concept,
-                task_type,
-                prompt_text: prompt,
-                response_text: response,
-                self_confidence: confidence as i32,
-                latency_ms: observation.latency_ms,
-                hint_count: observation.hint_count,
-            })
+            .submit(input)
             .map_err(|error| error.to_string())?;
 
         Ok(json!({
             "attempt_id": receipt.attempt_id,
             "provisional_score": receipt.provisional_score,
             "degraded": receipt.degraded,
+            "no_attempt_reason": null,
         }))
     }
 
@@ -916,7 +946,8 @@ fn tool_definitions() -> Value {
                     "response": {"type": "string", "description": "Learner response text to store as evidence."},
                     "confidence": {"type": "integer", "minimum": 1, "maximum": 5, "description": "Learner self-confidence collected before feedback."},
                     "task_type": {"type": "string", "description": "Task type. Defaults to recall."},
-                    "prompt": {"type": "string", "description": "Prompt shown to the learner. Defaults to empty."}
+                    "prompt": {"type": "string", "description": "Prompt shown to the learner. Defaults to empty."},
+                    "no_attempt_reason": {"type": "string", "enum": ["not_understood_prompt", "no_recall", "out_of_time", "skipped"], "description": "Explicit reason the learner did not answer. Such rows never enter mastery or scheduling evidence."}
                 },
                 "required": ["session", "response", "confidence"],
                 "anyOf": [
@@ -934,7 +965,8 @@ fn tool_definitions() -> Value {
                     "session": {"type": "string", "description": "Session id used with get_next_task."},
                     "task_event_id": {"type": "string", "description": "Task receipt returned by get_next_task."},
                     "response": {"type": "string", "description": "Learner's own response to the issued task."},
-                    "confidence": {"type": "integer", "minimum": 1, "maximum": 5, "description": "Learner self-confidence collected before feedback."}
+                    "confidence": {"type": "integer", "minimum": 1, "maximum": 5, "description": "Learner self-confidence collected before feedback."},
+                    "no_attempt_reason": {"type": "string", "enum": ["not_understood_prompt", "no_recall", "out_of_time", "skipped"], "description": "Explicit reason the learner did not answer. The issued task is consumed without mastery updates."}
                 },
                 "required": ["session", "task_event_id", "response", "confidence"]
             }
@@ -1925,6 +1957,49 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM attempts", [], |row| row.get(0))
             .unwrap();
         assert_eq!(attempt_count, 1);
+    }
+
+    #[test]
+    fn p16i_mcp_records_no_attempt_for_legacy_and_audited_submit() {
+        let mut session = test_session();
+        let legacy = call_tool_json(
+            &mut session,
+            "submit_evidence",
+            json!({
+                "session": "mcp-no-attempt",
+                "concept_id": "ownership",
+                "response": "",
+                "confidence": 1,
+                "no_attempt_reason": "no_recall"
+            }),
+        );
+        assert_eq!(legacy["provisional_score"], Value::Null);
+        assert_eq!(legacy["no_attempt_reason"], "no_recall");
+
+        let next = call_tool_json(
+            &mut session,
+            "get_next_task",
+            json!({"session": "mcp-audited-no-attempt"}),
+        );
+        let audited = call_tool_json(
+            &mut session,
+            "submit_task_response",
+            json!({
+                "session": "mcp-audited-no-attempt",
+                "task_event_id": next["task_event_id"],
+                "response": "",
+                "confidence": 1,
+                "no_attempt_reason": "out_of_time"
+            }),
+        );
+        assert_eq!(audited["provisional_score"], Value::Null);
+        assert_eq!(audited["no_attempt_reason"], "out_of_time");
+        let mastery: i64 = session
+            .engine()
+            .conn()
+            .query_row("SELECT COUNT(*) FROM mastery_states", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(mastery, 0);
     }
 
     #[test]

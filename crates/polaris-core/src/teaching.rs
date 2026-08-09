@@ -29,6 +29,19 @@ pub struct TeachingFocus {
 
 pub fn teaching_instruction(conn: &Connection, concept_id: &str) -> Result<TeachingInstruction> {
     let diagnosis = diagnose_concept(conn, concept_id)?;
+    if diagnosis.latest_no_attempt_reason.as_deref() == Some("not_understood_prompt") {
+        if let Some(gap) = diagnosis.unmet_prerequisites.first() {
+            return Ok(prerequisite_repair_instruction(
+                concept_id,
+                DiagnosisFocus {
+                    kind: "prerequisite_gap".to_owned(),
+                    concept_id: gap.concept_id.clone(),
+                    reason: "prompt_not_understood_with_unmet_prerequisite".to_owned(),
+                },
+            ));
+        }
+        return prompt_not_understood_instruction(conn, concept_id);
+    }
     if let Some(focus) = diagnosis.focus {
         return Ok(prerequisite_repair_instruction(concept_id, focus));
     }
@@ -70,6 +83,30 @@ pub fn teaching_instruction(conn: &Connection, concept_id: &str) -> Result<Teach
         do_text: "先让学习者作答：用自己的话说明核心约束，再追问证据。".to_owned(),
         dont: "不要替学习者完成回答；不要直接改掌握度或调度。".to_owned(),
         anchor: render_move_prompt(&template, &name),
+    })
+}
+
+fn prompt_not_understood_instruction(
+    conn: &Connection,
+    concept_id: &str,
+) -> Result<TeachingInstruction> {
+    let name: String = conn.query_row(
+        "SELECT name FROM concepts WHERE id=?1",
+        [concept_id],
+        |row| row.get(0),
+    )?;
+    Ok(TeachingInstruction {
+        focus: TeachingFocus {
+            kind: "prompt_not_understood".to_owned(),
+            concept_id: concept_id.to_owned(),
+            reason: "latest_no_attempt_not_understood_prompt".to_owned(),
+        },
+        move_name: "worked_example".to_owned(),
+        target_depth: "recall".to_owned(),
+        target: concept_id.to_owned(),
+        do_text: "先拆解题目在问什么，给一个带步骤的最小工作样例，再让学习者复述约束。".to_owned(),
+        dont: "不要在同一深度原样重出题；不要把未作答当成答错或直接改掌握度。".to_owned(),
+        anchor: format!("先解释 {name} 题目的关键词、输入与期望输出。"),
     })
 }
 

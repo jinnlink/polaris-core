@@ -148,6 +148,86 @@ impl Engine {
         }
     }
 
+    pub fn submit_task_no_attempt(
+        &mut self,
+        session_id: &str,
+        task_event_id: &str,
+        response_text: String,
+        self_confidence: i32,
+        reason: &str,
+    ) -> Result<NoAttemptReceipt> {
+        let reason =
+            NoAttemptReason::parse(reason).ok_or_else(|| PolarisError::InvalidParameter {
+                key: "no_attempt_reason".to_owned(),
+                value: reason.to_owned(),
+            })?;
+        if !(1..=5).contains(&self_confidence) {
+            return Err(PolarisError::InvalidTaskTurn(
+                "confidence must be in 1..=5".to_owned(),
+            ));
+        }
+        self.conn.execute_batch("BEGIN IMMEDIATE")?;
+        let result = (|| -> Result<NoAttemptReceipt> {
+            let (concept_id, task_type, prompt_text) =
+                self.issued_task_for_session(session_id, task_event_id)?;
+            let already_submitted: bool = self.conn.query_row(
+                "SELECT EXISTS(
+                     SELECT 1 FROM behavior_events
+                     WHERE type='tier2_submission'
+                       AND json_extract(payload_json, '$.task_event_id')=?1
+                 )",
+                [task_event_id],
+                |row| row.get(0),
+            )?;
+            if already_submitted {
+                return Err(PolarisError::InvalidTaskTurn(
+                    "task_event_id has already been submitted".to_owned(),
+                ));
+            }
+            let (latency_ms, hint_count) =
+                self.task_response_observation(session_id, task_event_id, &concept_id)?;
+            let receipt = self.record_no_attempt_submission(
+                SubmitInput {
+                    session_id: session_id.to_owned(),
+                    concept_id: concept_id.clone(),
+                    task_type,
+                    prompt_text,
+                    response_text,
+                    self_confidence,
+                    latency_ms,
+                    hint_count,
+                },
+                reason,
+            )?;
+            self.conn.execute(
+                "INSERT INTO behavior_events(id, session_id, at, type, concept_id, payload_json)
+                 VALUES (?1, ?2, strftime('%Y-%m-%dT%H:%M:%SZ','now'), 'tier2_submission', ?3, ?4)",
+                params![
+                    Uuid::new_v4().to_string(),
+                    session_id,
+                    concept_id,
+                    serde_json::json!({
+                        "task_event_id": task_event_id,
+                        "attempt_id": &receipt.attempt_id,
+                        "no_attempt_reason": reason.as_str(),
+                    })
+                    .to_string(),
+                ],
+            )?;
+            Ok(receipt)
+        })();
+        match result {
+            Ok(receipt) => {
+                self.conn.execute_batch("COMMIT")?;
+                Ok(receipt)
+            }
+            Err(error) => {
+                let _ = self.conn.execute_batch("ROLLBACK");
+                Err(error)
+            }
+        }
+    }
+
     fn task_response_observation(
         &self,
         session_id: &str,
@@ -467,7 +547,8 @@ impl Engine {
             "SELECT c.id, c.name, c.seed_order,
                     COALESCE(ms.p_known, c.p_init, CAST((SELECT value FROM meta WHERE key='bkt.p_init') AS REAL)) AS p_known,
                     ms.fsrs_json, COALESCE(ms.calib_gap, 0.0),
-                    COALESCE((SELECT COUNT(*) FROM attempts a WHERE a.concept_id=c.id), 0),
+                    COALESCE((SELECT COUNT(*) FROM attempts a
+                              WHERE a.concept_id=c.id AND a.no_attempt_reason IS NULL), 0),
                     CASE
                         WHEN ms.last_review_at IS NULL THEN NULL
                         ELSE julianday('now') - julianday(ms.last_review_at)

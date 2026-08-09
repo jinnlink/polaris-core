@@ -362,12 +362,14 @@ HTTP 响应体均为 JSON。成功响应使用 HTTP 200；客户端错误使用 
 - `confidence`: integer，必填，范围 `1..=5`。
 - `task_type`: string，可选；缺省为 `recall`。
 - `prompt`: string，可选。
+- `no_attempt_reason`: string，可选；稳定枚举为 `not_understood_prompt | no_recall | out_of_time | skipped`。必须由调用方根据学习者明确选择传入，不得推断。
 
 稳定顶层字段：
 
 - `attempt_id`: string。
 - `provisional_score`: number。
 - `degraded`: boolean。
+- `no_attempt_reason`: string 或 null。非 null 时 `provisional_score` 为 null，且该 attempt 不进入 mastery、θ、校准、FSRS 或调度尝试计数。
 
 ### `POST /feedback`
 
@@ -488,8 +490,8 @@ MCP 使用 JSON-RPC 2.0。通知方法 `notifications/*` 返回空响应。未�
 - `get_ai_interaction_profile`: 与 HTTP `GET /ai-profile` 语义对齐，返回本地 AI 交互偏好和 `guidance`；只读，不影响学习事实。
 - `update_ai_interaction_profile`: 与 HTTP `POST /ai-profile` 语义对齐；仅在用户要求改变 AI 性格、话量、解释深度、主动程度、介入频率、纠错风格或补充说明时调用，不影响 mastery。
 - `get_learner_mirror`: 与 HTTP `GET /learner-mirror` 对齐，返回 `generated_at`、`confidence_curve`、`phase_distribution`、`recent_assertions`。
-- `submit_evidence`: 请求字段和外层返回字段与 HTTP `POST /evidence` 对齐，但保留当前 MCP submit 路径语义：可使用引擎评分和后续提交流水线；外部评分字段仍不得作为掌握度权威。
-- `submit_task_response`: Tier 2 严格回合入口。必填 `session`、`task_event_id`、`response`、`confidence`（1..=5）。`task_event_id` 必须是同一 session 的未提交 `get_next_task` 回执；内核从该事件复原 concept、task type 与 prompt，宿主传入的同名字段不参与提交。成功后仍走 engine-owned scoring，并返回 `task_event_id`、`attempt_id`、`provisional_score`、`degraded`；同时写 `behavior_events(type='tier2_submission')` 关联回执与 attempt。不存在、跨 session、非 next 或已提交的回执必须拒绝且不得创建 attempt。旧 `submit_evidence` 不要求回执，保持兼容。
+- `submit_evidence`: 请求字段和外层返回字段与 HTTP `POST /evidence` 对齐，但保留当前 MCP submit 路径语义：可使用引擎评分和后续提交流水线；外部评分字段仍不得作为掌握度权威。可选 `no_attempt_reason` 使用同一枚举和不入 mastery 语义。
+- `submit_task_response`: Tier 2 严格回合入口。必填 `session`、`task_event_id`、`response`、`confidence`（1..=5），可选 `no_attempt_reason`。`task_event_id` 必须是同一 session 的未提交 `get_next_task` 回执；内核从该事件复原 concept、task type 与 prompt，宿主传入的同名字段不参与提交。正常作答仍走 engine-owned scoring；显式未作答只记录 evidence/event/attempt，不评分、不折叠。两条路径均消费回执并写 `behavior_events(type='tier2_submission')`。不存在、跨 session、非 next、已提交回执或非法原因必须拒绝且不得创建 attempt。旧 `submit_evidence` 不要求回执，保持兼容。
 - `record_learner_feedback`: 与 HTTP `POST /feedback` 等价，缺省 session 为 `mcp`。
 - `get_trust_panel`: 与 `polaris://trust` 资源读取返回同一顶层形状。
 

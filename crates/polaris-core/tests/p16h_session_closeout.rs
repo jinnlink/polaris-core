@@ -10,9 +10,9 @@ fn schema_v4_adds_closeout_fields_table_and_atomic_migration() {
     let conn = Connection::open_in_memory().unwrap();
     migrate(&conn).unwrap();
 
-    assert_eq!(CURRENT_SCHEMA_VERSION, 4);
-    assert_eq!(user_version(&conn), 4);
-    assert_eq!(migration_count(&conn), 4);
+    assert_eq!(CURRENT_SCHEMA_VERSION, 5);
+    assert_eq!(user_version(&conn), 5);
+    assert_eq!(migration_count(&conn), 5);
     assert!(column_exists(&conn, "sessions", "ended_at"));
     assert!(column_exists(&conn, "sessions", "closed_at"));
     assert!(table_exists(&conn, "session_summaries"));

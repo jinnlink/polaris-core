@@ -435,9 +435,13 @@ impl HttpApi {
 
         let task_type = optional_str(&arguments, "task_type").unwrap_or("recall");
         let prompt = optional_str(&arguments, "prompt").unwrap_or("");
+        let no_attempt_reason = match optional_ai_profile_str(&arguments, "no_attempt_reason") {
+            Ok(reason) => reason,
+            Err(error) => return Ok(response(400, json!({"error": error}))),
+        };
         let observation =
             crate::read_behavior_observation_now(self.engine.conn(), session, concept)?;
-        let receipt = self.engine.submit_provisional(SubmitInput {
+        let input = SubmitInput {
             session_id: session.to_owned(),
             concept_id: concept.to_owned(),
             task_type: task_type.to_owned(),
@@ -446,7 +450,23 @@ impl HttpApi {
             self_confidence: confidence as i32,
             latency_ms: observation.latency_ms,
             hint_count: observation.hint_count,
-        })?;
+        };
+
+        if let Some(reason) = no_attempt_reason {
+            return match self.engine.submit_no_attempt(input, reason) {
+                Ok(receipt) => Ok(response(
+                    200,
+                    json!({
+                        "attempt_id": receipt.attempt_id,
+                        "provisional_score": null,
+                        "degraded": false,
+                        "no_attempt_reason": receipt.no_attempt_reason,
+                    }),
+                )),
+                Err(error) => Ok(response(400, json!({"error": error.to_string()}))),
+            };
+        }
+        let receipt = self.engine.submit_provisional(input)?;
 
         Ok(response(
             200,
@@ -454,6 +474,7 @@ impl HttpApi {
                 "attempt_id": receipt.attempt_id,
                 "provisional_score": receipt.provisional_score,
                 "degraded": receipt.degraded,
+                "no_attempt_reason": null,
             }),
         ))
     }
@@ -1741,6 +1762,61 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("confidence"));
+    }
+
+    #[test]
+    fn p16i_http_evidence_records_explicit_no_attempt_without_mastery() {
+        let mut api = test_api();
+        let response = api
+            .handle(
+                "POST",
+                "/evidence",
+                &json!({
+                    "session": "http-no-attempt",
+                    "concept_id": "ownership",
+                    "response": "",
+                    "confidence": 1,
+                    "no_attempt_reason": "not_understood_prompt"
+                })
+                .to_string(),
+            )
+            .unwrap();
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body["provisional_score"], Value::Null);
+        assert_eq!(response.body["no_attempt_reason"], "not_understood_prompt");
+        let mastery: i64 = api
+            .engine()
+            .conn()
+            .query_row("SELECT COUNT(*) FROM mastery_states", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(mastery, 0);
+
+        let attempts_before: i64 = api
+            .engine()
+            .conn()
+            .query_row("SELECT COUNT(*) FROM attempts", [], |row| row.get(0))
+            .unwrap();
+        let invalid = api
+            .handle(
+                "POST",
+                "/evidence",
+                &json!({
+                    "session": "http-invalid",
+                    "concept_id": "ownership",
+                    "response": "",
+                    "confidence": 1,
+                    "no_attempt_reason": "guessed"
+                })
+                .to_string(),
+            )
+            .unwrap();
+        assert_eq!(invalid.status, 400);
+        let attempts_after: i64 = api
+            .engine()
+            .conn()
+            .query_row("SELECT COUNT(*) FROM attempts", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(attempts_after, attempts_before);
     }
 
     #[test]

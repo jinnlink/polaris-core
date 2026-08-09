@@ -1,6 +1,87 @@
 use super::*;
 
 impl Engine {
+    pub fn submit_no_attempt(
+        &mut self,
+        input: SubmitInput,
+        reason: &str,
+    ) -> Result<NoAttemptReceipt> {
+        let reason =
+            NoAttemptReason::parse(reason).ok_or_else(|| PolarisError::InvalidParameter {
+                key: "no_attempt_reason".to_owned(),
+                value: reason.to_owned(),
+            })?;
+        self.conn.execute_batch("BEGIN IMMEDIATE")?;
+        let result = self.record_no_attempt_submission(input, reason);
+        match result {
+            Ok(receipt) => {
+                self.conn.execute_batch("COMMIT")?;
+                Ok(receipt)
+            }
+            Err(error) => {
+                let _ = self.conn.execute_batch("ROLLBACK");
+                Err(error)
+            }
+        }
+    }
+
+    pub(crate) fn record_no_attempt_submission(
+        &mut self,
+        input: SubmitInput,
+        reason: NoAttemptReason,
+    ) -> Result<NoAttemptReceipt> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO sessions(id, started_at, context_json)
+                 VALUES (?1, strftime('%Y-%m-%dT%H:%M:%SZ','now'), '{}')",
+            [&input.session_id],
+        )?;
+        let evidence_id = Uuid::new_v4().to_string();
+        self.conn.execute(
+                "INSERT INTO evidence_items(id, session_id, source, content_type, text, concept_ids_json, created_at)
+                 VALUES (?1, ?2, 'no-attempt', 'text/plain', ?3, ?4, strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
+                params![
+                    evidence_id,
+                    input.session_id,
+                    input.response_text,
+                    serde_json::to_string(&vec![input.concept_id.clone()])?
+                ],
+            )?;
+        let attempt_id = Uuid::new_v4().to_string();
+        self.conn.execute(
+            "INSERT INTO attempts(
+                     id, session_id, concept_id, task_type, prompt_text, response_evidence_id,
+                     self_confidence, latency_ms, hint_count, no_attempt_reason, created_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
+                           strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
+            params![
+                attempt_id,
+                input.session_id,
+                input.concept_id,
+                input.task_type,
+                input.prompt_text,
+                evidence_id,
+                input.self_confidence,
+                input.latency_ms,
+                input.hint_count,
+                reason.as_str(),
+            ],
+        )?;
+        self.conn.execute(
+            "INSERT INTO behavior_events(id, session_id, at, type, concept_id, payload_json)
+                 VALUES (?1, ?2, strftime('%Y-%m-%dT%H:%M:%SZ','now'), 'no_attempt', ?3, ?4)",
+            params![
+                Uuid::new_v4().to_string(),
+                input.session_id,
+                input.concept_id,
+                serde_json::json!({"reason": reason.as_str()}).to_string(),
+            ],
+        )?;
+        Ok(NoAttemptReceipt {
+            attempt_id,
+            no_attempt_reason: reason,
+        })
+    }
+
     pub fn submit_provisional(&mut self, input: SubmitInput) -> Result<SubmitReceipt> {
         let receipt = self.record_provisional_submission(&input)?;
         let grade = grade_with_config(
@@ -120,6 +201,16 @@ impl Engine {
     }
 
     pub fn apply_final_score(&mut self, attempt_id: &str, final_score: f64) -> Result<()> {
+        let no_attempt_reason: Option<String> = self.conn.query_row(
+            "SELECT no_attempt_reason FROM attempts WHERE id=?1",
+            [attempt_id],
+            |row| row.get(0),
+        )?;
+        if no_attempt_reason.is_some() {
+            return Err(PolarisError::InvalidTaskTurn(
+                "an explicit no-attempt row cannot be graded".to_owned(),
+            ));
+        }
         self.conn.execute(
             "UPDATE attempts
              SET final_score=?1, graded_at=strftime('%Y-%m-%dT%H:%M:%SZ','now'), rating=?2
@@ -337,6 +428,7 @@ impl Engine {
              FROM attempts
              WHERE concept_id=?1
                AND latency_ms IS NOT NULL
+               AND no_attempt_reason IS NULL
                AND (depth='transfer' OR task_type IN ('transfer', 'free_produce'))
              ORDER BY latency_ms ASC",
         )?;
@@ -389,7 +481,7 @@ impl Engine {
         let mut stmt = self.conn.prepare(
             "SELECT CAST(latency_ms AS REAL)
              FROM attempts
-             WHERE latency_ms IS NOT NULL
+             WHERE latency_ms IS NOT NULL AND no_attempt_reason IS NULL
              ORDER BY latency_ms ASC",
         )?;
         let latencies = stmt

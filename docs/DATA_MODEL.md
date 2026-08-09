@@ -22,8 +22,8 @@
 
 ### 1.1 Schema 版本与迁移账本
 
-- SQLite schema 版本权威源 = `PRAGMA user_version`，当前由 `db::CURRENT_SCHEMA_VERSION` 定义（P16H 后为 4）。
-- `schema_migrations(version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)` 是迁移账本；version 1 为 baseline，version 2 为 `capture_queue`，version 3 为 `global_profile_governance`，version 4 为 `session_closeout`。
+- SQLite schema 版本权威源 = `PRAGMA user_version`，当前由 `db::CURRENT_SCHEMA_VERSION` 定义（P16I 后为 5）。
+- `schema_migrations(version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)` 是迁移账本；version 1 为 baseline，version 2 为 `capture_queue`，version 3 为 `global_profile_governance`，version 4 为 `session_closeout`，version 5 为 `no_attempt_reason`。
 - `migrate()` 对空库和旧的未版本化库都必须幂等：先补齐当前 schema，再写 baseline 与后续迁移账本并设置 `user_version`。
 - 旧库已有业务行和用户手动 `meta` 参数不得被迁移覆盖；默认参数继续使用 `INSERT OR IGNORE`。
 - 若数据库 `user_version` 高于当前二进制支持版本，写路径必须拒绝打开并提示版本不支持，避免旧程序误写新库。
@@ -51,6 +51,7 @@ attempts(id TEXT PRIMARY KEY, session_id TEXT, concept_id TEXT NOT NULL, task_ty
        provisional_score REAL,
        final_score REAL, depth TEXT,       -- recall|explain|apply|transfer
        misconception_id TEXT, grader_json TEXT, rating TEXT,
+       no_attempt_reason TEXT,              -- NULL|not_understood_prompt|no_recall|out_of_time|skipped
        theta_version INTEGER,              -- P03 填；P01 留 NULL
        theta_scope TEXT DEFAULT 'shared',  -- P08A: shared | pack:<pack_id>；旧 NULL 视为 shared
        created_at TEXT, graded_at TEXT)
@@ -133,6 +134,12 @@ profile_data_actions(
 - v4 为 `sessions` 增加 `closed_at`，并新增 `session_summaries`；DDL、迁移台账与 `user_version` 原子提交，失败时保持 v3。
 - 小结只折叠当前 session 的 `attempts` 与 `behavior_events`；每条断言必须有证据，最多 3 条。
 - `next_entry_concept_id` 复用既有 `next_task`，不构成第二套调度状态；重复关闭同一 session 返回同一行。
+
+### P16I 未作答原因
+
+- v5 为 `attempts` 增加可空 `no_attempt_reason`，稳定枚举为 `not_understood_prompt | no_recall | out_of_time | skipped`；非法值在写入前拒绝。
+- 非空原因表示没有形成作答证据：该行分数、rating 与 graded_at 保持 NULL，不进入 mastery fold、θ、校准、FSRS、相图、G_u 或调度尝试计数。
+- 同次显式提交只写 evidence、`behavior_events(type='no_attempt')` 与 attempt；`not_understood_prompt` 仅改变教学处方，诊断只读暴露最新原因。
 
 P08A pack 状态放在 `meta`：`active_pack` 表示当前 pack；`pack.<id>.title` 保存显示名；`pack.<id>.theta_mode` 取 `shared|isolated`，默认 `shared`。
 

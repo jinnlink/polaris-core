@@ -17,6 +17,8 @@ pub struct SessionConceptTouch {
     pub max_score: Option<f64>,
     pub hint_count: i64,
     pub abandon_count: i64,
+    #[serde(default)]
+    pub no_attempt_count: i64,
     pub evidence_ids: Vec<String>,
 }
 
@@ -50,6 +52,7 @@ struct TouchAccumulator {
     max_score: Option<f64>,
     hint_count: i64,
     abandon_count: i64,
+    no_attempt_count: i64,
     evidence_ids: BTreeSet<String>,
 }
 
@@ -193,7 +196,8 @@ pub fn session_close_summary(
 fn load_session_touches(conn: &Connection, session_id: &str) -> Result<Vec<SessionConceptTouch>> {
     let mut touches = BTreeMap::<String, TouchAccumulator>::new();
     let mut attempts = conn.prepare(
-        "SELECT a.id, a.concept_id, c.name, COALESCE(a.final_score, a.provisional_score)
+        "SELECT a.id, a.concept_id, c.name, COALESCE(a.final_score, a.provisional_score),
+                a.no_attempt_reason
          FROM attempts a
          JOIN concepts c ON c.id=a.concept_id
          WHERE a.session_id=?1
@@ -206,14 +210,19 @@ fn load_session_touches(conn: &Connection, session_id: &str) -> Result<Vec<Sessi
                 row.get::<_, String>(1)?,
                 row.get::<_, String>(2)?,
                 row.get::<_, Option<f64>>(3)?,
+                row.get::<_, Option<String>>(4)?,
             ))
         })?
         .collect::<std::result::Result<Vec<_>, _>>()?;
-    for (evidence_id, concept_id, concept_name, score) in attempt_rows {
+    for (evidence_id, concept_id, concept_name, score, no_attempt_reason) in attempt_rows {
         let touch = touches.entry(concept_id).or_default();
         touch.concept_name = concept_name;
-        touch.attempt_count += 1;
         touch.evidence_ids.insert(evidence_id);
+        if no_attempt_reason.is_some() {
+            touch.no_attempt_count += 1;
+        } else {
+            touch.attempt_count += 1;
+        }
         if let Some(score) = score.filter(|score| score.is_finite()) {
             touch.min_score = Some(touch.min_score.map_or(score, |value| value.min(score)));
             touch.max_score = Some(touch.max_score.map_or(score, |value| value.max(score)));
@@ -258,6 +267,7 @@ fn load_session_touches(conn: &Connection, session_id: &str) -> Result<Vec<Sessi
             max_score: touch.max_score,
             hint_count: touch.hint_count,
             abandon_count: touch.abandon_count,
+            no_attempt_count: touch.no_attempt_count,
             evidence_ids: touch.evidence_ids.into_iter().collect(),
         })
         .collect())
@@ -266,19 +276,19 @@ fn load_session_touches(conn: &Connection, session_id: &str) -> Result<Vec<Sessi
 fn top_stuck_concept(touches: &[SessionConceptTouch]) -> Option<String> {
     let has_action_signal = touches
         .iter()
-        .any(|touch| touch.hint_count + touch.abandon_count > 0);
+        .any(|touch| touch.hint_count + touch.abandon_count + touch.no_attempt_count > 0);
     touches
         .iter()
         .filter(|touch| {
             if has_action_signal {
-                touch.hint_count + touch.abandon_count > 0
+                touch.hint_count + touch.abandon_count + touch.no_attempt_count > 0
             } else {
                 touch.min_score.is_some()
             }
         })
         .min_by(|left, right| {
-            let left_actions = left.hint_count + left.abandon_count;
-            let right_actions = right.hint_count + right.abandon_count;
+            let left_actions = left.hint_count + left.abandon_count + left.no_attempt_count;
+            let right_actions = right.hint_count + right.abandon_count + right.no_attempt_count;
             right_actions
                 .cmp(&left_actions)
                 .then_with(|| {
@@ -333,17 +343,18 @@ fn build_assertions(
 fn assertion_text(touch: &SessionConceptTouch) -> String {
     match (touch.min_score, touch.max_score) {
         (Some(min), Some(max)) => format!(
-            "{}：本次 {} 次作答，得分范围 {:.2}–{:.2}，提示 {} 次，放弃 {} 次。",
+            "{}：本次 {} 次作答，得分范围 {:.2}–{:.2}，提示 {} 次，放弃 {} 次，未作答 {} 次。",
             touch.concept_name,
             touch.attempt_count,
             min,
             max,
             touch.hint_count,
-            touch.abandon_count
+            touch.abandon_count,
+            touch.no_attempt_count
         ),
         _ => format!(
-            "{}：本次留下了学习行为证据，提示 {} 次，放弃 {} 次。",
-            touch.concept_name, touch.hint_count, touch.abandon_count
+            "{}：本次留下了学习行为证据，提示 {} 次，放弃 {} 次，未作答 {} 次。",
+            touch.concept_name, touch.hint_count, touch.abandon_count, touch.no_attempt_count
         ),
     }
 }

@@ -109,6 +109,8 @@ enum Commands {
         prompt: String,
         #[arg(long, default_value = "cli")]
         session: String,
+        #[arg(long)]
+        no_attempt_reason: Option<String>,
     },
     Hint {
         #[arg(long)]
@@ -866,10 +868,11 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     task_type,
                     prompt,
                     session,
+                    no_attempt_reason,
                 } => {
                     let observation =
                         read_behavior_observation_now(engine.conn(), &session, &concept)?;
-                    let receipt = engine.submit(SubmitInput {
+                    let input = SubmitInput {
                         session_id: session,
                         concept_id: concept,
                         task_type,
@@ -878,11 +881,21 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                         self_confidence: confidence,
                         latency_ms: observation.latency_ms,
                         hint_count: observation.hint_count,
-                    })?;
-                    println!(
-                        "attempt: {} provisional_score={:.3} degraded={}",
-                        receipt.attempt_id, receipt.provisional_score, receipt.degraded
-                    );
+                    };
+                    if let Some(reason) = no_attempt_reason {
+                        let receipt = engine.submit_no_attempt(input, &reason)?;
+                        println!(
+                            "attempt: {} no_attempt_reason={}",
+                            receipt.attempt_id,
+                            receipt.no_attempt_reason.as_str()
+                        );
+                    } else {
+                        let receipt = engine.submit(input)?;
+                        println!(
+                            "attempt: {} provisional_score={:.3} degraded={}",
+                            receipt.attempt_id, receipt.provisional_score, receipt.degraded
+                        );
+                    }
                 }
                 Commands::Hint { concept, session } => {
                     engine.conn().execute(
@@ -2236,6 +2249,9 @@ fn print_diagnosis(diagnosis: polaris_core::diagnosis::GraphDiagnosis) {
     if let Some(score) = diagnosis.latest_score {
         println!("latest_score: {score:.3}");
     }
+    if let Some(reason) = diagnosis.latest_no_attempt_reason {
+        println!("latest_no_attempt_reason: {reason}");
+    }
     if let Some(focus) = diagnosis.focus {
         println!(
             "focus: {} {} reason={}",
@@ -2507,6 +2523,30 @@ mod tests {
         ] {
             Cli::try_parse_from(args).unwrap();
         }
+    }
+
+    #[test]
+    fn p16i_submit_parses_explicit_no_attempt_reason() {
+        let cli = Cli::try_parse_from([
+            "polaris",
+            "submit",
+            "--concept",
+            "ownership",
+            "--response",
+            "",
+            "--confidence",
+            "1",
+            "--no-attempt-reason",
+            "not_understood_prompt",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Commands::Submit {
+                no_attempt_reason: Some(ref reason),
+                ..
+            } if reason == "not_understood_prompt"
+        ));
     }
 
     #[test]
@@ -3739,7 +3779,7 @@ mod tests {
         cleanup_db_path(&db_path);
 
         assert_eq!(user_version, polaris_core::db::CURRENT_SCHEMA_VERSION);
-        assert_eq!(migration_count, 4);
+        assert_eq!(migration_count, 5);
         assert_eq!(active_pack, "rust");
     }
 
@@ -4014,7 +4054,7 @@ mod tests {
         assert!(report.ok);
         let text = doctor_report_text(&report);
         assert!(text.contains("schema_version="));
-        assert!(text.contains("migration_count=4"));
+        assert!(text.contains("migration_count=5"));
         assert!(text.contains("integrity=ok"));
         assert!(text.contains("replay_checked=0"));
 

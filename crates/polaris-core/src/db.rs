@@ -5,7 +5,7 @@ use rusqlite::{Connection, OpenFlags};
 use crate::config::default_registry;
 use crate::error::{PolarisError, Result};
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 4;
+pub const CURRENT_SCHEMA_VERSION: i64 = 5;
 
 const BASELINE_SCHEMA_VERSION: i64 = 1;
 const BASELINE_MIGRATION_NAME: &str = "baseline_current_schema";
@@ -15,6 +15,8 @@ const GLOBAL_PROFILE_SCHEMA_VERSION: i64 = 3;
 const GLOBAL_PROFILE_MIGRATION_NAME: &str = "global_profile_governance";
 const SESSION_CLOSEOUT_SCHEMA_VERSION: i64 = 4;
 const SESSION_CLOSEOUT_MIGRATION_NAME: &str = "session_closeout";
+const NO_ATTEMPT_SCHEMA_VERSION: i64 = 5;
+const NO_ATTEMPT_MIGRATION_NAME: &str = "no_attempt_reason";
 
 pub fn open_database(path: impl AsRef<Path>) -> Result<Connection> {
     let path = path.as_ref();
@@ -416,6 +418,7 @@ pub fn migrate(conn: &Connection) -> Result<()> {
     )?;
     migrate_global_profile_schema(conn)?;
     migrate_session_closeout_schema(conn)?;
+    migrate_no_attempt_schema(conn)?;
 
     Ok(())
 }
@@ -538,6 +541,22 @@ fn migrate_session_closeout_schema(conn: &Connection) -> Result<()> {
     )?;
     if schema_version(&tx)? < SESSION_CLOSEOUT_SCHEMA_VERSION {
         set_schema_version(&tx, SESSION_CLOSEOUT_SCHEMA_VERSION)?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+fn migrate_no_attempt_schema(conn: &Connection) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    ensure_column(
+        &tx,
+        "attempts",
+        "no_attempt_reason",
+        "TEXT CHECK(no_attempt_reason IS NULL OR no_attempt_reason IN ('not_understood_prompt','no_recall','out_of_time','skipped'))",
+    )?;
+    record_schema_migration(&tx, NO_ATTEMPT_SCHEMA_VERSION, NO_ATTEMPT_MIGRATION_NAME)?;
+    if schema_version(&tx)? < NO_ATTEMPT_SCHEMA_VERSION {
+        set_schema_version(&tx, NO_ATTEMPT_SCHEMA_VERSION)?;
     }
     tx.commit()?;
     Ok(())
@@ -732,7 +751,7 @@ mod tests {
             })
             .unwrap();
         assert_eq!(p_init, "0.33");
-        assert_eq!(first_count, 4);
+        assert_eq!(first_count, 5);
         assert_eq!(second_count, first_count);
     }
 
@@ -854,7 +873,7 @@ mod tests {
 
         assert_eq!(user_version, CURRENT_SCHEMA_VERSION);
         assert_eq!(p_init, "0.33");
-        assert_eq!(migration_count, 4);
+        assert_eq!(migration_count, 5);
         assert_eq!(journal_mode.to_lowercase(), "wal");
     }
 
