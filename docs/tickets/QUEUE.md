@@ -1,6 +1,6 @@
 # 票队列（单票制）
 
-状态：**P16D 已实现并通过验收，已获用户提交确认；当前无后续票 In Progress。P16C 已提交（`7dc54f2`）；P16B 已提交（`60effc0`）；P16A 已提交（`fbcad7b`）；P15B 已提交（`a9fd13b`）**。任何时刻只允许 1 张票 In Progress。
+状态：**P16D 已提交（`7a478cc`）；当前无后续票 In Progress。P16C 已提交（`7dc54f2`）；P16B 已提交（`60effc0`）；P16A 已提交（`fbcad7b`）；P15B 已提交（`a9fd13b`）**。任何时刻只允许 1 张票 In Progress。
 P12F 已登记为正式排队票；P12G 是 `Learned` 仓库外部依赖门，必须另开该仓库正式票并取得写权限，不能从本队列直接认领。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 **Phase 7+ 产品形态轴线见 `docs/PRODUCT_ROADMAP.md`**（轴 6 学习者形态 / 轴 7 多 Pack 承载 / 轴 8 工程演进 / 轴 9 信任面板）。
@@ -117,9 +117,15 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 - [x] **P16A 蓝图与 Atlas 收口**（`TICKET_P16A_BLUEPRINT_ATLAS_ALIGNMENT.md`）← 已实现、通过验收并提交（`fbcad7b`）；建立蓝图能力—实现—票据状态矩阵，纠正 P04A/Tauri 与 Aura/Coursebook 边界，让开发者 Atlas 从 QUEUE 动态生成真实进度；服务环节：全环节（工程事实可审计）
 - [x] **P16B 实时知识地图契约**（`TICKET_P16B_KNOWLEDGE_MAP_CONTRACT.md`）← 已实现并通过验收，提交哈希见 Git 历史；依赖 P16A；从现有事实表推导分页/子图知识地图，统一 Core/HTTP/MCP/Tauri DTO，不建立第二份 mastery 真相；服务环节：定位模糊
 - [x] **P16C 跨域预测地图**（`TICKET_P16C_CROSS_DOMAIN_PREDICTION_MAP.md`）← 已实现、通过验收并提交（`7dc54f2`）；依赖 P16B（`60effc0`）；三分栏预测、结构/几何锚点与只读 2–3 条初始路径已统一暴露给 Core/HTTP/MCP，isolated Pack 不继承 shared θ；服务环节：定位模糊 → 针对性补缺
-- [x] **P16D Global Learner Profile 数据与治理**（`TICKET_P16D_GLOBAL_PROFILE_GOVERNANCE.md`）← 已实现并通过验收，已获用户提交确认；依赖 P16A；画像测量注册、设置、事件、派生状态、验证记录、导出与两级清除；服务环节：验证真懂 → 定位模糊
+- [x] **P16D Global Learner Profile 数据与治理**（`TICKET_P16D_GLOBAL_PROFILE_GOVERNANCE.md`）← 已实现、通过验收并提交（`7a478cc`）；依赖 P16A；画像测量注册、设置、事件、派生状态、验证记录、导出与两级清除；服务环节：验证真懂 → 定位模糊
 - [ ] **P16E Global Learner Profile 估计与验证**（`TICKET_P16E_GLOBAL_PROFILE_ESTIMATION.md`）← 依赖 P16D；行为画像、慢特质后验、EMA 调度与前瞻验证，未过门不影响 mastery/调度；服务环节：定位模糊 → 针对性补缺
 - [ ] **P16F 目标产品契约**（`TICKET_P16F_GOAL_PRODUCT_CONTRACT.md`）← 依赖 P16A；把已有 goals/dimensions/milestones 暴露为稳定契约，目标只限定候选范围；服务环节：针对性补缺
+- [ ] **P16G 还死板吗门**（`TICKET_P16G_RIGIDITY_GATE.md`）← 依赖 P01/P03D/P03E/P03H/P04C；把 `MASTER_PLAN.md:108` 与 `:454` 登记、却从未票化的活性判据做成确定性回归门：稳定性 + 响应性 + 方向性三段断言、7 组证据 arm、分歧矩阵与人为死板化红灯证明；只观测不调优，不改任何公式；**建议置于 P16E 之前认领**；服务环节：全环节（主命题闭环活性判据）
+- [ ] **P16H 会话收口**（`TICKET_P16H_SESSION_CLOSEOUT.md`）← 依赖 P01/P03E；Tier 0 显式收口、最多 3 条 evidence-bound 小结与下一次入口；服务环节：定位模糊 → 针对性补缺
+- [ ] **P16I 未作答原因**（`TICKET_P16I_NO_ATTEMPT_REASON.md`）← 依赖 P01/P02B；把“不知道”作为一等信号，不污染 mastery，只改变教学处方；服务环节：定位模糊 → 针对性补缺
+- [ ] **P16J 教学回合对象与上下文回取**（`TICKET_P16J_TEACHING_TURN_CONTEXT.md`）← 依赖 P01/P03H/P15B；为外部导师提供只读历史上下文并登记单次讲解事实，不放宽 strict-citation；服务环节：针对性补缺 → 验证真懂
+- [ ] **P16K 生成性概念标记**（`TICKET_P16K_GENERATIVITY_MARK.md`）← 依赖 P05A0/P03F；由 Pack 声明 generative/item/unknown，只改变教学处方、不改调度；服务环节：针对性补缺
+- [ ] **P16L 材料层**（`TICKET_P16L_MATERIAL_LAYER.md`）← 依赖 P05A0/P11A；先建立材料与 level 记录/聚合层，不接 MIRT、预测或调度数学，建议在 P16H–P16L 中最后认领；服务环节：定位模糊 → 针对性补缺
 
 ## Phase 17 — Tauri 正式桌面产品
 
@@ -141,6 +147,10 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 - [ ] **P18B 1.0 发布验收**（`TICKET_P18B_RELEASE_ACCEPTANCE.md`）← 依赖 P18A；干净 Windows 环境完成安装—学习—更新—备份—恢复—卸载，发布签名 1.0；服务环节：全环节（最终交付）
 
 ## Backlog（票外发现的问题记在这里，不顺手做）
+
+- **退役门缺口（2026-08-08 观察，P16G 立票时发现）**：SPEC §3 有验证门（机制进入产品行为的准入），却没有对称的退役门（机制离开代码库的条件）。运行时对象有退役路径——F5 育种 move 效应衰减自动退役、F4 G_u 规则不中自动降权、特质构念 8 周无增益降级“未验证”——但代码没有。P03O、P06H、P06I 三个 shadow gate 已建成、已测试、永久维护、零产品行为，且无到期日。候选缓解：SPEC §3 增加退役门，shadow 机制在 N 个月内未过留出门即删除而非延期。**属于改宪法，必须用户裁决；执行 AI 不得自行修改 SPEC。**
+
+- **立项过滤器失效（2026-08-08 观察）**：本文件第 7 行要求“新增票必须标注它服务主命题的哪一环”，但该标注在立项时不可证伪——任何测量都能论证自己服务“定位模糊”。当前 73 张已完成票 100% 通过该过滤；一个从不拒绝的过滤器不是过滤器。对照：验证门是可证伪的（留出预测），所以 shadow 票能正确停在 shadow。即本项目拒绝断言的能力强，拒绝工作的能力弱。候选缓解：未完成票设硬上限，加一张须砍或合并一张；或要求每张新票点名它替换掉哪个机制。**属于改工作纪律，须用户裁决。**
 
 - **P12 历史拆分记录**：详见 `docs/LEARNER_CAPTURE_ROADMAP.md` 与 `docs/superpowers/plans/2026-06-18-p12-learner-capture-inbox.md`。P12D、P12E 已完成；P12F 已转为正式排队票；P12G 仅作为 `Learned` 仓库外部依赖门，不在本仓库直接认领。
 
