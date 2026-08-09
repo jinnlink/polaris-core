@@ -278,7 +278,7 @@ fn phase_action_loop_easy_reviews_override_phase_challenge() {
 }
 
 #[test]
-fn phase_action_loop_flow_strategy_keeps_existing_slot_shape() {
+fn phase_action_loop_phantom_evidence_overrides_flow_strategy() {
     let root = temp_pack_dir("phase-flow");
     write_pack(&root, five_concept_pack());
     let engine = engine_for_pack(&root);
@@ -289,18 +289,17 @@ fn phase_action_loop_flow_strategy_keeps_existing_slot_shape() {
     seed_mastery(&engine, "review_close", 0.89, 10, "explain", 0.2);
     insert_gated_state(&engine, "flow", true);
 
+    let next = engine.next_task().unwrap().expect("next task");
     let batch = engine.get_interleaved_batch(3).unwrap();
 
-    assert_eq!(batch.len(), 3);
-    assert_eq!(
-        batch.iter().filter(|item| item.p_known < 0.6).count(),
-        2,
-        "flow strategy should keep two weak/new slots even when a review is phantom"
-    );
-    assert_eq!(batch.iter().filter(|item| item.p_known >= 0.6).count(), 1);
-    if let Some(phantom) = batch.iter().find(|item| item.concept_id == "review_a") {
-        assert_ne!(phantom.move_name, "transfer");
-    }
+    assert_eq!(next.concept_id, "review_a");
+    assert_eq!(next.move_id, "transfer");
+    let phantom = batch
+        .iter()
+        .find(|item| item.concept_id == "review_a")
+        .expect("phantom evidence should stay in the batch under flow");
+    assert_eq!(phantom.phase.as_str(), "phantom");
+    assert_eq!(phantom.move_name, "transfer");
 
     let _ = fs::remove_dir_all(&root);
 }

@@ -12,7 +12,7 @@ impl Engine {
         let (planned_move, phase_strategy) = phase_adjusted_move(
             base_move,
             best.phase,
-            phase_adjustment_protected(hmm_strategy),
+            phase_adjustment_protected_for(hmm_strategy, best.phase),
         );
         let (planned_move, decision_strategy) =
             underconfidence_adjusted_move(planned_move, best.underconfident, phase_strategy);
@@ -226,10 +226,13 @@ impl Engine {
         }
 
         let hmm_strategy = self.batch_strategy()?;
-        let strategy = if matches!(hmm_strategy, BatchStrategy::Default) {
-            phase_batch_strategy(&ranked).unwrap_or(hmm_strategy)
-        } else {
-            hmm_strategy
+        let phase_strategy = phase_batch_strategy(&ranked);
+        let strategy = match (hmm_strategy, phase_strategy) {
+            (BatchStrategy::Default, Some(strategy)) => strategy,
+            (BatchStrategy::Flow, Some(BatchStrategy::PhantomChallenge)) => {
+                BatchStrategy::PhantomChallenge
+            }
+            _ => hmm_strategy,
         };
         let mut selected = Vec::new();
         match strategy {
@@ -885,6 +888,11 @@ fn strategy_target_phase(strategy: BatchStrategy) -> Option<Phase> {
 
 fn phase_adjustment_protected(strategy: BatchStrategy) -> bool {
     matches!(strategy, BatchStrategy::EasyReviews | BatchStrategy::Flow)
+}
+
+fn phase_adjustment_protected_for(strategy: BatchStrategy, phase: Phase) -> bool {
+    phase_adjustment_protected(strategy)
+        && !matches!((strategy, phase), (BatchStrategy::Flow, Phase::Phantom))
 }
 
 fn is_phase_action_strategy(strategy: BatchStrategy) -> bool {

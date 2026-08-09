@@ -134,6 +134,8 @@ git revert <P07D-commit-sha>
 
 ## AI 交付记录（2026-06-16）
 
+> 后续裁决（P16G2，2026-08-09）：P16G 活性门证明 `phase=phantom` 可与 HMM `flow` 同时出现。多次概念级校准反证优先于 session 级 Flow 推断，因此 `Flow + Phantom` 改走 PhantomChallenge；Flow 无 Phantom 与 EasyReviews 保护不变。该裁决替代下文“Flow 无条件保持”的旧合同。
+
 - 当前状态：已实现、通过验收并提交（78efe0d）。
 - 变更清单：
   - 扩展 `BatchStrategy`：新增 `PhantomChallenge`、`SettlingProbe`、`RegressionRecovery`。
