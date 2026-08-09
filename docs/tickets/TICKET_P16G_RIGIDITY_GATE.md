@@ -1,6 +1,12 @@
 # P16G 还死板吗门（Rigidity Gate）
 
-状态：Queued；依赖 P01、P03D、P03E、P03H、P04C。P16D 提交前不得认领。
+状态：Blocked；依赖 P01、P03D、P03E、P03H、P04C。P16D 已提交（`7a478cc`）；等待 P16G1、P16G2 完成后复验。
+
+## 本轮范围（2026-08-09）
+
+- 只建立确定性的稳定性、响应性、方向性回归门与 7 组证据 arm，不改变产品默认行为。
+- 先证明当前机制实际到达输出；若门红，保留事实并按票据要求报告，不通过改公式或放宽断言“修绿”。
+- 预计修改面：`crates/polaris-core/tests/p16g_rigidity_gate.rs`；只有现有 API 无法提供测试确定性时，才考虑最小的测试专用注入点。
 
 服务主命题：全环节。本票是主命题闭环的活性判据本身，不是新能力。
 
@@ -121,3 +127,55 @@ git diff --check
 删除 `crates/polaris-core/tests/p16g_rigidity_gate.rs` 与其夹具；恢复 `docs/tickets/QUEUE.md` 中 P16G 条目；删除本票文件。
 
 无 schema 变更、无产品行为变更，回滚零影响。
+
+## AI 交接记录（2026-08-09）
+
+- 当前状态：测试门实现完成但真实红灯；用户已裁决拆出 P16G1、P16G2 两张前置修复票，完成后回到本票复验；未改产品代码。
+- 已完成：7 个同构 evidence arm、A/B/C 三段独立断言、有序 next/batch 输出签名、分歧矩阵、`mrt.epsilon=0` 确定性控制、测试进程级人为死板化变异开关。
+- 确定性结果：A 稳定性 7/7 arm 重放一致。
+- 分歧矩阵：
+
+```text
+arm            col mas fai und pha mis beh
+cold           0   1   1   1   1   1   1
+mastery        1   0   1   0   1   1   1
+fail           1   1   0   1   1   1   1
+underconfident 1   0   1   0   1   1   1
+phantom        1   1   1   1   0   1   1
+misconception  1   1   1   1   1   0   1
+behavioral     1   1   1   1   1   1   0
+```
+
+- 已证实通过的方向：mastery 从 cold 前进；fail batch 从 mastery 的 analyze+recall 降为全 recall；misconception 把 `borrowing` 提到 next；behavioral 只改 latency+hints+abandon 后改变 batch 顺序。
+- 阻塞 1：underconfident（p_known=0.994、calib_gap=-0.699）与 mastery（p_known=0.994、calib_gap=0.061）的 next/batch 完全相同。当前调度只消费正向校准缺口，没有已冻结的“高分低自信”动作契约；修复需要新增或改变产品行为，违反本票禁区。
+- 阻塞 2：phantom arm 已真实形成 `phase=phantom`（p_known=0、calib_gap=0.684、attempts=4），但同次 HMM 输出 `flow`，现有 P03G 合同明确要求 Flow 保持 slot shape 且压住 phantom transfer（`p03g_interleaved.rs::phase_action_loop_flow_strategy_keeps_existing_slot_shape`）。P16G 要求 PhantomChallenge，与既有冻结行为直接冲突，不能由执行 AI 自行改优先级或放宽断言。
+- 人为死板化红灯：
+
+```text
+> $env:POLARIS_P16G_FORCE_RIGID='1'; cargo test -p polaris-core --test p16g_rigidity_gate responsiveness_different_evidence_arms_diverge -- --nocapture
+P16G divergence matrix: all cells = 0
+panic: at least five distinct targeted outputs are required, got 1
+test result: FAILED. 0 passed; 1 failed; 2 filtered out
+```
+
+- 已跑验证：
+
+```text
+> cargo test -p polaris-core --test p16g_rigidity_gate -- --nocapture
+test stability_same_evidence_sequence_replays_identically ... ok
+test responsiveness_different_evidence_arms_diverge ... FAILED
+test directionality_each_divergence_hits_its_expected_target ... FAILED
+test result: FAILED. 1 passed; 2 failed
+
+> cargo fmt --check
+exit 0
+
+> cargo clippy -p polaris-core --test p16g_rigidity_gate -- -D warnings
+exit 0
+
+> git diff --check
+exit 0
+```
+
+- 未跑验证：全 workspace 测试；P16G 专项已确定红灯，workspace 必然包含同一失败，不能伪报全绿。
+- 裁决结果：保持门和失败证据不变，P16G1 定义 underconfidence 的可验证动作契约，P16G2 裁决 Flow 与 PhantomChallenge 的优先级；两票完成后回到 P16G 复验。用户已于 2026-08-09 明确同意该方案并要求继续。
