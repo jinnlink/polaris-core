@@ -84,6 +84,11 @@ use crate::profile::{
     ProfileDimensionInput, ProfileMeasurementInput, ProfileMeasurementReceipt, ProfileResetReceipt,
     ProfileSettings, ProfileSettingsUpdate, ProfileValidationRun, ProfileValidationRunInput,
 };
+use crate::profile_estimation::{
+    evaluate_profile_gate, offer_profile_ema_at, profile_behavior_snapshot,
+    record_profile_ema_skip_at, run_monthly_profile_update_at, ProfileBehaviorSnapshot,
+    ProfileEmaOffer, ProfileGateEvaluation, ProfileMonthlyUpdate, ProfileValidationInput,
+};
 use crate::report::{
     latest_mirror_report, record_report_feedback, run_mirror_report, run_mirror_report_with_config,
     run_mirror_report_with_static_narrative, MirrorReport,
@@ -334,6 +339,29 @@ impl Engine {
 
     pub fn global_profile_integration_summary(&self) -> Result<GlobalProfileIntegrationSummary> {
         global_profile_integration_summary(&self.conn)
+    }
+
+    pub fn profile_behavior_snapshot(&self) -> Result<ProfileBehaviorSnapshot> {
+        profile_behavior_snapshot(&self.conn)
+    }
+
+    pub fn offer_profile_ema_at(&self, session_id: &str, now: &str) -> Result<ProfileEmaOffer> {
+        offer_profile_ema_at(&self.conn, session_id, now)
+    }
+
+    pub fn record_profile_ema_skip_at(&self, session_id: &str, now: &str) -> Result<()> {
+        record_profile_ema_skip_at(&self.conn, session_id, now)
+    }
+
+    pub fn run_monthly_profile_update_at(&self, now: &str) -> Result<ProfileMonthlyUpdate> {
+        run_monthly_profile_update_at(&self.conn, now)
+    }
+
+    pub fn evaluate_profile_gate(
+        &self,
+        input: ProfileValidationInput,
+    ) -> Result<ProfileGateEvaluation> {
+        evaluate_profile_gate(&self.conn, input)
     }
 
     pub fn reset_global_profile(&self) -> Result<ProfileResetReceipt> {

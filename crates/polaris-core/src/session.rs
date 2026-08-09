@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::engine::Engine;
 use crate::error::{PolarisError, Result};
+use crate::profile_estimation::offer_profile_ema_at;
 
 const ASSERTION_LIMIT: usize = 3;
 
@@ -119,6 +120,7 @@ pub fn close_session(engine: &Engine, session_id: &str) -> Result<SessionCloseSu
                 now,
             ],
         )?;
+        let _ema_offer = offer_profile_ema_at(engine.conn(), session_id, &now)?;
         session_close_summary(engine.conn(), session_id)?.ok_or_else(|| {
             PolarisError::MissingSession(format!("{session_id} summary after close"))
         })

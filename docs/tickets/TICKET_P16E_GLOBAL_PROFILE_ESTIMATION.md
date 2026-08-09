@@ -1,6 +1,6 @@
 # P16E Global Learner Profile 估计与验证
 
-状态：Queued；依赖 P16D。
+状态：已通过验收，待提交；依赖 P16D。
 
 服务主命题：定位模糊 → 针对性补缺。
 
@@ -27,3 +27,45 @@
 ## 回滚
 
 关闭画像消费开关并回滚本票代码；原始测量事件保留为本地事实，派生状态可由事件重建。
+
+## 交付记录（2026-08-09）
+
+### 变更清单
+
+- 新增 `profile_estimation`：聚合校准、G_u、move、会话节律与放弃前 hint；HMM 仅用于当次心流抑制，不转写为慢特质。
+- 完成 session 后自动尝试 EMA：同 session 一题、每日 1 题、滚动 7 日 3 题，支持说明门、暂停、跳过、心流抑制与决定性 item 轮转。
+- 月度按注册 item 反向计分并执行 fractional Beta 后验；完整量表、partial 与 EMA 分开留源，缺少注册证据的慢维度保持 `unfit` 无信息先验。
+- 新增时间前推验证门：样本量、logloss、Brier、改善概率和跨域 Pack 数均读取 A 类参数；门状态支持 `unfit/shadow/active/suspended` 及漂移降级。
+- 暴露 Engine 薄封装，补参数登记、数据模型公式与 7 组专项测试；未过门画像不接任务选择、评分或 mastery。
+
+### 验收实跑
+
+```text
+> cargo fmt --all -- --check
+exit 0
+
+> cargo clippy --workspace --all-targets -- -D warnings
+Checking polaris-core v0.1.0
+Checking polaris-cli v0.1.0
+Finished `dev` profile ...
+exit 0
+
+> cargo test -p polaris-core --test p16e_global_profile_estimation
+running 7 tests
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+exit 0
+
+> cargo test --workspace
+polaris-cli: 118 passed
+polaris-core: 81 passed
+p16e_global_profile_estimation: 7 passed
+all discovered suites and doc-tests: 0 failed
+exit 0
+
+> git diff --check
+exit 0
+```
+
+### 回滚
+
+- 执行 `git revert <P16E-commit-sha>` 移除估计器、EMA 触发、验证门、参数与文档；本票未新增 schema，既有 `profile_measurement` 原始事件保留，可在回滚前先关闭 `profile_settings.enabled` 停止画像采集。

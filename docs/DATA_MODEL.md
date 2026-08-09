@@ -86,7 +86,7 @@ session_summaries(session_id TEXT PRIMARY KEY REFERENCES sessions(id),
        assertions_json TEXT NOT NULL, generated_at TEXT NOT NULL)
 
 behavior_events(id TEXT PRIMARY KEY, session_id TEXT, at TEXT,
-       type TEXT,    -- latency|hint|abandon|resume|edit|profile_measurement
+       type TEXT,    -- latency|hint|abandon|resume|edit|profile_measurement|profile_ema_offer|profile_ema_decision
        concept_id TEXT, payload_json TEXT)
 
 grade_queue(attempt_id TEXT PRIMARY KEY, enqueued_at TEXT, retry_count INTEGER DEFAULT 0, last_error TEXT)
@@ -134,6 +134,16 @@ profile_data_actions(
 - `profile_data_actions` 只保留画像重置的非敏感计数，不复制回答内容。完整删除会移除数据库本身，因此只返回调用方回执，不制造无法留存的“审计行”。
 - 完整删除在 Engine 关闭后先建立临时一致性恢复快照，再把旧主库与 SQLite sidecar 隔离，执行调用方注入的本机密钥清理，并在原路径建立当前 schema 的空库；密钥清理失败时恢复原文件，旧文件清理失败时优先从一致性快照恢复逻辑数据库。成功后立即删除临时快照，回执报告真实删除的密钥数量，不伪造“已清理”布尔值。
 - v3 画像 DDL、默认设置、迁移台账与 `user_version` 在同一事务提交；失败时保持 v2，不留下半套画像表。
+
+### P16E Global Learner Profile 估计与验证
+
+- 行为快照只聚合已有事实：`mastery_states.calib_gap`、active `gu_rules`、`moves_effects.n`、有效会话的次数/时长/作答数，以及放弃前已有 hint 的可审计计数。HMM 后验仍是短期状态，不折算为人格特质。
+- 完成 session 后才可追加一条 `profile_ema_offer`；同一 session 最多一条，全局默认每日 1 条、滚动 7 日 3 条。画像暂停、说明未确认或该 session 最新 HMM 后验以心流为最大分量时不出题；跳过追加 `profile_ema_decision`，不伪造量表回答。
+- 月更新按注册 item 的计分键先做反向计分，再归一到 `[0,1]`。维度使用分数 Beta 更新：`alpha = 1 + Σx_i`、`beta = 1 + n - Σx_i`，`mean = alpha/(alpha+beta)`，`variance = alpha*beta/((alpha+beta)^2*(alpha+beta+1))`。
+- 完整量表与 EMA 的 `admin_mode` 分开留源；只有该维度全部注册 item 都有 `full_scale` 回答时才标 `complete_full_scale=true`。EMA 可作为不确定后验的本地证据，但 `ema_is_not_normative=true`，不得输出常模总分。
+- 当月无注册证据的目标取向、归因倾向及相关分面只保存 `Beta(1,1)` 等价先验（均值 `0.5`、方差 `1/12`）并标 `unfit`，不凭行为相关性制造人格结论。
+- 门状态沿用稳定枚举 `unfit | shadow | active | suspended`；其中 `active` 是票面 `validated` 的落库名。默认门同时要求 12 周、150 个相关结果、30 个有效会话、5 个时间前推折、平均 logloss 改善至少 `0.01`、Brier delta 不大于 `0`、改善概率至少 `0.95`；跨域继承另需至少 3 个 Pack。曾为 active 后指标不再过门即转 `suspended`。
+- `profile_dimensions` 未到 `active` 前不进入任务选择、mastery fold 或评分；即使 active，也只能初始化策略/节律先验或作为 HMM/MRT 上下文，画像驱动干预仍必须经过既有 MRT 门。
 
 ### P16H 会话收口
 
@@ -368,6 +378,10 @@ Brier 用二值结果（≥0.75→1，≤0.40→0，死区跳过）：`brier_ewm
 | gu_prior.min_shadow_rules | 1 | **A** | [1,1000] | 不调（shadow 验证门） | G_u 层级先验 shadow_ready 的最少可评估规则数 |
 | gu_prior.min_holdout_attempts | 6 | **A** | [1,10000] | 不调（shadow 验证门） | G_u 层级先验 holdout 验证最少 attempt 数 |
 | gu_prior.max_prior_strength | 20 | **A** | [0,1000] | 不调（shadow 验证门） | G_u 层级先验可折算的最大 pseudo-count 强度 |
+| profile.ema.max_daily / max_weekly | 1 / 3 | **A** | [0,10] / [0,21] | 不调（EMA 体验门） | 完成会话后的画像微题每日/滚动 7 日上限 |
+| profile.gate.min_weeks / min_outcomes / min_sessions / min_folds | 12 / 150 / 30 / 5 | **A** | [1,520] / [1,1000000] / [1,100000] / [2,100] | 不调（画像验证门） | 画像维度前瞻验证的最低样本量 |
+| profile.gate.min_logloss_improvement / max_brier_delta / min_improvement_probability | .01 / 0 / .95 | **A** | [0,1] / [-1,1] / [.5,.999] | 不调（画像验证门） | 时间前推留出指标门 |
+| profile.gate.min_cross_domain_packs | 3 | **A** | [2,100] | 不调（画像跨域门） | leave-one-pack-out 继承最低 Pack 数 |
 | friction.w1..w4 | .4/.2/.2/.2 | **A** | — | 不调（φ 的指数定义） | 摩擦定义 |
 | friction.lambda | 1.0 | B | [0.5,3.0] | MRT/手动（个人风险厌恶度） | φ\* 取舍 |
 | mrt.epsilon | 0.20 | B | [0.05,0.30] | 手动/按计划随签名收窄而衰减 | 探索率 |

@@ -116,4 +116,4 @@ all discovered suites: exit 0
 
 ### 回滚
 
-- 执行 `git revert <P16L-commit-sha>` 移除 schema、Pack、提交关联与聚合出口；已升级真实库不做破坏性降级，使用升级前备份恢复，旧二进制按 P11A 拒绝写入 schema v8。
+- 执行 `git revert 62de660` 移除 schema、Pack、提交关联与聚合出口；已升级真实库不做破坏性降级，使用升级前备份恢复，旧二进制按 P11A 拒绝写入 schema v8。

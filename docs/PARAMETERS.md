@@ -90,6 +90,16 @@
 | `phase_dynamics.holdout_frac` | `0.20` | A | `[0.05,0.50]` | Manual |
 | `phase_dynamics.min_shadow_ready_transitions` | `3` | A | `[1,1000]` | Manual |
 | `phase_dynamics.min_validation_transitions` | `8` | A | `[2,1000]` | Manual |
+| `profile.ema.max_daily` | `1` | A | `[0,10]` | Manual |
+| `profile.ema.max_weekly` | `3` | A | `[0,21]` | Manual |
+| `profile.gate.max_brier_delta` | `0.0` | A | `[-1,1]` | Manual |
+| `profile.gate.min_cross_domain_packs` | `3` | A | `[2,100]` | Manual |
+| `profile.gate.min_folds` | `5` | A | `[2,100]` | Manual |
+| `profile.gate.min_improvement_probability` | `0.95` | A | `[0.5,0.999]` | Manual |
+| `profile.gate.min_logloss_improvement` | `0.01` | A | `[0,1]` | Manual |
+| `profile.gate.min_outcomes` | `150` | A | `[1,1000000]` | Manual |
+| `profile.gate.min_sessions` | `30` | A | `[1,100000]` | Manual |
+| `profile.gate.min_weeks` | `12` | A | `[1,520]` | Manual |
 | `report.confidence_floor` | `0.6` | A | - | Manual |
 | `report.feedback_suppress_days` | `90` | B | `[30,365]` | Manual |
 | `report.min_evidence` | `3` | A | - | Manual |
