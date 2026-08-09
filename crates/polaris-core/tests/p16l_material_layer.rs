@@ -10,7 +10,7 @@ use rusqlite::{params, Connection};
 fn schema_v8_adds_material_layer_and_rolls_back_an_interrupted_unit() {
     let conn = Connection::open_in_memory().unwrap();
     migrate(&conn).unwrap();
-    assert_eq!(CURRENT_SCHEMA_VERSION, 8);
+    assert_eq!(CURRENT_SCHEMA_VERSION, 9);
     assert!(table_exists(&conn, "materials"));
     assert!(column_exists(&conn, "attempts", "material_id"));
 

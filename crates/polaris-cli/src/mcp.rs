@@ -3,6 +3,7 @@ use std::io::{self, BufRead, Write};
 use polaris_core::ai_profile::AiInteractionProfileInput;
 use polaris_core::capture_queue::{CaptureEffect, CaptureInput, CaptureStatus, LearnerCaptureKind};
 use polaris_core::engine::{Engine, SubmitInput};
+use polaris_core::goals::GoalInput;
 use polaris_core::inbox_practice::InboxPracticeSubmissionInput;
 use polaris_core::knowledge_map::KnowledgeMapQuery;
 use polaris_core::learner_feedback::LearnerFeedbackInput;
@@ -69,6 +70,13 @@ impl McpSession {
                 "get_knowledge_map" => self.get_knowledge_map(arguments),
                 "get_prediction_map" => self.get_prediction_map(arguments),
                 "get_global_profile" => self.get_global_profile(),
+                "list_goals" => self.list_goals(arguments),
+                "create_goal" => self.create_goal(arguments),
+                "update_goal" => self.update_goal(arguments),
+                "archive_goal" => self.archive_goal(arguments),
+                "delete_goal" => self.delete_goal(arguments),
+                "refresh_goal_progress" => self.refresh_goal_progress(arguments),
+                "get_goal_workspace" => self.get_goal_workspace(arguments),
                 "get_active_gu_rules" => self.get_active_gu_rules(arguments),
                 "run_mirror_report" => self.run_mirror_report(arguments),
                 "get_latest_mirror_report" => self.get_latest_mirror_report(),
@@ -366,6 +374,64 @@ impl McpSession {
                 .map_err(|error| error.to_string())?,
         )
         .map_err(|error| error.to_string())
+    }
+
+    fn list_goals(&self, arguments: &Value) -> Result<Value, String> {
+        let status = arguments.get("status").and_then(Value::as_str);
+        self.engine
+            .list_goals(status)
+            .map(|goals| json!({"goals": goals}))
+            .map_err(|error| error.to_string())
+    }
+
+    fn create_goal(&self, arguments: &Value) -> Result<Value, String> {
+        let input: GoalInput =
+            serde_json::from_value(arguments.clone()).map_err(|error| error.to_string())?;
+        self.engine
+            .create_goal(input)
+            .and_then(|goal| serde_json::to_value(goal).map_err(Into::into))
+            .map_err(|error| error.to_string())
+    }
+
+    fn update_goal(&self, arguments: &Value) -> Result<Value, String> {
+        let input: GoalInput =
+            serde_json::from_value(arguments.clone()).map_err(|error| error.to_string())?;
+        self.engine
+            .update_goal(input)
+            .and_then(|goal| serde_json::to_value(goal).map_err(Into::into))
+            .map_err(|error| error.to_string())
+    }
+
+    fn archive_goal(&self, arguments: &Value) -> Result<Value, String> {
+        let goal_id = required_str(arguments, "goal_id")?;
+        self.engine
+            .archive_goal(goal_id)
+            .and_then(|goal| serde_json::to_value(goal).map_err(Into::into))
+            .map_err(|error| error.to_string())
+    }
+
+    fn delete_goal(&self, arguments: &Value) -> Result<Value, String> {
+        let goal_id = required_str(arguments, "goal_id")?;
+        self.engine
+            .delete_goal(goal_id)
+            .map(|()| json!({"deleted": true, "goal_id": goal_id}))
+            .map_err(|error| error.to_string())
+    }
+
+    fn refresh_goal_progress(&self, arguments: &Value) -> Result<Value, String> {
+        let goal_id = required_str(arguments, "goal_id")?;
+        self.engine
+            .refresh_goal_progress(goal_id)
+            .and_then(|progress| serde_json::to_value(progress).map_err(Into::into))
+            .map_err(|error| error.to_string())
+    }
+
+    fn get_goal_workspace(&self, arguments: &Value) -> Result<Value, String> {
+        let goal_id = arguments.get("goal_id").and_then(Value::as_str);
+        self.engine
+            .goal_workspace(goal_id)
+            .and_then(|workspace| serde_json::to_value(workspace).map_err(Into::into))
+            .map_err(|error| error.to_string())
     }
 
     fn get_active_gu_rules(&self, arguments: &Value) -> Result<Value, String> {
@@ -679,8 +745,47 @@ fn initialize_result() -> Value {
     })
 }
 
+fn goal_id_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {"goal_id": {"type": "string"}},
+        "required": ["goal_id"],
+        "additionalProperties": false
+    })
+}
+
+fn goal_input_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "id": {"type": "string"},
+            "title": {"type": "string"},
+            "description": {"type": ["string", "null"]},
+            "status": {"type": "string", "enum": ["active", "paused", "completed", "abandoned", "archived"]},
+            "deadline": {"type": ["string", "null"]},
+            "pace": {"type": ["string", "null"]},
+            "priority": {"type": "integer", "minimum": 0, "maximum": 100},
+            "parent_goal_id": {"type": ["string", "null"]},
+            "completion_summary": {"type": ["string", "null"]},
+            "scope": {
+                "type": "object",
+                "properties": {
+                    "pack_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+                    "dimension_keys": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+                    "concept_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+                },
+                "additionalProperties": false
+            },
+            "dimensions": {"type": "array", "items": {"type": "object"}},
+            "milestones": {"type": "array", "items": {"type": "object"}}
+        },
+        "required": ["id", "title"],
+        "additionalProperties": false
+    })
+}
+
 fn tool_definitions() -> Value {
-    json!([
+    let Value::Array(mut definitions) = json!([
         {
             "name": "get_next_task",
             "description": "Return the locally scheduled next learning task and its Tier 2 teaching instruction. Records a next behavior event for latency accounting.",
@@ -1051,7 +1156,61 @@ fn tool_definitions() -> Value {
                 "additionalProperties": false
             }
         }
-    ])
+    ]) else {
+        unreachable!("tool definitions must be an array")
+    };
+    definitions.extend(goal_tool_definitions());
+    Value::Array(definitions)
+}
+
+fn goal_tool_definitions() -> Vec<Value> {
+    vec![
+        json!({
+            "name": "list_goals",
+            "description": "List local goals, optionally filtered by lifecycle status. Returns the same GoalRecord DTO as Core and HTTP.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string", "enum": ["active", "paused", "completed", "abandoned", "archived"]}
+                },
+                "additionalProperties": false
+            }
+        }),
+        json!({
+            "name": "create_goal",
+            "description": "Create a goal with optional Pack, latent-dimension, and concept scope. Scope only filters scheduler candidates.",
+            "inputSchema": goal_input_schema()
+        }),
+        json!({
+            "name": "update_goal",
+            "description": "Replace the mutable fields, dimensions, milestones, and scope of an existing goal.",
+            "inputSchema": goal_input_schema()
+        }),
+        json!({
+            "name": "archive_goal",
+            "description": "Archive a goal without deleting its dimensions, milestones, or history.",
+            "inputSchema": goal_id_schema()
+        }),
+        json!({
+            "name": "delete_goal",
+            "description": "Delete a goal and its dimension and milestone rows. Prefer archive when history should remain visible.",
+            "inputSchema": goal_id_schema()
+        }),
+        json!({
+            "name": "refresh_goal_progress",
+            "description": "Refresh goal dimension values from authoritative mastery, attempts, and evidence, then refresh milestones.",
+            "inputSchema": goal_id_schema()
+        }),
+        json!({
+            "name": "get_goal_workspace",
+            "description": "Return the GoalWorkspaceSnapshot and two or three locally scheduled actions. Omitting goal_id preserves the existing no-goal batch behavior.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"goal_id": {"type": "string"}},
+                "additionalProperties": false
+            }
+        }),
+    ]
 }
 
 fn resource_definitions() -> Value {
@@ -3022,6 +3181,54 @@ mod tests {
             json!({"pack": "rust"}),
         );
         assert_eq!(summary["by_level"][0]["level"], "intro");
+    }
+
+    #[test]
+    fn p16f_mcp_goal_tools_share_core_workspace_contract() {
+        let mut session = test_session();
+        let created = call_tool_json(
+            &mut session,
+            "create_goal",
+            json!({
+                "id": "rust-goal",
+                "title": "Rust goal",
+                "scope": {"pack_ids": ["rust"]}
+            }),
+        );
+        assert_eq!(created["scope"]["pack_ids"][0], "rust");
+        let updated = call_tool_json(
+            &mut session,
+            "update_goal",
+            json!({
+                "id": "rust-goal",
+                "title": "Updated Rust goal",
+                "scope": {"pack_ids": ["rust"]}
+            }),
+        );
+        assert_eq!(updated["title"], "Updated Rust goal");
+        let refreshed = call_tool_json(
+            &mut session,
+            "refresh_goal_progress",
+            json!({"goal_id": "rust-goal"}),
+        );
+        assert_eq!(refreshed["goal_id"], "rust-goal");
+        let listed = call_tool_json(&mut session, "list_goals", json!({"status": "active"}));
+        assert_eq!(listed["goals"].as_array().unwrap().len(), 1);
+        let workspace = call_tool_json(
+            &mut session,
+            "get_goal_workspace",
+            json!({"goal_id": "rust-goal"}),
+        );
+        assert_eq!(workspace["model_version"], "goal-workspace-v1");
+        assert!((2..=3).contains(&workspace["actions"].as_array().unwrap().len()));
+        let archived = call_tool_json(
+            &mut session,
+            "archive_goal",
+            json!({"goal_id": "rust-goal"}),
+        );
+        assert_eq!(archived["status"], "archived");
+        let deleted = call_tool_json(&mut session, "delete_goal", json!({"goal_id": "rust-goal"}));
+        assert_eq!(deleted["deleted"], true);
     }
 
     fn test_session() -> McpSession {

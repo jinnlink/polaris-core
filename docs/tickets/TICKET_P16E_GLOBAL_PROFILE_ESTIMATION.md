@@ -68,4 +68,4 @@ exit 0
 
 ### 回滚
 
-- 执行 `git revert <P16E-commit-sha>` 移除估计器、EMA 触发、验证门、参数与文档；本票未新增 schema，既有 `profile_measurement` 原始事件保留，可在回滚前先关闭 `profile_settings.enabled` 停止画像采集。
+- 执行 `git revert 35fd61c` 移除估计器、EMA 触发、验证门、参数与文档；本票未新增 schema，既有 `profile_measurement` 原始事件保留，可在回滚前先关闭 `profile_settings.enabled` 停止画像采集。

@@ -1,6 +1,6 @@
 # P16F 目标产品契约
 
-状态：Queued；依赖 P16A。
+状态：已实现并通过验收，等待提交；依赖 P16A。
 
 服务主命题：针对性补缺。
 
@@ -26,3 +26,29 @@
 ## 回滚
 
 回滚本票公开契约与范围过滤；保留已有 P04D 目标数据和行为。
+
+## 设计裁决（2026-08-09）
+
+- 用户已确认在现有 `goals` 表增加通用 `scope_json` 列，稳定结构为 `{pack_ids, dimension_keys, concept_ids}`，不新增第二套 goals 表。
+- 多种范围取交集，前置概念递归闭包始终纳入候选；空 scope 使用 active Pack，跨 Pack 目标不改写 active Pack。
+
+## 交付记录（2026-08-09）
+
+### 变更清单
+
+- schema v9 为新旧 goals 增加可迁移、可回滚的 `scope_json`，旧数据默认空 scope。
+- Core 增加目标范围校验、稳定 CRUD/归档、权威学习事实派生进度、里程碑刷新和 `GoalWorkspaceSnapshot`。
+- 目标工作区复用现有 scheduler 返回 2–3 个行动，scope 只限制候选并保留 prerequisite 闭包；读取工作区不持久化进度。
+- HTTP/MCP 新增 goals CRUD、归档、进度刷新与工作区入口，并更新 API/Data Model 合同。
+
+### 实跑验收
+
+- `cargo fmt --all -- --check` → 通过（无输出）。
+- `cargo clippy --workspace --all-targets -- -D warnings` → 通过，`Finished dev profile ... in 1.34s`。
+- `cargo test --workspace` → 通过：CLI 120/120、Core 81/81、P16F 7/7，全部集成测试与 doc-tests 0 failed。
+- `git diff --check` → 通过（无输出）。
+
+### 回滚方式
+
+- 代码与公开契约使用 `git revert <P16F 提交哈希>` 回滚。
+- schema v9 不做破坏性自动降级；需回到旧二进制时，使用升级前备份恢复数据库。旧 goals 在 v9 中保留且 scope 默认为空。

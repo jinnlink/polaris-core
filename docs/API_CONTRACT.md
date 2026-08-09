@@ -22,7 +22,7 @@
 
 ## HTTP v1
 
-HTTP 响应体均为 JSON。成功响应使用 HTTP 200；客户端错误使用 400、403、404、405；服务器内部错误使用 500。稳定错误形状：
+HTTP 响应体均为 JSON。成功响应使用 HTTP 200，创建目标使用 201；客户端错误使用 400、403、404、405；服务器内部错误使用 500。稳定错误形状：
 
 ```json
 {"error": "message"}
@@ -122,6 +122,18 @@ HTTP 响应体均为 JSON。成功响应使用 HTTP 200；客户端错误使用 
 - `notice`
 
 `dimensions[]` 稳定包含 scope、均值、方差、证据数、模型版本、门状态、provenance 和 evidence ids。该入口永不返回 `behavior_events(type='profile_measurement')`、题目回答或完整导出；不存在 POST/重置/删除 HTTP 入口。
+
+### Goals 与目标工作区
+
+- `GET /goals?status=<status>`：列出目标；`status` 可选，枚举为 `active | paused | completed | abandoned | archived`。稳定顶层字段：`goals`。
+- `POST /goals`：创建目标，body 为 `GoalInput`；`id/title` 必填，其余字段使用 Core 默认。成功返回 `201` 和 `GoalRecord`。
+- `PUT /goals`：全量替换目标可变字段、维度、里程碑与 scope；成功返回 `200` 和 `GoalRecord`。
+- `DELETE /goals?goal_id=<id>`：显式删除目标及其维度/里程碑。稳定顶层字段：`deleted / goal_id`。
+- `POST /goals/archive`：body 为 `{"goal_id":"..."}`；保留数据并把状态改为 archived。
+- `POST /goals/refresh`：body 为 `{"goal_id":"..."}`；只从 mastery、graded attempts 和 evidence 刷新进度与里程碑。
+- `GET /goal-workspace?goal_id=<id>`：`goal_id` 可选；返回与 Core/MCP 同一 `GoalWorkspaceSnapshot`。
+
+`GoalRecord.scope` 稳定包含 `pack_ids / dimension_keys / concept_ids` 三个 string array。`GoalWorkspaceSnapshot` 稳定顶层字段为 `model_version / goal / progress / scope / actions / generated_at`。scope 仅过滤候选，并自动包含 prerequisite 闭包；不会切换 active Pack，也不会覆盖 scheduler 排序、相图取证、MRT、评分或 mastery。省略 goal_id 时保持既有无目标 batch 行为。
 
 ### `GET /session`
 
@@ -474,6 +486,13 @@ MCP 使用 JSON-RPC 2.0。通知方法 `notifications/*` 返回空响应。未�
 - `get_knowledge_map`
 - `get_prediction_map`
 - `get_global_profile`
+- `list_goals`
+- `create_goal`
+- `update_goal`
+- `archive_goal`
+- `delete_goal`
+- `refresh_goal_progress`
+- `get_goal_workspace`
 - `get_active_gu_rules`
 - `run_mirror_report`
 - `get_latest_mirror_report`
@@ -516,6 +535,9 @@ MCP 使用 JSON-RPC 2.0。通知方法 `notifications/*` 返回空响应。未�
 - `get_knowledge_map`: 与 HTTP `GET /knowledge-map` 使用同一个 `KnowledgeMapQuery` 和 `KnowledgeMapSnapshot` 序列化契约；参数作为工具 arguments 传入，缺省为空对象。它只读取 Core 当前状态，不修改 mastery、调度或证据。
 - `get_prediction_map`: 与 HTTP `GET /prediction-map` 使用同一个查询和 `PredictionMapSnapshot` 序列化契约；缺省 arguments 为空对象。它只读取 Core 预测、锚点和调度预览，不修改 mastery、MRT 或证据。
 - `get_global_profile`: 与 HTTP `GET /profile` 使用同一无原始回答摘要；本地分享未开启时返回工具级 `isError=true`。该工具没有参数，不暴露回答、导出、重置或全部删除能力。
+- `list_goals / create_goal / update_goal / archive_goal / delete_goal`：与 HTTP goals CRUD 使用同一 Core DTO 和生命周期语义；归档保留数据，删除必须显式调用。
+- `refresh_goal_progress`：与 `POST /goals/refresh` 同构，只从权威学习事实刷新目标派生进度，不接受外部 current_value 作为 mastery。
+- `get_goal_workspace`：与 `GET /goal-workspace` 同构；可选 `goal_id`，稳定返回 `GoalWorkspaceSnapshot`。目标 scope 只过滤候选并保留 prerequisite 闭包，省略 goal_id 与原 batch 兼容。
 - `get_session_summary`: 与 HTTP `GET /session` 使用同一小结序列化契约；必填 `session`。只读取已显式关闭的小结，未找到时返回 JSON `null`，不得关闭 session 或改变学习状态。
 - `detect_project_manifest`: 从 `path`（可选，缺省为 MCP server 当前目录）向上发现 `p-os.toml`。找到时返回 `found=true`、`project_root`、`manifest_path`、`manifest`；未找到时返回 `found=false`，不视为工具错误。
 - `discover_learning_projects`: 从 `root`（可选，缺省为 MCP server 当前目录；`path` 可作为 alias）向下只读扫描 `p-os.toml` 学习项目声明，返回 `root` 与 `projects`。扫描会跳过 `_worktrees`、`.git`、`target` 等非课程目录，找到一个项目后不继续深入该项目内部；该工具只发现课程项目，不修改课程仓库、不生成掌握度。

@@ -78,7 +78,7 @@ fn generative_changes_only_teaching_prescription_while_item_matches_unknown() {
 fn schema_v7_defaults_existing_and_direct_concepts_to_unknown() {
     let conn = Connection::open_in_memory().unwrap();
     migrate(&conn).unwrap();
-    assert_eq!(CURRENT_SCHEMA_VERSION, 8);
+    assert_eq!(CURRENT_SCHEMA_VERSION, 9);
     conn.execute(
         "INSERT INTO concepts(id, name, seed_order) VALUES ('legacy', 'Legacy', 1)",
         [],

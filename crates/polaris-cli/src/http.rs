@@ -7,6 +7,7 @@ use polaris_core::ai_profile::AiInteractionProfileInput;
 use polaris_core::capture_queue::{CaptureEffect, CaptureInput, LearnerCaptureKind};
 use polaris_core::engine::{Engine, SubmitInput};
 use polaris_core::error::PolarisError;
+use polaris_core::goals::GoalInput;
 use polaris_core::inbox_practice::InboxPracticeSubmissionInput;
 use polaris_core::knowledge_map::{KnowledgeMapDueStatus, KnowledgeMapQuery, KnowledgeMapScope};
 use polaris_core::learner_feedback::LearnerFeedbackInput;
@@ -65,6 +66,13 @@ impl HttpApi {
             ("GET", "/knowledge-map") => self.knowledge_map(query_string),
             ("GET", "/prediction-map") => self.prediction_map(query_string),
             ("GET", "/profile") => self.global_profile(),
+            ("GET", "/goals") => self.goals_list(query_string),
+            ("POST", "/goals") => self.goal_create(body),
+            ("PUT", "/goals") => self.goal_update(body),
+            ("DELETE", "/goals") => self.goal_delete(query_string),
+            ("POST", "/goals/archive") => self.goal_archive(body),
+            ("POST", "/goals/refresh") => self.goal_refresh(body),
+            ("GET", "/goal-workspace") => self.goal_workspace(query_string),
             ("GET", "/session") => self.session_summary(query_string),
             ("GET", "/learner-mirror") => Ok(response(
                 200,
@@ -103,6 +111,10 @@ impl HttpApi {
             | ("POST", "/knowledge-map")
             | ("POST", "/prediction-map")
             | ("POST", "/profile")
+            | (_, "/goals")
+            | (_, "/goals/archive")
+            | (_, "/goals/refresh")
+            | (_, "/goal-workspace")
             | ("POST", "/session")
             | ("POST", "/learner-mirror")
             | (_, "/trust") => Ok(response(405, json!({"error": "method not allowed"}))),
@@ -146,6 +158,104 @@ impl HttpApi {
                 Ok(response(403, json!({"error": error.to_string()})))
             }
             Err(error) => Err(Box::new(error)),
+        }
+    }
+
+    fn goals_list(
+        &self,
+        query_string: Option<&str>,
+    ) -> Result<HttpResponse, Box<dyn std::error::Error>> {
+        let status = match parse_single_optional_query(query_string, "status") {
+            Ok(value) => value,
+            Err(error) => return Ok(response(400, json!({"error": error}))),
+        };
+        match self.engine.list_goals(status.as_deref()) {
+            Ok(goals) => Ok(response(200, json!({"goals": goals}))),
+            Err(error) => Ok(response(400, json!({"error": error.to_string()}))),
+        }
+    }
+
+    fn goal_create(&self, body: &str) -> Result<HttpResponse, Box<dyn std::error::Error>> {
+        let input = match serde_json::from_str::<GoalInput>(body) {
+            Ok(input) => input,
+            Err(error) => return Ok(response(400, json!({"error": error.to_string()}))),
+        };
+        match self.engine.create_goal(input) {
+            Ok(goal) => Ok(response(201, serde_json::to_value(goal)?)),
+            Err(error) => Ok(response(400, json!({"error": error.to_string()}))),
+        }
+    }
+
+    fn goal_update(&self, body: &str) -> Result<HttpResponse, Box<dyn std::error::Error>> {
+        let input = match serde_json::from_str::<GoalInput>(body) {
+            Ok(input) => input,
+            Err(error) => return Ok(response(400, json!({"error": error.to_string()}))),
+        };
+        match self.engine.update_goal(input) {
+            Ok(goal) => Ok(response(200, serde_json::to_value(goal)?)),
+            Err(error) => Ok(response(400, json!({"error": error.to_string()}))),
+        }
+    }
+
+    fn goal_delete(
+        &self,
+        query_string: Option<&str>,
+    ) -> Result<HttpResponse, Box<dyn std::error::Error>> {
+        let goal_id = match parse_single_required_query(query_string, "goal_id") {
+            Ok(value) => value,
+            Err(error) => return Ok(response(400, json!({"error": error}))),
+        };
+        match self.engine.delete_goal(&goal_id) {
+            Ok(()) => Ok(response(200, json!({"deleted": true, "goal_id": goal_id}))),
+            Err(error) => Ok(response(400, json!({"error": error.to_string()}))),
+        }
+    }
+
+    fn goal_archive(&self, body: &str) -> Result<HttpResponse, Box<dyn std::error::Error>> {
+        let arguments = match json_body(body) {
+            Ok(arguments) => arguments,
+            Err(error) => return Ok(response(400, json!({"error": error}))),
+        };
+        let Some(goal_id) = optional_str(&arguments, "goal_id") else {
+            return Ok(response(
+                400,
+                json!({"error": "missing string field: goal_id"}),
+            ));
+        };
+        match self.engine.archive_goal(goal_id) {
+            Ok(goal) => Ok(response(200, serde_json::to_value(goal)?)),
+            Err(error) => Ok(response(400, json!({"error": error.to_string()}))),
+        }
+    }
+
+    fn goal_refresh(&self, body: &str) -> Result<HttpResponse, Box<dyn std::error::Error>> {
+        let arguments = match json_body(body) {
+            Ok(arguments) => arguments,
+            Err(error) => return Ok(response(400, json!({"error": error}))),
+        };
+        let Some(goal_id) = optional_str(&arguments, "goal_id") else {
+            return Ok(response(
+                400,
+                json!({"error": "missing string field: goal_id"}),
+            ));
+        };
+        match self.engine.refresh_goal_progress(goal_id) {
+            Ok(progress) => Ok(response(200, serde_json::to_value(progress)?)),
+            Err(error) => Ok(response(400, json!({"error": error.to_string()}))),
+        }
+    }
+
+    fn goal_workspace(
+        &self,
+        query_string: Option<&str>,
+    ) -> Result<HttpResponse, Box<dyn std::error::Error>> {
+        let goal_id = match parse_single_optional_query(query_string, "goal_id") {
+            Ok(value) => value,
+            Err(error) => return Ok(response(400, json!({"error": error}))),
+        };
+        match self.engine.goal_workspace(goal_id.as_deref()) {
+            Ok(workspace) => Ok(response(200, serde_json::to_value(workspace)?)),
+            Err(error) => Ok(response(400, json!({"error": error.to_string()}))),
         }
     }
 
@@ -780,6 +890,45 @@ fn parse_required_session_query(query_string: Option<&str>) -> Result<String, St
     session.ok_or_else(|| "missing query parameter: session".to_owned())
 }
 
+fn parse_single_required_query(
+    query_string: Option<&str>,
+    expected_key: &str,
+) -> Result<String, String> {
+    parse_single_optional_query(query_string, expected_key)?
+        .ok_or_else(|| format!("missing query parameter: {expected_key}"))
+}
+
+fn parse_single_optional_query(
+    query_string: Option<&str>,
+    expected_key: &str,
+) -> Result<Option<String>, String> {
+    let Some(query_string) = query_string else {
+        return Ok(None);
+    };
+    if query_string.is_empty() {
+        return Ok(None);
+    }
+    let mut found = None;
+    for pair in query_string.split('&') {
+        let (key, value) = pair
+            .split_once('=')
+            .ok_or_else(|| "invalid query parameter".to_owned())?;
+        let key = percent_decode_query_component(key)?;
+        if key != expected_key {
+            return Err(format!("unknown query parameter: {key}"));
+        }
+        if found.is_some() {
+            return Err(format!("duplicate query parameter: {expected_key}"));
+        }
+        let value = percent_decode_query_component(value)?;
+        if value.trim().is_empty() {
+            return Err(format!("{expected_key} must not be empty"));
+        }
+        found = Some(value);
+    }
+    Ok(found)
+}
+
 fn percent_decode_query_component(value: &str) -> Result<String, String> {
     let input = value.as_bytes();
     let mut output = Vec::with_capacity(input.len());
@@ -957,6 +1106,11 @@ mod tests {
             "GET /knowledge-map",
             "GET /prediction-map",
             "GET /profile",
+            "GET /goals",
+            "POST /goals",
+            "PUT /goals",
+            "DELETE /goals",
+            "GET /goal-workspace",
             "GET /session",
             "GET /learner-mirror",
             "GET /trust",
@@ -2087,6 +2241,73 @@ mod tests {
             .unwrap();
         assert_eq!(summary.status, 200);
         assert_eq!(summary.body["by_level"][0]["level"], "intro");
+    }
+
+    #[test]
+    fn p16f_http_goal_crud_workspace_and_contract_share_core_dto() {
+        let mut api = test_api();
+        let create = api
+            .handle(
+                "POST",
+                "/goals",
+                &json!({
+                    "id": "rust-goal",
+                    "title": "Rust goal",
+                    "scope": {"pack_ids": ["rust"]}
+                })
+                .to_string(),
+            )
+            .unwrap();
+        assert_eq!(create.status, 201);
+        assert_eq!(create.body["scope"]["pack_ids"][0], "rust");
+        let update = api
+            .handle(
+                "PUT",
+                "/goals",
+                &json!({
+                    "id": "rust-goal",
+                    "title": "Updated Rust goal",
+                    "scope": {"pack_ids": ["rust"]}
+                })
+                .to_string(),
+            )
+            .unwrap();
+        assert_eq!(update.status, 200);
+        assert_eq!(update.body["title"], "Updated Rust goal");
+        let refresh = api
+            .handle(
+                "POST",
+                "/goals/refresh",
+                &json!({"goal_id": "rust-goal"}).to_string(),
+            )
+            .unwrap();
+        assert_eq!(refresh.status, 200);
+        assert_eq!(refresh.body["goal_id"], "rust-goal");
+
+        let list = api.handle("GET", "/goals?status=active", "").unwrap();
+        assert_eq!(list.status, 200);
+        assert_eq!(list.body["goals"].as_array().unwrap().len(), 1);
+        let workspace = api
+            .handle("GET", "/goal-workspace?goal_id=rust-goal", "")
+            .unwrap();
+        assert_eq!(workspace.status, 200);
+        assert_eq!(workspace.body["model_version"], "goal-workspace-v1");
+        assert!((2..=3).contains(&workspace.body["actions"].as_array().unwrap().len()));
+
+        let archive = api
+            .handle(
+                "POST",
+                "/goals/archive",
+                &json!({"goal_id": "rust-goal"}).to_string(),
+            )
+            .unwrap();
+        assert_eq!(archive.status, 200);
+        assert_eq!(archive.body["status"], "archived");
+        let deleted = api
+            .handle("DELETE", "/goals?goal_id=rust-goal", "")
+            .unwrap();
+        assert_eq!(deleted.status, 200);
+        assert_eq!(deleted.body["deleted"], true);
     }
 
     fn test_api() -> HttpApi {

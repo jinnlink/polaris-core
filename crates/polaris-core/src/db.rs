@@ -5,7 +5,7 @@ use rusqlite::{Connection, OpenFlags};
 use crate::config::default_registry;
 use crate::error::{PolarisError, Result};
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 8;
+pub const CURRENT_SCHEMA_VERSION: i64 = 9;
 
 const BASELINE_SCHEMA_VERSION: i64 = 1;
 const BASELINE_MIGRATION_NAME: &str = "baseline_current_schema";
@@ -23,6 +23,8 @@ const GENERATIVITY_SCHEMA_VERSION: i64 = 7;
 const GENERATIVITY_MIGRATION_NAME: &str = "concept_generativity";
 const MATERIAL_LAYER_SCHEMA_VERSION: i64 = 8;
 const MATERIAL_LAYER_MIGRATION_NAME: &str = "material_layer";
+const GOAL_SCOPE_SCHEMA_VERSION: i64 = 9;
+const GOAL_SCOPE_MIGRATION_NAME: &str = "goal_product_scope";
 
 pub fn open_database(path: impl AsRef<Path>) -> Result<Connection> {
     let path = path.as_ref();
@@ -328,7 +330,8 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             pace TEXT,
             priority INTEGER NOT NULL DEFAULT 50,
             parent_goal_id TEXT,
-            completion_summary TEXT
+            completion_summary TEXT,
+            scope_json TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(scope_json))
         );
 
         CREATE TABLE IF NOT EXISTS goal_dimensions(
@@ -428,6 +431,7 @@ pub fn migrate(conn: &Connection) -> Result<()> {
     migrate_teaching_turn_schema(conn)?;
     migrate_generativity_schema(conn)?;
     migrate_material_layer_schema(conn)?;
+    migrate_goal_scope_schema(conn)?;
 
     Ok(())
 }
@@ -658,6 +662,22 @@ fn migrate_material_layer_schema(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+fn migrate_goal_scope_schema(conn: &Connection) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    ensure_column(
+        &tx,
+        "goals",
+        "scope_json",
+        "TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(scope_json))",
+    )?;
+    record_schema_migration(&tx, GOAL_SCOPE_SCHEMA_VERSION, GOAL_SCOPE_MIGRATION_NAME)?;
+    if schema_version(&tx)? < GOAL_SCOPE_SCHEMA_VERSION {
+        set_schema_version(&tx, GOAL_SCOPE_SCHEMA_VERSION)?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
 pub fn schema_version(conn: &Connection) -> Result<i64> {
     conn.pragma_query_value(None, "user_version", |row| row.get(0))
         .map_err(Into::into)
@@ -847,7 +867,7 @@ mod tests {
             })
             .unwrap();
         assert_eq!(p_init, "0.33");
-        assert_eq!(first_count, 8);
+        assert_eq!(first_count, 9);
         assert_eq!(second_count, first_count);
     }
 
@@ -969,7 +989,7 @@ mod tests {
 
         assert_eq!(user_version, CURRENT_SCHEMA_VERSION);
         assert_eq!(p_init, "0.33");
-        assert_eq!(migration_count, 8);
+        assert_eq!(migration_count, 9);
         assert_eq!(journal_mode.to_lowercase(), "wal");
     }
 

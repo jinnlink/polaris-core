@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::ai_profile::{
@@ -27,8 +27,9 @@ use crate::geometry::{
     GeometryCandidate,
 };
 use crate::goals::{
-    create_goal, goal_progress, goal_snapshot, refresh_goal_milestones,
-    update_goal_dimension_value, GoalInput, GoalMilestoneRecord, GoalProgressReport, GoalRecord,
+    archive_goal, create_goal, delete_goal, goal_progress, goal_snapshot, list_goals,
+    refresh_goal_milestones, refresh_goal_progress, update_goal, update_goal_dimension_value,
+    GoalInput, GoalMilestoneRecord, GoalProgressReport, GoalRecord, GoalWorkspaceSnapshot,
 };
 use crate::grader::{
     grade_request_for_attempt, grade_with_config, grade_with_static_response,
@@ -125,7 +126,7 @@ pub struct NextTask {
     pub context: Option<TeachingContext>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TaskAssignment {
     pub concept_id: String,
     pub concept_name: String,
@@ -419,6 +420,22 @@ impl Engine {
         goal_snapshot(&self.conn, goal_id)
     }
 
+    pub fn list_goals(&self, status: Option<&str>) -> Result<Vec<GoalRecord>> {
+        list_goals(&self.conn, status)
+    }
+
+    pub fn update_goal(&self, input: GoalInput) -> Result<GoalRecord> {
+        update_goal(&self.conn, input)
+    }
+
+    pub fn archive_goal(&self, goal_id: &str) -> Result<GoalRecord> {
+        archive_goal(&self.conn, goal_id)
+    }
+
+    pub fn delete_goal(&self, goal_id: &str) -> Result<()> {
+        delete_goal(&self.conn, goal_id)
+    }
+
     pub fn update_goal_dimension_value(
         &self,
         goal_id: &str,
@@ -430,6 +447,10 @@ impl Engine {
 
     pub fn goal_progress(&self, goal_id: &str) -> Result<GoalProgressReport> {
         goal_progress(&self.conn, goal_id)
+    }
+
+    pub fn refresh_goal_progress(&self, goal_id: &str) -> Result<GoalProgressReport> {
+        refresh_goal_progress(&self.conn, goal_id)
     }
 
     pub fn refresh_goal_milestones(&self, goal_id: &str) -> Result<Vec<GoalMilestoneRecord>> {

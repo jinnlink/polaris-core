@@ -429,6 +429,59 @@ impl Engine {
             .collect()
     }
 
+    pub fn goal_workspace(&self, goal_id: Option<&str>) -> Result<GoalWorkspaceSnapshot> {
+        let (goal, progress, scope, actions) = if let Some(goal_id) = goal_id {
+            let goal = crate::goals::goal_snapshot(&self.conn, goal_id)?
+                .ok_or_else(|| PolarisError::MissingGoal(goal_id.to_owned()))?;
+            if goal.status != "active" {
+                return Err(PolarisError::InvalidParameter {
+                    key: "goal.status".to_owned(),
+                    value: format!("{} cannot be selected", goal.status),
+                });
+            }
+            let progress = crate::goals::derive_goal_progress(&self.conn, goal_id)?;
+            let scope = goal.scope.clone();
+            let ranked = if scope.is_empty() {
+                self.ranked_task_candidates()?
+            } else {
+                let allowed = crate::goals::concept_ids_for_goal_scope(&self.conn, &scope)?
+                    .into_iter()
+                    .collect::<BTreeSet<_>>();
+                self.ranked_task_candidates_for_pack(None)?
+                    .into_iter()
+                    .filter(|candidate| allowed.contains(&candidate.id))
+                    .collect()
+            };
+            let strategy = self.batch_strategy()?;
+            let actions = ranked
+                .iter()
+                .take(3)
+                .map(|candidate| self.assignment_for_candidate(candidate, strategy))
+                .collect::<Result<Vec<_>>>()?;
+            (Some(goal), Some(progress), scope, actions)
+        } else {
+            (
+                None,
+                None,
+                crate::goals::GoalScope::default(),
+                self.get_interleaved_batch(3)?,
+            )
+        };
+        let generated_at =
+            self.conn
+                .query_row("SELECT strftime('%Y-%m-%dT%H:%M:%SZ','now')", [], |row| {
+                    row.get(0)
+                })?;
+        Ok(GoalWorkspaceSnapshot {
+            model_version: "goal-workspace-v1".to_owned(),
+            goal,
+            progress,
+            scope,
+            actions,
+            generated_at,
+        })
+    }
+
     fn adjust_expected_success(
         &self,
         selected: &mut [RankedTaskCandidate],

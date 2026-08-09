@@ -22,8 +22,8 @@
 
 ### 1.1 Schema 版本与迁移账本
 
-- SQLite schema 版本权威源 = `PRAGMA user_version`，当前由 `db::CURRENT_SCHEMA_VERSION` 定义（P16L 后为 8）。
-- `schema_migrations(version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)` 是迁移账本；version 1 为 baseline，version 2 为 `capture_queue`，version 3 为 `global_profile_governance`，version 4 为 `session_closeout`，version 5 为 `no_attempt_reason`，version 6 为 `teaching_turn_context`，version 7 为 `concept_generativity`，version 8 为 `material_layer`。
+- SQLite schema 版本权威源 = `PRAGMA user_version`，当前由 `db::CURRENT_SCHEMA_VERSION` 定义（P16F 后为 9）。
+- `schema_migrations(version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)` 是迁移账本；version 1 为 baseline，version 2 为 `capture_queue`，version 3 为 `global_profile_governance`，version 4 为 `session_closeout`，version 5 为 `no_attempt_reason`，version 6 为 `teaching_turn_context`，version 7 为 `concept_generativity`，version 8 为 `material_layer`，version 9 为 `goal_product_scope`。
 - `migrate()` 对空库和旧的未版本化库都必须幂等：先补齐当前 schema，再写 baseline 与后续迁移账本并设置 `user_version`。
 - 旧库已有业务行和用户手动 `meta` 参数不得被迁移覆盖；默认参数继续使用 `INSERT OR IGNORE`。
 - 若数据库 `user_version` 高于当前二进制支持版本，写路径必须拒绝打开并提示版本不支持，避免旧程序误写新库。
@@ -68,6 +68,25 @@ materials(id TEXT PRIMARY KEY, pack TEXT NOT NULL, kind TEXT NOT NULL,
        level TEXT NOT NULL, title TEXT NOT NULL, source_ref TEXT NOT NULL,
        created_at TEXT NOT NULL)
 
+goals(id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT,
+       created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+       status TEXT NOT NULL DEFAULT 'active', deadline TEXT, pace TEXT,
+       priority INTEGER NOT NULL DEFAULT 50, parent_goal_id TEXT,
+       completion_summary TEXT,
+       scope_json TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(scope_json)))
+
+goal_dimensions(id TEXT PRIMARY KEY, goal_id TEXT NOT NULL REFERENCES goals(id),
+       dimension_key TEXT NOT NULL, display_name TEXT NOT NULL, metric_type TEXT NOT NULL,
+       target_value REAL NOT NULL, target_label TEXT, weight REAL NOT NULL DEFAULT 1.0,
+       current_value REAL NOT NULL DEFAULT 0, current_updated_at TEXT,
+       query_sql TEXT, query_hint TEXT, UNIQUE(goal_id, dimension_key))
+
+goal_milestones(id TEXT PRIMARY KEY, goal_id TEXT NOT NULL REFERENCES goals(id),
+       title TEXT NOT NULL, description TEXT, trigger_type TEXT NOT NULL,
+       trigger_config TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
+       reached_at TEXT, sort_order INTEGER NOT NULL DEFAULT 0,
+       UNIQUE(goal_id, sort_order))
+
 edges(id TEXT PRIMARY KEY, src TEXT, dst TEXT,
        type TEXT,    -- prerequisite|confusion|component_of|instantiates|maps_to（P01 只消费 prerequisite）
        weight REAL DEFAULT 1.0, alignment_json TEXT,
@@ -91,6 +110,14 @@ behavior_events(id TEXT PRIMARY KEY, session_id TEXT, at TEXT,
 
 grade_queue(attempt_id TEXT PRIMARY KEY, enqueued_at TEXT, retry_count INTEGER DEFAULT 0, last_error TEXT)
 ```
+
+### P16F 目标产品契约
+
+- `scope_json` 稳定形状为 `{pack_ids, dimension_keys, concept_ids}`；三个数组均可空，非空值必须引用已安装 Pack、`meta('latent.dims')` 或概念。多个范围维度取交集；显式目标概念的 prerequisite 递归闭包始终加入候选，避免目标绕过前置门。
+- 空 scope 保持原有 active Pack 调度；选择非空目标 scope 只为该工作区临时筛选候选，不写 active Pack，不改变 scheduler 在范围内的排序、相图取证、MRT 或评分。
+- `GoalWorkspaceSnapshot` 稳定包含 `model_version / goal / progress / scope / actions / generated_at`；目标场景最多返回 3 个行动，候选充足时返回 2–3 个。无目标时 actions 与既有 `get_interleaved_batch(3)` 对齐。
+- 产品进度刷新只从 `mastery_states`、graded `attempts` 和 `evidence_items` 推导：`count|mastered_concepts`、`score|mastery_percent`、`mastery_mean`、`graded_attempts`、`evidence_count`。刷新只写 `goal_dimensions.current_value` 与里程碑状态，绝不写 mastery。
+- 生命周期稳定为 `active | paused | completed | abandoned | archived`；archive 保留目标/维度/里程碑，delete 显式删除三表内该目标数据。P04D 原有 Core API 和已有空 scope 行保持兼容。
 
 ### P16D Global Learner Profile 治理
 
