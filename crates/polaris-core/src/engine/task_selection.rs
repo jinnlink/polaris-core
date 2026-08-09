@@ -82,6 +82,23 @@ impl Engine {
         response_text: String,
         self_confidence: i32,
     ) -> Result<SubmitReceipt> {
+        self.submit_task_response_with_material(
+            session_id,
+            task_event_id,
+            response_text,
+            self_confidence,
+            None,
+        )
+    }
+
+    pub fn submit_task_response_with_material(
+        &mut self,
+        session_id: &str,
+        task_event_id: &str,
+        response_text: String,
+        self_confidence: i32,
+        material_id: Option<&str>,
+    ) -> Result<SubmitReceipt> {
         if !(1..=5).contains(&self_confidence) {
             return Err(PolarisError::InvalidTaskTurn(
                 "confidence must be in 1..=5".to_owned(),
@@ -111,16 +128,19 @@ impl Engine {
             let (latency_ms, hint_count) =
                 self.task_response_observation(session_id, task_event_id, &concept_id)?;
 
-            let receipt = self.submit(SubmitInput {
-                session_id: session_id.to_owned(),
-                concept_id: concept_id.clone(),
-                task_type,
-                prompt_text,
-                response_text,
-                self_confidence,
-                latency_ms,
-                hint_count,
-            })?;
+            let receipt = self.submit_with_material(
+                SubmitInput {
+                    session_id: session_id.to_owned(),
+                    concept_id: concept_id.clone(),
+                    task_type,
+                    prompt_text,
+                    response_text,
+                    self_confidence,
+                    latency_ms,
+                    hint_count,
+                },
+                material_id,
+            )?;
             crate::teaching_turn::link_task_teaching_turn_to_attempt(
                 &self.conn,
                 task_event_id,
@@ -162,6 +182,25 @@ impl Engine {
         response_text: String,
         self_confidence: i32,
         reason: &str,
+    ) -> Result<NoAttemptReceipt> {
+        self.submit_task_no_attempt_with_material(
+            session_id,
+            task_event_id,
+            response_text,
+            self_confidence,
+            reason,
+            None,
+        )
+    }
+
+    pub fn submit_task_no_attempt_with_material(
+        &mut self,
+        session_id: &str,
+        task_event_id: &str,
+        response_text: String,
+        self_confidence: i32,
+        reason: &str,
+        material_id: Option<&str>,
     ) -> Result<NoAttemptReceipt> {
         let reason =
             NoAttemptReason::parse(reason).ok_or_else(|| PolarisError::InvalidParameter {
@@ -205,6 +244,7 @@ impl Engine {
                     hint_count,
                 },
                 reason,
+                material_id,
             )?;
             crate::teaching_turn::link_task_teaching_turn_to_attempt(
                 &self.conn,

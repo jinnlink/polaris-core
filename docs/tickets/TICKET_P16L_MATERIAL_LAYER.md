@@ -1,6 +1,6 @@
 # P16L 材料层（Material Layer）
 
-状态：Queued；依赖 P05A0、P11A。P16D 提交前不得认领。本票为五票中唯一涉及数学接口的，建议最后认领。
+状态：已实现并通过验收，待提交；依赖 P05A0、P11A。P16D 提交前不得认领。本票为五票中唯一涉及数学接口的，建议最后认领。
 
 服务主命题：定位模糊 → 针对性补缺。
 
@@ -69,3 +69,51 @@ cargo test --workspace
 ## 回滚
 
 删除 `materials` 表与 `attempts.material_id`；移除 `materials.toml` 协议与 validator 分支；恢复协议文档；删除测试。schema 回退按 P11A 策略。
+
+## 开工记录（2026-08-09）
+
+- 范围：只建立材料身份、Pack 自定义 level 顺序、attempt 可选关联和表现聚合。
+- 禁区：不把材料接入 MIRT、预测、`U(c)`、mastery 或调度；不存正文、不推断级别、不建立覆盖图。
+- 验收：fmt、workspace clippy、模板 Pack validate、P16L 专项和 workspace 全测。
+- 预计修改面：schema v8、Pack DTO/validator/初始化、Core 提交与聚合、CLI/HTTP/MCP、协议文档、模板及迁移回归。
+
+## 交付记录（2026-08-09）
+
+### 变更清单
+
+- schema v8 新增 `materials`、`attempts.material_id` 与查询索引，迁移账本登记 `material_layer`；迁移单元失败时版本、账本和列变更整体回滚。
+- Pack 可选读取 `[levels].order` 与 `[[material]]`；未提供的既有 Pack 保持空材料层，未声明 level、重复/空 level 和材料必填字段为空均拒绝。
+- 初始化 Pack 保存材料与 level 声明顺序；材料 ID 跨 Pack 冲突拒绝，正文不入库，只保存 `source_ref`。
+- Core、CLI、HTTP、MCP 提交入口支持可选 `material_id`；未知 ID 在 session、evidence、attempt 或 mastery 写入前拒绝，旧入口继续走 NULL 路径。
+- 新增按材料、按 level 的只读摘要，输出 attempt 数、平均 final 分数和首次成功率；CLI、HTTP、MCP 共用同一 Core DTO，level 严格按 Pack 声明顺序。
+- API 合约、课程接入协议、数据模型与模板 Pack 已同步；专项覆盖旧 Pack 兼容、迁移中断、零部分写入、level 保序和数学/调度反向不变。
+
+### 验收实跑
+
+```text
+> CARGO_TARGET_DIR=target_p16l_acceptance CARGO_BUILD_JOBS=1 cargo fmt --check
+exit 0
+
+> CARGO_TARGET_DIR=target_p16l_acceptance CARGO_BUILD_JOBS=1 cargo clippy --workspace --all-targets -- -D warnings
+Finished `dev` profile ...
+exit 0
+
+> CARGO_TARGET_DIR=target_p16l_acceptance CARGO_BUILD_JOBS=1 cargo run -p polaris-cli -- pack validate packs/template
+pack ok: concepts=5 prerequisites=4 misconceptions=3
+exit 0
+
+> CARGO_TARGET_DIR=target_p16l_acceptance CARGO_BUILD_JOBS=1 cargo test -p polaris-core --test p16l_material_layer
+running 5 tests
+test result: ok. 5 passed; 0 failed
+
+> CARGO_TARGET_DIR=target_p16l_acceptance CARGO_BUILD_JOBS=1 cargo test --workspace --quiet
+polaris-cli: 118 passed; polaris-core: 81 passed
+p16l_material_layer: 5 passed
+all discovered suites: exit 0
+```
+
+- 说明：默认 `target` 首次并行全测因 Windows 系统资源不足触发 rustc OOM/元数据损坏，不是测试断言失败；最终全部验收均在隔离 target、单编译任务下实跑通过。
+
+### 回滚
+
+- 执行 `git revert <P16L-commit-sha>` 移除 schema、Pack、提交关联与聚合出口；已升级真实库不做破坏性降级，使用升级前备份恢复，旧二进制按 P11A 拒绝写入 schema v8。

@@ -111,6 +111,14 @@ enum Commands {
         session: String,
         #[arg(long)]
         no_attempt_reason: Option<String>,
+        #[arg(long)]
+        material_id: Option<String>,
+    },
+    Materials {
+        #[arg(long)]
+        pack: Option<String>,
+        #[arg(long)]
+        json: bool,
     },
     Hint {
         #[arg(long)]
@@ -869,6 +877,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     prompt,
                     session,
                     no_attempt_reason,
+                    material_id,
                 } => {
                     let observation =
                         read_behavior_observation_now(engine.conn(), &session, &concept)?;
@@ -883,18 +892,58 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                         hint_count: observation.hint_count,
                     };
                     if let Some(reason) = no_attempt_reason {
-                        let receipt = engine.submit_no_attempt(input, &reason)?;
+                        let receipt = engine.submit_no_attempt_with_material(
+                            input,
+                            &reason,
+                            material_id.as_deref(),
+                        )?;
                         println!(
                             "attempt: {} no_attempt_reason={}",
                             receipt.attempt_id,
                             receipt.no_attempt_reason.as_str()
                         );
                     } else {
-                        let receipt = engine.submit(input)?;
+                        let receipt = engine.submit_with_material(input, material_id.as_deref())?;
                         println!(
                             "attempt: {} provisional_score={:.3} degraded={}",
                             receipt.attempt_id, receipt.provisional_score, receipt.degraded
                         );
+                    }
+                }
+                Commands::Materials { pack, json } => {
+                    let report = engine.material_performance(pack.as_deref())?;
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&report)?);
+                    } else {
+                        for item in report.by_material {
+                            println!(
+                                "material: {} level={} attempts={} average_final_score={} first_success_rate={}",
+                                item.material_id,
+                                item.level,
+                                item.attempt_count,
+                                item.average_final_score
+                                    .map(|value| format!("{value:.3}"))
+                                    .unwrap_or_else(|| "n/a".to_owned()),
+                                item.first_success_rate
+                                    .map(|value| format!("{value:.3}"))
+                                    .unwrap_or_else(|| "n/a".to_owned()),
+                            );
+                        }
+                        for item in report.by_level {
+                            println!(
+                                "level: {}:{} order={} attempts={} average_final_score={} first_success_rate={}",
+                                item.pack,
+                                item.level,
+                                item.level_order,
+                                item.attempt_count,
+                                item.average_final_score
+                                    .map(|value| format!("{value:.3}"))
+                                    .unwrap_or_else(|| "n/a".to_owned()),
+                                item.first_success_rate
+                                    .map(|value| format!("{value:.3}"))
+                                    .unwrap_or_else(|| "n/a".to_owned()),
+                            );
+                        }
                     }
                 }
                 Commands::Hint { concept, session } => {
@@ -2550,6 +2599,39 @@ mod tests {
     }
 
     #[test]
+    fn p16l_cli_parses_material_submit_and_summary() {
+        let submit = Cli::try_parse_from([
+            "polaris",
+            "submit",
+            "--concept",
+            "ownership",
+            "--response",
+            "Ownership moves values.",
+            "--confidence",
+            "4",
+            "--material-id",
+            "rust-book-ownership",
+        ])
+        .unwrap();
+        assert!(matches!(
+            submit.command,
+            Commands::Submit {
+                material_id: Some(ref value),
+                ..
+            } if value == "rust-book-ownership"
+        ));
+        let summary =
+            Cli::try_parse_from(["polaris", "materials", "--pack", "rust", "--json"]).unwrap();
+        assert!(matches!(
+            summary.command,
+            Commands::Materials {
+                pack: Some(ref value),
+                json: true,
+            } if value == "rust"
+        ));
+    }
+
+    #[test]
     fn pack_list_flags_parse() {
         let cli = Cli::try_parse_from(vec!["polaris", "pack", "list", "--json"]).unwrap();
 
@@ -3779,7 +3861,7 @@ mod tests {
         cleanup_db_path(&db_path);
 
         assert_eq!(user_version, polaris_core::db::CURRENT_SCHEMA_VERSION);
-        assert_eq!(migration_count, 7);
+        assert_eq!(migration_count, 8);
         assert_eq!(active_pack, "rust");
     }
 
@@ -4054,7 +4136,7 @@ mod tests {
         assert!(report.ok);
         let text = doctor_report_text(&report);
         assert!(text.contains("schema_version="));
-        assert!(text.contains("migration_count=7"));
+        assert!(text.contains("migration_count=8"));
         assert!(text.contains("integrity=ok"));
         assert!(text.contains("replay_checked=0"));
 

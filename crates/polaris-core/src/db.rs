@@ -5,7 +5,7 @@ use rusqlite::{Connection, OpenFlags};
 use crate::config::default_registry;
 use crate::error::{PolarisError, Result};
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 7;
+pub const CURRENT_SCHEMA_VERSION: i64 = 8;
 
 const BASELINE_SCHEMA_VERSION: i64 = 1;
 const BASELINE_MIGRATION_NAME: &str = "baseline_current_schema";
@@ -21,6 +21,8 @@ const TEACHING_TURN_SCHEMA_VERSION: i64 = 6;
 const TEACHING_TURN_MIGRATION_NAME: &str = "teaching_turn_context";
 const GENERATIVITY_SCHEMA_VERSION: i64 = 7;
 const GENERATIVITY_MIGRATION_NAME: &str = "concept_generativity";
+const MATERIAL_LAYER_SCHEMA_VERSION: i64 = 8;
+const MATERIAL_LAYER_MIGRATION_NAME: &str = "material_layer";
 
 pub fn open_database(path: impl AsRef<Path>) -> Result<Connection> {
     let path = path.as_ref();
@@ -425,6 +427,7 @@ pub fn migrate(conn: &Connection) -> Result<()> {
     migrate_no_attempt_schema(conn)?;
     migrate_teaching_turn_schema(conn)?;
     migrate_generativity_schema(conn)?;
+    migrate_material_layer_schema(conn)?;
 
     Ok(())
 }
@@ -620,6 +623,41 @@ fn migrate_generativity_schema(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+fn migrate_material_layer_schema(conn: &Connection) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    tx.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS materials(
+            id TEXT PRIMARY KEY,
+            pack TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            level TEXT NOT NULL,
+            title TEXT NOT NULL,
+            source_ref TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_materials_pack_level
+            ON materials(pack, level, id);
+        "#,
+    )?;
+    ensure_column(&tx, "attempts", "material_id", "TEXT")?;
+    tx.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_attempts_material_created
+         ON attempts(material_id, created_at, id);",
+    )?;
+    record_schema_migration(
+        &tx,
+        MATERIAL_LAYER_SCHEMA_VERSION,
+        MATERIAL_LAYER_MIGRATION_NAME,
+    )?;
+    if schema_version(&tx)? < MATERIAL_LAYER_SCHEMA_VERSION {
+        set_schema_version(&tx, MATERIAL_LAYER_SCHEMA_VERSION)?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
 pub fn schema_version(conn: &Connection) -> Result<i64> {
     conn.pragma_query_value(None, "user_version", |row| row.get(0))
         .map_err(Into::into)
@@ -809,7 +847,7 @@ mod tests {
             })
             .unwrap();
         assert_eq!(p_init, "0.33");
-        assert_eq!(first_count, 7);
+        assert_eq!(first_count, 8);
         assert_eq!(second_count, first_count);
     }
 
@@ -931,7 +969,7 @@ mod tests {
 
         assert_eq!(user_version, CURRENT_SCHEMA_VERSION);
         assert_eq!(p_init, "0.33");
-        assert_eq!(migration_count, 7);
+        assert_eq!(migration_count, 8);
         assert_eq!(journal_mode.to_lowercase(), "wal");
     }
 

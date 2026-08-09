@@ -87,9 +87,11 @@ impl HttpApi {
             ("POST", "/next") => self.next(body),
             ("POST", "/teaching-turn/explanation") => self.teaching_explanation(body),
             ("POST", "/evidence") => self.evidence(body),
+            ("POST", "/materials/performance") => self.material_performance(body),
             ("POST", "/feedback") => self.feedback(body),
             ("GET", "/next")
             | ("GET", "/evidence")
+            | ("GET", "/materials/performance")
             | ("GET", "/feedback")
             | (_, "/inbox")
             | (_, "/inbox/action")
@@ -474,6 +476,7 @@ impl HttpApi {
             Ok(reason) => reason,
             Err(error) => return Ok(response(400, json!({"error": error}))),
         };
+        let material_id = optional_str(&arguments, "material_id");
         let observation =
             crate::read_behavior_observation_now(self.engine.conn(), session, concept)?;
         let input = SubmitInput {
@@ -488,7 +491,10 @@ impl HttpApi {
         };
 
         if let Some(reason) = no_attempt_reason {
-            return match self.engine.submit_no_attempt(input, reason) {
+            return match self
+                .engine
+                .submit_no_attempt_with_material(input, reason, material_id)
+            {
                 Ok(receipt) => Ok(response(
                     200,
                     json!({
@@ -501,7 +507,9 @@ impl HttpApi {
                 Err(error) => Ok(response(400, json!({"error": error.to_string()}))),
             };
         }
-        let receipt = self.engine.submit_provisional(input)?;
+        let receipt = self
+            .engine
+            .submit_provisional_with_material(input, material_id)?;
 
         Ok(response(
             200,
@@ -512,6 +520,20 @@ impl HttpApi {
                 "no_attempt_reason": null,
             }),
         ))
+    }
+
+    fn material_performance(&self, body: &str) -> Result<HttpResponse, Box<dyn std::error::Error>> {
+        let arguments = match json_body(body) {
+            Ok(arguments) => arguments,
+            Err(error) => return Ok(response(400, json!({"error": error}))),
+        };
+        match self
+            .engine
+            .material_performance(optional_str(&arguments, "pack"))
+        {
+            Ok(report) => Ok(response(200, serde_json::to_value(report)?)),
+            Err(error) => Ok(response(400, json!({"error": error.to_string()}))),
+        }
     }
 
     fn feedback(&mut self, body: &str) -> Result<HttpResponse, Box<dyn std::error::Error>> {
@@ -943,6 +965,7 @@ mod tests {
             "POST /capture",
             "POST /next",
             "POST /evidence",
+            "POST /materials/performance",
             "POST /feedback",
             "## 兼容性规则",
             "## 废弃策略",
@@ -2013,6 +2036,57 @@ mod tests {
 
         assert!(text.starts_with("HTTP/1.1 400 Bad Request"), "{text}");
         assert!(text.contains("incomplete request body"), "{text}");
+    }
+
+    #[test]
+    fn p16l_http_accepts_material_id_and_returns_read_only_summary() {
+        let mut api = test_api();
+        api.engine()
+            .conn()
+            .execute_batch(
+                r#"
+                INSERT INTO materials(id, pack, kind, level, title, source_ref, created_at)
+                VALUES ('rust-book-ownership', 'rust', 'chapter', 'intro', 'Ownership',
+                        'book://rust/ownership', '2026-01-01T00:00:00Z');
+                INSERT OR REPLACE INTO meta(key, value)
+                VALUES ('pack.rust.material_levels', '["intro"]');
+                "#,
+            )
+            .unwrap();
+        let submit = api
+            .handle(
+                "POST",
+                "/evidence",
+                &json!({
+                    "session": "http-material",
+                    "concept_id": "ownership",
+                    "response": "Ownership controls the responsible binding.",
+                    "confidence": 4,
+                    "material_id": "rust-book-ownership"
+                })
+                .to_string(),
+            )
+            .unwrap();
+        assert_eq!(submit.status, 200);
+        let stored: String = api
+            .engine()
+            .conn()
+            .query_row(
+                "SELECT material_id FROM attempts WHERE id=?1",
+                [submit.body["attempt_id"].as_str().unwrap()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored, "rust-book-ownership");
+        let summary = api
+            .handle(
+                "POST",
+                "/materials/performance",
+                &json!({"pack": "rust"}).to_string(),
+            )
+            .unwrap();
+        assert_eq!(summary.status, 200);
+        assert_eq!(summary.body["by_level"][0]["level"], "intro");
     }
 
     fn test_api() -> HttpApi {

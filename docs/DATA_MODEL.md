@@ -22,8 +22,8 @@
 
 ### 1.1 Schema 版本与迁移账本
 
-- SQLite schema 版本权威源 = `PRAGMA user_version`，当前由 `db::CURRENT_SCHEMA_VERSION` 定义（P16K 后为 7）。
-- `schema_migrations(version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)` 是迁移账本；version 1 为 baseline，version 2 为 `capture_queue`，version 3 为 `global_profile_governance`，version 4 为 `session_closeout`，version 5 为 `no_attempt_reason`，version 6 为 `teaching_turn_context`，version 7 为 `concept_generativity`。
+- SQLite schema 版本权威源 = `PRAGMA user_version`，当前由 `db::CURRENT_SCHEMA_VERSION` 定义（P16L 后为 8）。
+- `schema_migrations(version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)` 是迁移账本；version 1 为 baseline，version 2 为 `capture_queue`，version 3 为 `global_profile_governance`，version 4 为 `session_closeout`，version 5 为 `no_attempt_reason`，version 6 为 `teaching_turn_context`，version 7 为 `concept_generativity`，version 8 为 `material_layer`。
 - `migrate()` 对空库和旧的未版本化库都必须幂等：先补齐当前 schema，再写 baseline 与后续迁移账本并设置 `user_version`。
 - 旧库已有业务行和用户手动 `meta` 参数不得被迁移覆盖；默认参数继续使用 `INSERT OR IGNORE`。
 - 若数据库 `user_version` 高于当前二进制支持版本，写路径必须拒绝打开并提示版本不支持，避免旧程序误写新库。
@@ -52,6 +52,7 @@ attempts(id TEXT PRIMARY KEY, session_id TEXT, concept_id TEXT NOT NULL, task_ty
        final_score REAL, depth TEXT,       -- recall|explain|apply|transfer
        misconception_id TEXT, grader_json TEXT, rating TEXT,
        no_attempt_reason TEXT,              -- NULL|not_understood_prompt|no_recall|out_of_time|skipped
+       material_id TEXT,                    -- 可选材料身份；只记录，不进入数学
        theta_version INTEGER,              -- P03 填；P01 留 NULL
        theta_scope TEXT DEFAULT 'shared',  -- P08A: shared | pack:<pack_id>；旧 NULL 视为 shared
        created_at TEXT, graded_at TEXT)
@@ -62,6 +63,10 @@ concepts(id TEXT PRIMARY KEY, pack TEXT, name TEXT, kind TEXT DEFAULT 'concept',
        generativity TEXT NOT NULL DEFAULT 'unknown', -- generative|item|unknown；只供教学处方
        b_difficulty REAL DEFAULT 0, q BLOB, embedding BLOB,   -- P01 留 NULL
        provenance TEXT, evidence_ids_json TEXT, created_at TEXT)
+
+materials(id TEXT PRIMARY KEY, pack TEXT NOT NULL, kind TEXT NOT NULL,
+       level TEXT NOT NULL, title TEXT NOT NULL, source_ref TEXT NOT NULL,
+       created_at TEXT NOT NULL)
 
 edges(id TEXT PRIMARY KEY, src TEXT, dst TEXT,
        type TEXT,    -- prerequisite|confusion|component_of|instantiates|maps_to（P01 只消费 prerequisite）
@@ -163,6 +168,14 @@ teaching_turns(
 
 - v7 为 `concepts` 增加非空 `generativity`，稳定枚举为 `generative | item | unknown`；旧行与未声明 Pack 均迁移为 `unknown`。
 - 该字段只允许 `teaching_instruction` 消费：`generative` 优先给未教过的同族实例做 transfer 推断；`item` 和 `unknown` 保持既有处方。不得进入调度、`U(c)`、mastery、相图或难度公式。
+
+### P16L 材料层
+
+- v8 新增 `materials`，并为 `attempts` 增加可空 `material_id`；DDL、索引、迁移台账与 `user_version` 在同一迁移事务内提交。
+- Pack 可选 `materials.toml`；level 标签顺序以 `meta('pack.<id>.material_levels')` 中保存的声明顺序为准，内核不解释标签语义。
+- 未知 `material_id` 必须在 sessions、evidence、attempt 或 mastery 写入前拒绝。NULL 继续走原提交与评分路径。
+- 只读摘要按材料和 level 输出 attempt 数、平均 `final_score`、首次成功率；首次成功率分母是各聚合单元中每个概念的首条有 final 分数 attempt，成功阈值为 `final_score >= 0.75`。
+- 本层不得进入 `d_t`、MIRT、`p_known`、θ、预测成功率、`U(c)` 或 `next_task`。材料数学接入必须另票通过留出 logloss 验证门。
 
 P08A pack 状态放在 `meta`：`active_pack` 表示当前 pack；`pack.<id>.title` 保存显示名；`pack.<id>.theta_mode` 取 `shared|isolated`，默认 `shared`。
 

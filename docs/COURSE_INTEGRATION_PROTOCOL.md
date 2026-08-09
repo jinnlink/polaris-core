@@ -15,10 +15,11 @@ packs/<domain>/
   misconceptions.toml
   rubric.md
   moves.toml
+  materials.toml       # 可选；材料身份与 pack 自定义 level 顺序
   ingest.toml          # 可选，v1 预留；当前 validator 不强制
 ```
 
-当前 `polaris pack validate <dir>` 强制检查前 5 个文件。`ingest.toml` 是协议预留文件，用于描述外部证据如何映射到 `evidence_items` 和 `attempts`；当前内核尚未消费它，因此不能把它当成已启用的 ingest 适配器。
+当前 `polaris pack validate <dir>` 强制检查前 5 个文件。`materials.toml` 可选但一旦存在就会完整校验并在初始化时入库；`ingest.toml` 是协议预留文件，用于描述外部证据如何映射到 `evidence_items` 和 `attempts`，当前内核尚未消费它。
 
 ## 总体边界
 
@@ -175,6 +176,35 @@ task_type = "apply"
 template = "给出一个使用 {concept} 的最小例子，并说明边界条件。"
 ```
 
+## `materials.toml`（可选）
+
+材料层只回答“学习者拿什么练”，不解释 level 的领域含义，也不存材料正文。`[levels].order` 是唯一顺序权威；`[[material]].level` 必须引用其中一个标签。材料 ID 在数据库内全局稳定，`source_ref` 只保存课程 URI、文件定位或外部引用。
+
+```toml
+[levels]
+order = ["starter", "practice", "reference"]
+
+[[material]]
+id = "course_intro"
+kind = "lesson"
+level = "starter"
+title = "入门讲义"
+source_ref = "course://example/intro"
+```
+
+| 字段 | 必填 | 说明 |
+|---|---:|---|
+| `levels.order` | 是 | 非空、无重复的 level 标签数组；数组顺序即聚合展示顺序。 |
+| `material.id` | 是 | 稳定材料 ID。提交时可作为 `material_id` 引用。 |
+| `material.kind` | 是 | pack 自定义材料类别，内核只存储。 |
+| `material.level` | 是 | 必须出现在 `levels.order`。 |
+| `material.title` | 是 | 人类可读标题。 |
+| `material.source_ref` | 是 | 材料引用；不得在此存正文。 |
+
+CLI `submit --material-id <id>`、HTTP `POST /evidence` 和 MCP `submit_evidence` / `submit_task_response` 都接受可选 `material_id`；未知 ID 在任何学习事实写入前拒绝。只读聚合可通过 `polaris materials [--pack <id>] [--json]`、HTTP `POST /materials/performance` 或 MCP `get_material_performance` 获取。首次成功定义为每个“材料或 level × 概念”的首条有 final 分数记录中 `final_score >= 0.75` 的比例。
+
+材料层在 P16L 只记录与聚合：不得改变 `p_known`、θ、预测成功率、任务选择或 `U(c)`。
+
 ## `ingest.toml`（预留）
 
 `ingest.toml` 用于描述外部课程材料如何进入事件源。v1 不强制 pack 提供该文件；P05C 起，独立适配器可以读取它并向 stdout 输出标准 JSON Lines，再由 `polaris ingest --adapter-command <cmd>` 导入。core crate 仍不直接消费域特定 ingest 逻辑。
@@ -257,6 +287,7 @@ strict-citation 要求评分或报告引用 `{evidence_id, quote}`，其中 quot
 - 所有 misconception 的 `concept_id` 都引用已声明 concept。
 - `moves.toml` 至少包含 1 条 move，且归一化后的 `id`、`task_type`、`template` 非空。
 - `rubric.md` 非空。
+- 若存在 `materials.toml`，`levels.order` 不得含空值或重复值，材料必填字段非空，且每个 `material.level` 均已声明。
 - 校验通过后输出概念数、prerequisite 边数和误解数。
 
 当前 validator 不检查：
@@ -288,9 +319,10 @@ v1 的兼容原则：
 4. 收集常见错误，写入 `misconceptions.toml`，并尽量标注 `pattern`。
 5. 写 `rubric.md`，明确正确性、深度、边界和评分证据要求。
 6. 写 `moves.toml`，优先覆盖 7 个 Bloom move。
-7. 可选写 `ingest.toml`，描述课程平台或适配器如何生成 evidence 和 attempt。
-8. 运行 `cargo run -p polaris-cli -- pack validate packs/<domain>`。
-9. 用 `Engine::init_pack` 或 CLI 初始化到测试数据库，确认 `next_task` 返回该 pack 的概念。
+7. 可选写 `materials.toml`，声明材料身份与 level 顺序。
+8. 可选写 `ingest.toml`，描述课程平台或适配器如何生成 evidence 和 attempt。
+9. 运行 `cargo run -p polaris-cli -- pack validate packs/<domain>`。
+10. 用 `Engine::init_pack` 或 CLI 初始化到测试数据库，确认 `next_task` 返回该 pack 的概念。
 
 ## 常见报错
 

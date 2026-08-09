@@ -90,6 +90,7 @@ impl McpSession {
                 "get_learner_mirror" => self.get_learner_mirror(),
                 "submit_evidence" => self.submit_evidence(arguments),
                 "submit_task_response" => self.submit_task_response(arguments),
+                "get_material_performance" => self.get_material_performance(arguments),
                 "get_teaching_instruction" => self.get_teaching_instruction(arguments),
                 "record_teaching_explanation" => self.record_teaching_explanation(arguments),
                 other => Err(format!("unknown tool: {other}")),
@@ -193,13 +194,21 @@ impl McpSession {
         let response = required_str(arguments, "response")?.to_owned();
         let confidence = required_i64(arguments, "confidence")?;
         let no_attempt_reason = optional_ai_profile_str(arguments, "no_attempt_reason")?;
+        let material_id = optional_str(arguments, "material_id");
         if !(1..=5).contains(&confidence) {
             return Err("confidence must be in 1..=5".to_owned());
         }
         if let Some(reason) = no_attempt_reason {
             let receipt = self
                 .engine
-                .submit_task_no_attempt(session, task_event_id, response, confidence as i32, reason)
+                .submit_task_no_attempt_with_material(
+                    session,
+                    task_event_id,
+                    response,
+                    confidence as i32,
+                    reason,
+                    material_id,
+                )
                 .map_err(|error| error.to_string())?;
             return Ok(json!({
                 "task_event_id": task_event_id,
@@ -211,7 +220,13 @@ impl McpSession {
         }
         let receipt = self
             .engine
-            .submit_task_response(session, task_event_id, response, confidence as i32)
+            .submit_task_response_with_material(
+                session,
+                task_event_id,
+                response,
+                confidence as i32,
+                material_id,
+            )
             .map_err(|error| error.to_string())?;
 
         Ok(json!({
@@ -229,6 +244,7 @@ impl McpSession {
         let response = required_str(arguments, "response")?.to_owned();
         let confidence = required_i64(arguments, "confidence")?;
         let no_attempt_reason = optional_ai_profile_str(arguments, "no_attempt_reason")?;
+        let material_id = optional_str(arguments, "material_id");
         if !(1..=5).contains(&confidence) {
             return Err("confidence must be in 1..=5".to_owned());
         }
@@ -255,7 +271,7 @@ impl McpSession {
         if let Some(reason) = no_attempt_reason {
             let receipt = self
                 .engine
-                .submit_no_attempt(input, reason)
+                .submit_no_attempt_with_material(input, reason, material_id)
                 .map_err(|error| error.to_string())?;
             return Ok(json!({
                 "attempt_id": receipt.attempt_id,
@@ -266,7 +282,7 @@ impl McpSession {
         }
         let receipt = self
             .engine
-            .submit(input)
+            .submit_with_material(input, material_id)
             .map_err(|error| error.to_string())?;
 
         Ok(json!({
@@ -275,6 +291,15 @@ impl McpSession {
             "degraded": receipt.degraded,
             "no_attempt_reason": null,
         }))
+    }
+
+    fn get_material_performance(&self, arguments: &Value) -> Result<Value, String> {
+        serde_json::to_value(
+            self.engine
+                .material_performance(optional_str(arguments, "pack"))
+                .map_err(|error| error.to_string())?,
+        )
+        .map_err(|error| error.to_string())
     }
 
     fn get_interleaved_batch(&self, arguments: &Value) -> Result<Value, String> {
@@ -966,6 +991,7 @@ fn tool_definitions() -> Value {
                     "confidence": {"type": "integer", "minimum": 1, "maximum": 5, "description": "Learner self-confidence collected before feedback."},
                     "task_type": {"type": "string", "description": "Task type. Defaults to recall."},
                     "prompt": {"type": "string", "description": "Prompt shown to the learner. Defaults to empty."},
+                    "material_id": {"type": "string", "description": "Optional material id declared by the initialized pack."},
                     "no_attempt_reason": {"type": "string", "enum": ["not_understood_prompt", "no_recall", "out_of_time", "skipped"], "description": "Explicit reason the learner did not answer. Such rows never enter mastery or scheduling evidence."}
                 },
                 "required": ["session", "response", "confidence"],
@@ -985,9 +1011,20 @@ fn tool_definitions() -> Value {
                     "task_event_id": {"type": "string", "description": "Task receipt returned by get_next_task."},
                     "response": {"type": "string", "description": "Learner's own response to the issued task."},
                     "confidence": {"type": "integer", "minimum": 1, "maximum": 5, "description": "Learner self-confidence collected before feedback."},
+                    "material_id": {"type": "string", "description": "Optional material id declared by the initialized pack."},
                     "no_attempt_reason": {"type": "string", "enum": ["not_understood_prompt", "no_recall", "out_of_time", "skipped"], "description": "Explicit reason the learner did not answer. The issued task is consumed without mastery updates."}
                 },
                 "required": ["session", "task_event_id", "response", "confidence"]
+            }
+        },
+        {
+            "name": "get_material_performance",
+            "description": "Return read-only attempt count, average final score, and first-success rate grouped by material and by pack-declared level order. This does not change mastery, prediction, or scheduling.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "pack": {"type": "string", "description": "Optional pack id filter."}
+                }
             }
         },
         {
@@ -1283,6 +1320,7 @@ mod tests {
                 "get_learner_mirror",
                 "submit_evidence",
                 "submit_task_response",
+                "get_material_performance",
                 "get_teaching_instruction",
                 "record_teaching_explanation",
             ],
@@ -1335,6 +1373,7 @@ mod tests {
             "get_ai_interaction_profile",
             "update_ai_interaction_profile",
             "get_learner_mirror",
+            "get_material_performance",
         ] {
             assert!(
                 API_CONTRACT_DOC.contains(required),
@@ -1442,6 +1481,7 @@ mod tests {
                 "update_ai_interaction_profile",
                 "get_learner_mirror",
                 "submit_evidence",
+                "get_material_performance",
                 "get_teaching_instruction",
                 "record_teaching_explanation",
             ],
@@ -2937,6 +2977,51 @@ mod tests {
         let decoded: Value = serde_json::from_slice(&outgoing).unwrap();
         assert_eq!(decoded["id"], 8);
         assert!(decoded["result"]["tools"].is_array());
+    }
+
+    #[test]
+    fn p16l_mcp_accepts_material_id_and_returns_read_only_summary() {
+        let mut session = test_session();
+        session
+            .engine()
+            .conn()
+            .execute_batch(
+                r#"
+                INSERT INTO materials(id, pack, kind, level, title, source_ref, created_at)
+                VALUES ('rust-book-ownership', 'rust', 'chapter', 'intro', 'Ownership',
+                        'book://rust/ownership', '2026-01-01T00:00:00Z');
+                INSERT OR REPLACE INTO meta(key, value)
+                VALUES ('pack.rust.material_levels', '["intro"]');
+                "#,
+            )
+            .unwrap();
+        let submit = call_tool_json(
+            &mut session,
+            "submit_evidence",
+            json!({
+                "session": "mcp-material",
+                "concept_id": "ownership",
+                "response": "Ownership controls the responsible binding.",
+                "confidence": 4,
+                "material_id": "rust-book-ownership"
+            }),
+        );
+        let stored: String = session
+            .engine()
+            .conn()
+            .query_row(
+                "SELECT material_id FROM attempts WHERE id=?1",
+                [submit["attempt_id"].as_str().unwrap()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored, "rust-book-ownership");
+        let summary = call_tool_json(
+            &mut session,
+            "get_material_performance",
+            json!({"pack": "rust"}),
+        );
+        assert_eq!(summary["by_level"][0]["level"], "intro");
     }
 
     fn test_session() -> McpSession {

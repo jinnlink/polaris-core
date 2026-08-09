@@ -102,4 +102,4 @@ all discovered suites: exit 0
 
 ### 回滚
 
-- 执行 `git revert <P16K-commit-sha>` 移除 schema/Pack/教学分支；已升级真实库不做破坏性降级，使用升级前备份恢复，旧二进制按 P11A 拒绝写入 schema v7。
+- 执行 `git revert f398e51` 移除 schema/Pack/教学分支；已升级真实库不做破坏性降级，使用升级前备份恢复，旧二进制按 P11A 拒绝写入 schema v7。

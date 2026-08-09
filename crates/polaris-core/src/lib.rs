@@ -23,6 +23,7 @@ pub mod learner_feedback;
 pub mod learner_inbox;
 pub mod learner_mirror;
 pub mod mastery;
+pub mod material;
 pub mod mental_fit;
 pub mod mental_state;
 pub mod mirt;

@@ -54,6 +54,7 @@ use crate::learner_inbox::{
 };
 use crate::learner_mirror::{learner_mirror_snapshot, LearnerMirrorSnapshot};
 use crate::mastery::{fold_all, fold_attempt, AttemptObservation, MasteryParams, MasteryState};
+use crate::material::{material_performance, MaterialPerformanceReport};
 use crate::mental_fit::{run_mental_dynamics_fit, transitions_from_meta, MentalFitSummary};
 use crate::mental_state::{
     estimate_hazard, forward_filter_with_transitions, prior_transitions, HazardInputs,
@@ -711,6 +712,13 @@ impl Engine {
                 serde_json::to_string(&pack.moves)?
             ],
         )?;
+        tx.execute(
+            "INSERT OR REPLACE INTO meta(key, value) VALUES (?1, ?2)",
+            params![
+                format!("pack.{}.material_levels", pack.id),
+                serde_json::to_string(&pack.material_levels)?
+            ],
+        )?;
 
         for concept in &pack.concepts {
             tx.execute(
@@ -744,8 +752,50 @@ impl Engine {
             )?;
         }
 
+        for material in &pack.materials {
+            let existing_pack: Option<String> = tx
+                .query_row(
+                    "SELECT pack FROM materials WHERE id=?1",
+                    [material.id.as_str()],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if let Some(existing_pack) = existing_pack {
+                if existing_pack != pack.id {
+                    return Err(PolarisError::InvalidParameter {
+                        key: "pack.material_id".to_owned(),
+                        value: format!(
+                            "material id collision: {} already belongs to {}",
+                            material.id, existing_pack
+                        ),
+                    });
+                }
+            }
+            tx.execute(
+                "INSERT OR REPLACE INTO materials(
+                     id, pack, kind, level, title, source_ref, created_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6,
+                           strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
+                params![
+                    material.id,
+                    pack.id,
+                    material.kind,
+                    material.level,
+                    material.title,
+                    material.source_ref,
+                ],
+            )?;
+        }
+
         tx.commit()?;
         ensure_theta(&self.conn)?;
         Ok(())
+    }
+
+    pub fn material_performance(
+        &self,
+        pack_filter: Option<&str>,
+    ) -> Result<MaterialPerformanceReport> {
+        material_performance(&self.conn, pack_filter)
     }
 }

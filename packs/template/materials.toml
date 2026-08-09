@@ -1,0 +1,23 @@
+[levels]
+order = ["starter", "practice", "reference"]
+
+[[material]]
+id = "template_intro"
+kind = "lesson"
+level = "starter"
+title = "入门讲义"
+source_ref = "course://template/intro"
+
+[[material]]
+id = "template_exercises"
+kind = "exercise_set"
+level = "practice"
+title = "练习集"
+source_ref = "course://template/exercises"
+
+[[material]]
+id = "template_reference"
+kind = "reference"
+level = "reference"
+title = "参考资料"
+source_ref = "course://template/reference"

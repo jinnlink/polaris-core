@@ -6,13 +6,22 @@ impl Engine {
         input: SubmitInput,
         reason: &str,
     ) -> Result<NoAttemptReceipt> {
+        self.submit_no_attempt_with_material(input, reason, None)
+    }
+
+    pub fn submit_no_attempt_with_material(
+        &mut self,
+        input: SubmitInput,
+        reason: &str,
+        material_id: Option<&str>,
+    ) -> Result<NoAttemptReceipt> {
         let reason =
             NoAttemptReason::parse(reason).ok_or_else(|| PolarisError::InvalidParameter {
                 key: "no_attempt_reason".to_owned(),
                 value: reason.to_owned(),
             })?;
         self.conn.execute_batch("BEGIN IMMEDIATE")?;
-        let result = self.record_no_attempt_submission(input, reason);
+        let result = self.record_no_attempt_submission(input, reason, material_id);
         match result {
             Ok(receipt) => {
                 self.conn.execute_batch("COMMIT")?;
@@ -29,7 +38,9 @@ impl Engine {
         &mut self,
         input: SubmitInput,
         reason: NoAttemptReason,
+        material_id: Option<&str>,
     ) -> Result<NoAttemptReceipt> {
+        self.validate_material_id(material_id)?;
         self.conn.execute(
             "INSERT OR IGNORE INTO sessions(id, started_at, context_json)
                  VALUES (?1, strftime('%Y-%m-%dT%H:%M:%SZ','now'), '{}')",
@@ -50,8 +61,8 @@ impl Engine {
         self.conn.execute(
             "INSERT INTO attempts(
                      id, session_id, concept_id, task_type, prompt_text, response_evidence_id,
-                     self_confidence, latency_ms, hint_count, no_attempt_reason, created_at
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
+                     self_confidence, latency_ms, hint_count, no_attempt_reason, material_id, created_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
                            strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
             params![
                 attempt_id,
@@ -64,6 +75,7 @@ impl Engine {
                 input.latency_ms,
                 input.hint_count,
                 reason.as_str(),
+                material_id,
             ],
         )?;
         self.conn.execute(
@@ -83,7 +95,15 @@ impl Engine {
     }
 
     pub fn submit_provisional(&mut self, input: SubmitInput) -> Result<SubmitReceipt> {
-        let receipt = self.record_provisional_submission(&input)?;
+        self.submit_provisional_with_material(input, None)
+    }
+
+    pub fn submit_provisional_with_material(
+        &mut self,
+        input: SubmitInput,
+        material_id: Option<&str>,
+    ) -> Result<SubmitReceipt> {
+        let receipt = self.record_provisional_submission(&input, material_id)?;
         let grade = grade_with_config(
             &self.conn,
             GradeRequest {
@@ -101,7 +121,15 @@ impl Engine {
     }
 
     pub fn submit(&mut self, input: SubmitInput) -> Result<SubmitReceipt> {
-        let receipt = self.record_provisional_submission(&input)?;
+        self.submit_with_material(input, None)
+    }
+
+    pub fn submit_with_material(
+        &mut self,
+        input: SubmitInput,
+        material_id: Option<&str>,
+    ) -> Result<SubmitReceipt> {
+        let receipt = self.record_provisional_submission(&input, material_id)?;
         let grade = grade_with_config(
             &self.conn,
             GradeRequest {
@@ -125,7 +153,12 @@ impl Engine {
         })
     }
 
-    fn record_provisional_submission(&mut self, input: &SubmitInput) -> Result<SubmitReceipt> {
+    fn record_provisional_submission(
+        &mut self,
+        input: &SubmitInput,
+        material_id: Option<&str>,
+    ) -> Result<SubmitReceipt> {
+        self.validate_material_id(material_id)?;
         self.conn.execute(
             "INSERT OR IGNORE INTO sessions(id, started_at, context_json)
              VALUES (?1, strftime('%Y-%m-%dT%H:%M:%SZ','now'), '{}')",
@@ -153,8 +186,10 @@ impl Engine {
         let target_depth = task_type_target_depth(&input.task_type).unwrap_or("recall");
         self.conn.execute(
             "INSERT INTO attempts(id, session_id, concept_id, task_type, prompt_text, response_evidence_id,
-                                  self_confidence, latency_ms, hint_count, provisional_score, depth, rating, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
+                                  self_confidence, latency_ms, hint_count, provisional_score, depth,
+                                  rating, material_id, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
+                     strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
             params![
                 attempt_id,
                 input.session_id.as_str(),
@@ -167,7 +202,8 @@ impl Engine {
                 input.hint_count,
                 provisional_score,
                 target_depth,
-                format!("{:?}", Rating::from_score_with_params(provisional_score, &fsrs_params)).to_lowercase()
+                format!("{:?}", Rating::from_score_with_params(provisional_score, &fsrs_params)).to_lowercase(),
+                material_id,
             ],
         )?;
 
@@ -198,6 +234,24 @@ impl Engine {
             provisional_score,
             degraded: true,
         })
+    }
+
+    fn validate_material_id(&self, material_id: Option<&str>) -> Result<()> {
+        let Some(material_id) = material_id else {
+            return Ok(());
+        };
+        let exists: bool = self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM materials WHERE id=?1)",
+            [material_id],
+            |row| row.get(0),
+        )?;
+        if !exists {
+            return Err(PolarisError::InvalidParameter {
+                key: "material_id".to_owned(),
+                value: material_id.to_owned(),
+            });
+        }
+        Ok(())
     }
 
     pub fn apply_final_score(&mut self, attempt_id: &str, final_score: f64) -> Result<()> {

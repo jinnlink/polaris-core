@@ -22,6 +22,8 @@ pub struct PackData {
     pub misconceptions: Vec<MisconceptionToml>,
     pub rubric: String,
     pub moves: Vec<MoveTemplate>,
+    pub material_levels: Vec<String>,
+    pub materials: Vec<MaterialToml>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -58,6 +60,12 @@ pub enum PackError {
     MissingMove,
     #[error("rubric.md is empty")]
     EmptyRubric,
+    #[error("materials.toml level order contains an empty or duplicate label: {level}")]
+    InvalidMaterialLevel { level: String },
+    #[error("material {material_id} references undeclared level {level}")]
+    MissingMaterialLevel { material_id: String, level: String },
+    #[error("material {material_id} has an empty required field: {field}")]
+    InvalidMaterial { material_id: String, field: String },
 }
 
 #[derive(Debug, Deserialize)]
@@ -123,6 +131,27 @@ struct MoveToml {
     template: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct MaterialsToml {
+    levels: LevelsToml,
+    #[serde(default)]
+    material: Vec<MaterialToml>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LevelsToml {
+    order: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MaterialToml {
+    pub id: String,
+    pub kind: String,
+    pub level: String,
+    pub title: String,
+    pub source_ref: String,
+}
+
 pub fn validate_pack_path(path: impl AsRef<Path>) -> Result<PackValidationReport, PackError> {
     let path = path.as_ref();
     for file in [
@@ -163,6 +192,10 @@ pub fn validate_pack_path(path: impl AsRef<Path>) -> Result<PackValidationReport
         })?;
     if rubric.trim().is_empty() {
         return Err(PackError::EmptyRubric);
+    }
+
+    if path.join("materials.toml").is_file() {
+        validate_materials(&read_toml(path, "materials.toml")?)?;
     }
 
     let concept_ids: HashSet<&str> = concepts
@@ -239,6 +272,14 @@ pub fn load_pack(path: impl AsRef<Path>) -> Result<PackData, PackError> {
     let misconceptions: MisconceptionsToml = read_toml(path, "misconceptions.toml")?;
     let moves: MovesToml = read_toml(path, "moves.toml")?;
     let rubric = read_text(path, "rubric.md")?;
+    let materials = if path.join("materials.toml").is_file() {
+        Some(read_toml::<MaterialsToml>(path, "materials.toml")?)
+    } else {
+        None
+    };
+    let (material_levels, materials) = materials
+        .map(|data| (data.levels.order, data.material))
+        .unwrap_or_default();
 
     Ok(PackData {
         id: pack.id,
@@ -248,7 +289,42 @@ pub fn load_pack(path: impl AsRef<Path>) -> Result<PackData, PackError> {
         misconceptions: misconceptions.misconception,
         rubric,
         moves: normalize_moves(moves),
+        material_levels,
+        materials,
     })
+}
+
+fn validate_materials(materials: &MaterialsToml) -> Result<(), PackError> {
+    let mut levels = HashSet::new();
+    for level in &materials.levels.order {
+        if level.trim().is_empty() || !levels.insert(level.as_str()) {
+            return Err(PackError::InvalidMaterialLevel {
+                level: level.clone(),
+            });
+        }
+    }
+    for material in &materials.material {
+        for (field, value) in [
+            ("id", material.id.as_str()),
+            ("kind", material.kind.as_str()),
+            ("title", material.title.as_str()),
+            ("source_ref", material.source_ref.as_str()),
+        ] {
+            if value.trim().is_empty() {
+                return Err(PackError::InvalidMaterial {
+                    material_id: material.id.clone(),
+                    field: field.to_owned(),
+                });
+            }
+        }
+        if !levels.contains(material.level.as_str()) {
+            return Err(PackError::MissingMaterialLevel {
+                material_id: material.id.clone(),
+                level: material.level.clone(),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn normalize_moves(moves: MovesToml) -> Vec<MoveTemplate> {
