@@ -1,6 +1,6 @@
 # 票队列（单票制）
 
-状态：**P16F 已实现并通过验收，等待提交；P16E 已提交（`35fd61c`）；P16L 已提交（`62de660`）；P16K 已提交（`f398e51`）；P16J 已提交（`c4d0c51`）；P16I 已提交（`7cbbd0b`）；P16H 已提交（`81cd25f`）；P16G 已提交（`b558fae`）；P16G2 已提交（`2735169`）；P16G1 已提交（`825f8a7`）；P16D 已提交（`7a478cc`）；P16C 已提交（`7dc54f2`）；P16B 已提交（`60effc0`）；P16A 已提交（`fbcad7b`）；P15B 已提交（`a9fd13b`）**。任何时刻只允许 1 张票 In Progress。
+状态：**P17A 已实现并通过验收，等待提交；P16F 已提交（`af7de94`）；P16E 已提交（`35fd61c`）；P16L 已提交（`62de660`）；P16K 已提交（`f398e51`）；P16J 已提交（`c4d0c51`）；P16I 已提交（`7cbbd0b`）；P16H 已提交（`81cd25f`）；P16G 已提交（`b558fae`）；P16G2 已提交（`2735169`）；P16G1 已提交（`825f8a7`）；P16D 已提交（`7a478cc`）；P16C 已提交（`7dc54f2`）；P16B 已提交（`60effc0`）；P16A 已提交（`fbcad7b`）；P15B 已提交（`a9fd13b`）**。任何时刻只允许 1 张票 In Progress。
 P12F 已登记为正式排队票；P12G 是 `Learned` 仓库外部依赖门，必须另开该仓库正式票并取得写权限，不能从本队列直接认领。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 **Phase 7+ 产品形态轴线见 `docs/PRODUCT_ROADMAP.md`**（轴 6 学习者形态 / 轴 7 多 Pack 承载 / 轴 8 工程演进 / 轴 9 信任面板）。
@@ -119,7 +119,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 - [x] **P16C 跨域预测地图**（`TICKET_P16C_CROSS_DOMAIN_PREDICTION_MAP.md`）← 已实现、通过验收并提交（`7dc54f2`）；依赖 P16B（`60effc0`）；三分栏预测、结构/几何锚点与只读 2–3 条初始路径已统一暴露给 Core/HTTP/MCP，isolated Pack 不继承 shared θ；服务环节：定位模糊 → 针对性补缺
 - [x] **P16D Global Learner Profile 数据与治理**（`TICKET_P16D_GLOBAL_PROFILE_GOVERNANCE.md`）← 已实现、通过验收并提交（`7a478cc`）；依赖 P16A；画像测量注册、设置、事件、派生状态、验证记录、导出与两级清除；服务环节：验证真懂 → 定位模糊
 - [x] **P16E Global Learner Profile 估计与验证**（`TICKET_P16E_GLOBAL_PROFILE_ESTIMATION.md`）← 已提交（`35fd61c`）；依赖 P16D；行为画像、慢特质后验、EMA 调度与前瞻验证，未过门不影响 mastery/调度；服务环节：定位模糊 → 针对性补缺
-- [x] **P16F 目标产品契约**（`TICKET_P16F_GOAL_PRODUCT_CONTRACT.md`）← 已实现并通过验收，等待提交；依赖 P16A；把已有 goals/dimensions/milestones 暴露为稳定契约，目标只限定候选范围；服务环节：针对性补缺
+- [x] **P16F 目标产品契约**（`TICKET_P16F_GOAL_PRODUCT_CONTRACT.md`）← 已提交（`af7de94`）；依赖 P16A；把已有 goals/dimensions/milestones 暴露为稳定契约，目标只限定候选范围；服务环节：针对性补缺
 - [x] **P16G 还死板吗门**（`TICKET_P16G_RIGIDITY_GATE.md`）← 已提交（`b558fae`）；P16G1（`825f8a7`）与 P16G2（`2735169`）完成两处真实红灯修复；稳定性、响应性、方向性和人为死板化红灯证明齐全；服务环节：全环节（主命题闭环活性判据）
 - [x] **P16G1 低自信校准动作**（`TICKET_P16G1_UNDERCONFIDENCE_ACTION.md`）← 已提交（`825f8a7`）；依赖 P01/P04C/P16G 红灯证据；不改 `U(c)`，对已掌握且证据充足的持续低自信提供只升一级的可观察校准动作；服务环节：定位模糊 → 针对性补缺
 - [x] **P16G2 Flow 与幻影优先级**（`TICKET_P16G2_FLOW_PHANTOM_PRECEDENCE.md`）← 已提交（`2735169`）；依赖 P03D/P03E/P07D/P16G 红灯证据；明确 Phantom 反证优先于 Flow 推断，保留 fatigue/bored 降负荷保护；服务环节：针对性补缺 → 验证真懂
@@ -131,7 +131,7 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 
 ## Phase 17 — Tauri 正式桌面产品
 
-- [ ] **P17A Tauri 产品底座**（`TICKET_P17A_TAURI_FOUNDATION.md`）← 依赖 P16B–P16F；Tauri 2 + React + TypeScript + Vite，直接调用 Core，共用 DTO 与瓷白设计令牌；服务环节：全环节（正式产品承载）
+- [x] **P17A Tauri 产品底座**（`TICKET_P17A_TAURI_FOUNDATION.md`）← 已实现并通过验收，等待提交；依赖 P16B–P16F；Tauri 2 + React + TypeScript + Vite，直接调用 Core，共用 DTO 与瓷白设计令牌；服务环节：全环节（正式产品承载）
 - [ ] **P17B 常驻小窗与 Today**（`TICKET_P17B_TRAY_TODAY.md`）← 依赖 P17A；托盘、单实例、小窗、Pack 切换、Today 与 2–3 个行动，心流态抑制通知；服务环节：定位模糊 → 针对性补缺
 - [ ] **P17C 知识地图工作区**（`TICKET_P17C_MAP_WORKSPACE.md`）← 依赖 P17B、P16C；当前/预测/全局 Pack 地图、搜索筛选、钻取、证据与大图虚拟化；服务环节：定位模糊
 - [ ] **P17D 学习工作台**（`TICKET_P17D_LEARNING_WORKBENCH.md`）← 依赖 P17B；Practice、Capture、Inbox、Practice Bridge 与乐观评分修正；服务环节：验证真懂 → 针对性补缺

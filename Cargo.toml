@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "apps/desktop/src-tauri",
     "crates/polaris-core",
     "crates/polaris-cli",
 ]
@@ -9,4 +10,3 @@ resolver = "2"
 edition = "2021"
 license = "MIT"
 version = "0.1.0"
-

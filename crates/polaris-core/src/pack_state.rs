@@ -30,9 +30,11 @@ impl ThetaMode {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "desktop-bindings", derive(ts_rs::TS))]
 pub struct PackSummary {
     pub id: String,
     pub title: String,
+    #[cfg_attr(feature = "desktop-bindings", ts(type = "number"))]
     pub concept_count: i64,
     pub active: bool,
     pub theta_mode: String,

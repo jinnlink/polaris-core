@@ -9,23 +9,28 @@ use crate::pack_state::{active_pack, list_packs, theta_mode_for_pack, PackSummar
 use crate::phase::Phase;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "desktop-bindings", derive(ts_rs::TS))]
 pub struct StatusSnapshot {
     pub generated_at: String,
     pub current_pack: Option<String>,
     pub theta_mode: Option<String>,
     pub packs: Vec<PackSummary>,
+    #[cfg_attr(feature = "desktop-bindings", ts(type = "number"))]
     pub due_today: i64,
     pub phase_counts: Vec<PhaseCount>,
     pub concepts: Vec<ConceptStatus>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "desktop-bindings", derive(ts_rs::TS))]
 pub struct PhaseCount {
     pub phase: String,
+    #[cfg_attr(feature = "desktop-bindings", ts(type = "number"))]
     pub count: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "desktop-bindings", derive(ts_rs::TS))]
 pub struct ConceptStatus {
     pub concept_id: String,
     pub name: String,

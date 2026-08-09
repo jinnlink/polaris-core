@@ -8,6 +8,9 @@ license.workspace = true
 name = "polaris_core"
 path = "src/lib.rs"
 
+[features]
+desktop-bindings = ["dep:ts-rs"]
+
 [dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
@@ -15,6 +18,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 toml = "0.8"
+ts-rs = { version = "12", optional = true }
 uuid = { version = "1", features = ["v4"] }
 hnsw_rs = "0.3"
 

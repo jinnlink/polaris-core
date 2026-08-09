@@ -1,0 +1,5 @@
+/dist/
+/node_modules/
+/*.tsbuildinfo
+/src-tauri/gen/
+/src-tauri/schemas/

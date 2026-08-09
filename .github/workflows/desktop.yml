@@ -1,0 +1,61 @@
+name: Desktop
+
+on:
+  pull_request:
+    paths:
+      - "apps/desktop/**"
+      - "crates/polaris-core/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/desktop.yml"
+  push:
+    branches: [master]
+    paths:
+      - "apps/desktop/**"
+      - "crates/polaris-core/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/desktop.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  foundation:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.16.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: apps/desktop/pnpm-lock.yaml
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy,rustfmt
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install frontend dependencies
+        working-directory: apps/desktop
+        run: pnpm install --frozen-lockfile
+      - name: Check frontend
+        working-directory: apps/desktop
+        run: |
+          pnpm lint
+          pnpm typecheck
+          pnpm test
+          pnpm build
+      - name: Check Rust desktop foundation
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy -p polaris-desktop --all-targets -- -D warnings
+          cargo test -p polaris-desktop
+      - name: Build Tauri debug executable
+        working-directory: apps/desktop
+        run: pnpm tauri build --debug --no-bundle

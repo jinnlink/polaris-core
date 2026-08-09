@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Polaris">
+  <rect width="512" height="512" rx="132" fill="#f7f6f2"/>
+  <path d="M256 72c77 0 144 54 160 130 17 80-25 162-99 197-69 33-154 11-198-51-48-67-40-160 18-218 31-31 73-58 119-58Z" fill="#315f55"/>
+  <path d="M212 150h63c67 0 106 34 106 91 0 59-43 96-111 96h-18v65h-40V150Zm40 37v113h18c46 0 70-20 70-58 0-37-22-55-67-55h-21Z" fill="#fdfcf9"/>
+  <circle cx="389" cy="116" r="24" fill="#4d7c70"/>
+</svg>
