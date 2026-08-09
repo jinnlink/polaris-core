@@ -26,6 +26,10 @@ use polaris_core::ops::{
 use polaris_core::pack::validate_pack_path;
 use polaris_core::pack_state::{PackSummary, PackSwitchReceipt, ThetaMode};
 use polaris_core::privacy::PrivacyCallInventory;
+use polaris_core::profile::{
+    delete_all_learning_data, profile_instruments, FullDataDeletionRequest,
+    ProfileMeasurementInput, ProfileSettingsUpdate,
+};
 use polaris_core::project_manifest::{
     discover_learning_projects, discover_project_manifest, DiscoveredProjectManifest,
 };
@@ -184,6 +188,10 @@ enum Commands {
     AiProfile {
         #[command(subcommand)]
         command: AiProfileCommands,
+    },
+    Profile {
+        #[command(subcommand)]
+        command: ProfileCommands,
     },
     Config {
         #[command(subcommand)]
@@ -354,6 +362,68 @@ enum AiProfileCommands {
 }
 
 #[derive(Debug, Subcommand)]
+enum ProfileCommands {
+    Show {
+        #[arg(long)]
+        json: bool,
+    },
+    Instruments {
+        #[arg(long)]
+        json: bool,
+    },
+    Set {
+        #[arg(long)]
+        enabled: Option<bool>,
+        #[arg(long = "acknowledge-disclosure")]
+        acknowledge_disclosure: bool,
+        #[arg(long = "summary-sharing")]
+        summary_sharing_enabled: Option<bool>,
+        #[arg(long = "pause-until")]
+        paused_until: Option<String>,
+        #[arg(long = "clear-pause")]
+        clear_pause: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    Record {
+        #[arg(long)]
+        instrument: String,
+        #[arg(long, default_value = "1.0")]
+        version: String,
+        #[arg(long)]
+        item: String,
+        #[arg(long)]
+        response: i64,
+        #[arg(long, default_value = "en")]
+        locale: String,
+        #[arg(long = "admin-mode", default_value = "ema_single_item")]
+        admin_mode: String,
+        #[arg(long, default_value = "cli")]
+        session: String,
+        #[arg(long)]
+        json: bool,
+    },
+    Export {
+        #[arg(long)]
+        output: PathBuf,
+    },
+    Reset {
+        #[arg(long)]
+        yes: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    DeleteAll {
+        #[arg(long)]
+        confirm: String,
+        #[arg(long)]
+        backup: Option<PathBuf>,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
 enum ConfigCommands {
     List {
         #[arg(long)]
@@ -430,6 +500,53 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 println!("{}", serde_json::to_string_pretty(&inventory)?);
             } else {
                 print!("{}", privacy_show_text(&inventory, inventory.tier0_only));
+            }
+        }
+        Commands::Profile {
+            command: ProfileCommands::Instruments { json },
+        } => {
+            let instruments = profile_instruments()?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&instruments)?);
+            } else {
+                for instrument in instruments {
+                    println!(
+                        "{}\tversion={}\titems={}\tlicense={}",
+                        instrument.id,
+                        instrument.version,
+                        instrument.items.len(),
+                        instrument.license.name
+                    );
+                }
+            }
+        }
+        Commands::Profile {
+            command:
+                ProfileCommands::DeleteAll {
+                    confirm,
+                    backup,
+                    json,
+                },
+        } => {
+            let db_path = cli.db.unwrap_or_else(default_db_path);
+            let receipt = delete_all_learning_data(
+                FullDataDeletionRequest {
+                    database_path: db_path,
+                    backup_path: backup,
+                    confirmation: confirm,
+                },
+                || Ok(0),
+            )?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&receipt)?);
+            } else {
+                println!(
+                    "全部学习数据已清空并建立空库：{}（删除旧文件 {} 个，本机密钥 {} 项）",
+                    receipt.database_path, receipt.files_deleted, receipt.local_secrets_deleted
+                );
+                if let Some(path) = receipt.backup_path {
+                    println!("备份保留：{path}");
+                }
             }
         }
         Commands::Trust {
@@ -770,6 +887,103 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                         print_status_snapshot(&snapshot);
                     }
                 }
+                Commands::Profile { command } => match command {
+                    ProfileCommands::Show { json } => {
+                        let overview = engine.global_profile_overview()?;
+                        if json {
+                            println!("{}", serde_json::to_string_pretty(&overview)?);
+                        } else {
+                            print!("{}", profile_overview_text(&overview));
+                        }
+                    }
+                    ProfileCommands::Set {
+                        enabled,
+                        acknowledge_disclosure,
+                        summary_sharing_enabled,
+                        paused_until,
+                        clear_pause,
+                        json,
+                    } => {
+                        let settings =
+                            engine.update_global_profile_settings(ProfileSettingsUpdate {
+                                enabled,
+                                acknowledge_disclosure,
+                                summary_sharing_enabled,
+                                paused_until,
+                                clear_pause,
+                            })?;
+                        if json {
+                            println!("{}", serde_json::to_string_pretty(&settings)?);
+                        } else {
+                            print!("{}", profile_settings_text(&settings));
+                        }
+                    }
+                    ProfileCommands::Record {
+                        instrument,
+                        version,
+                        item,
+                        response,
+                        locale,
+                        admin_mode,
+                        session,
+                        json,
+                    } => {
+                        let receipt =
+                            engine.record_profile_measurement(ProfileMeasurementInput {
+                                session_id: session,
+                                instrument_id: instrument,
+                                instrument_version: version,
+                                item_id: item,
+                                locale,
+                                admin_mode,
+                                response,
+                            })?;
+                        if json {
+                            println!("{}", serde_json::to_string_pretty(&receipt)?);
+                        } else {
+                            println!("{}", receipt.message);
+                        }
+                    }
+                    ProfileCommands::Export { output } => {
+                        if output.exists() {
+                            return Err(adapter_error(format!(
+                                "profile export output already exists: {}",
+                                output.display()
+                            )));
+                        }
+                        if let Some(parent) = output.parent() {
+                            std::fs::create_dir_all(parent)?;
+                        }
+                        let export = engine.export_global_profile()?;
+                        std::fs::write(&output, serde_json::to_vec_pretty(&export)?)?;
+                        println!("画像数据已导出：{}", output.display());
+                    }
+                    ProfileCommands::Reset { yes, json } => {
+                        if !yes {
+                            return Err(adapter_error(
+                                "profile reset deletes answers and derived profile data; pass --yes to continue",
+                            ));
+                        }
+                        let receipt = engine.reset_global_profile()?;
+                        if json {
+                            println!("{}", serde_json::to_string_pretty(&receipt)?);
+                        } else {
+                            println!(
+                                "画像已重置：回答 {}、维度 {}、验证 {}；保留学习尝试 {}。",
+                                receipt.measurements_deleted,
+                                receipt.dimensions_deleted,
+                                receipt.validation_runs_deleted,
+                                receipt.learning_attempts_preserved
+                            );
+                        }
+                    }
+                    ProfileCommands::Instruments { .. } => {
+                        unreachable!("handled before database open")
+                    }
+                    ProfileCommands::DeleteAll { .. } => {
+                        unreachable!("handled before database open")
+                    }
+                },
                 Commands::ServeHttp { host, port } => {
                     http::serve_http(engine, &host, port)?;
                 }
@@ -1260,6 +1474,36 @@ fn backup_database(conn: &Connection, output: &Path) -> Result<(), Box<dyn std::
     }
     conn.execute("VACUUM INTO ?1", [output.to_string_lossy().to_string()])?;
     Ok(())
+}
+
+fn profile_settings_text(settings: &polaris_core::profile::ProfileSettings) -> String {
+    format!(
+        "本地画像={}\n首次说明={}\n本地集成摘要分享={}\n暂停至={}\n",
+        if settings.enabled { "启用" } else { "关闭" },
+        if settings.disclosure_required {
+            "待确认"
+        } else {
+            "已确认"
+        },
+        if settings.summary_sharing_enabled {
+            "启用"
+        } else {
+            "关闭"
+        },
+        settings.paused_until.as_deref().unwrap_or("未暂停")
+    )
+}
+
+fn profile_overview_text(overview: &polaris_core::profile::GlobalProfileOverview) -> String {
+    let mut text = profile_settings_text(&overview.settings);
+    text.push_str(&format!(
+        "量表={}\n已记录回答={}\n派生维度={}\n验证运行={}\n",
+        overview.instrument_count,
+        overview.measurement_count,
+        overview.dimensions.len(),
+        overview.validation_runs.len(),
+    ));
+    text
 }
 
 fn doctor_report_text(report: &DoctorReport) -> String {
@@ -3017,6 +3261,225 @@ mod tests {
     }
 
     #[test]
+    fn p16d_profile_commands_parse_governance_actions() {
+        let set = Cli::try_parse_from(vec![
+            "polaris",
+            "profile",
+            "set",
+            "--enabled",
+            "true",
+            "--acknowledge-disclosure",
+            "--summary-sharing",
+            "false",
+            "--json",
+        ])
+        .unwrap();
+        assert!(matches!(
+            set.command,
+            Commands::Profile {
+                command: ProfileCommands::Set {
+                    enabled: Some(true),
+                    acknowledge_disclosure: true,
+                    summary_sharing_enabled: Some(false),
+                    json: true,
+                    ..
+                }
+            }
+        ));
+
+        let delete = Cli::try_parse_from(vec![
+            "polaris",
+            "profile",
+            "delete-all",
+            "--confirm",
+            polaris_core::profile::DELETE_ALL_CONFIRMATION,
+            "--backup",
+            "backup.sqlite",
+        ])
+        .unwrap();
+        assert!(matches!(
+            delete.command,
+            Commands::Profile {
+                command: ProfileCommands::DeleteAll {
+                    backup: Some(_),
+                    json: false,
+                    ..
+                }
+            }
+        ));
+    }
+
+    #[test]
+    fn p16d_profile_cli_records_exports_disables_and_resets_locally() {
+        let db_path = temp_db_path("profile-cli");
+        let export_path = db_path.with_extension("profile-export.json");
+        cleanup_db_path(&db_path);
+        let _ = std::fs::remove_file(&export_path);
+
+        run(Cli::try_parse_from(vec![
+            "polaris",
+            "--db",
+            db_path.to_str().unwrap(),
+            "profile",
+            "set",
+            "--acknowledge-disclosure",
+        ])
+        .unwrap())
+        .unwrap();
+        run(Cli::try_parse_from(vec![
+            "polaris",
+            "--db",
+            db_path.to_str().unwrap(),
+            "profile",
+            "record",
+            "--instrument",
+            "gse",
+            "--item",
+            "gse_01",
+            "--response",
+            "4",
+        ])
+        .unwrap())
+        .unwrap();
+        run(Cli::try_parse_from(vec![
+            "polaris",
+            "--db",
+            db_path.to_str().unwrap(),
+            "profile",
+            "export",
+            "--output",
+            export_path.to_str().unwrap(),
+        ])
+        .unwrap())
+        .unwrap();
+
+        let export: Value = serde_json::from_slice(&std::fs::read(&export_path).unwrap()).unwrap();
+        assert_eq!(export["measurements"][0]["payload"]["response"], 4);
+
+        run(Cli::try_parse_from(vec![
+            "polaris",
+            "--db",
+            db_path.to_str().unwrap(),
+            "profile",
+            "set",
+            "--enabled",
+            "false",
+        ])
+        .unwrap())
+        .unwrap();
+        run(Cli::try_parse_from(vec![
+            "polaris",
+            "--db",
+            db_path.to_str().unwrap(),
+            "profile",
+            "record",
+            "--instrument",
+            "gse",
+            "--item",
+            "gse_02",
+            "--response",
+            "3",
+        ])
+        .unwrap())
+        .unwrap();
+
+        let missing_confirmation = run(Cli::try_parse_from(vec![
+            "polaris",
+            "--db",
+            db_path.to_str().unwrap(),
+            "profile",
+            "reset",
+        ])
+        .unwrap())
+        .unwrap_err();
+        assert!(missing_confirmation.to_string().contains("--yes"));
+        run(Cli::try_parse_from(vec![
+            "polaris",
+            "--db",
+            db_path.to_str().unwrap(),
+            "profile",
+            "reset",
+            "--yes",
+        ])
+        .unwrap())
+        .unwrap();
+
+        let conn = Connection::open(&db_path).unwrap();
+        let events: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM behavior_events WHERE type='profile_measurement'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(events, 0);
+        drop(conn);
+        cleanup_db_path(&db_path);
+        let _ = std::fs::remove_file(export_path);
+    }
+
+    #[test]
+    fn p16d_profile_cli_delete_all_never_opens_engine_and_keeps_optional_backup() {
+        let db_path = temp_db_path("profile-delete-all");
+        let backup_path = db_path.with_extension("profile-backup.sqlite");
+        cleanup_db_path(&db_path);
+        let _ = std::fs::remove_file(&backup_path);
+        drop(polaris_core::db::open_database(&db_path).unwrap());
+
+        let wrong = run(Cli::try_parse_from(vec![
+            "polaris",
+            "--db",
+            db_path.to_str().unwrap(),
+            "profile",
+            "delete-all",
+            "--confirm",
+            "yes",
+        ])
+        .unwrap())
+        .unwrap_err();
+        assert!(wrong
+            .to_string()
+            .contains(polaris_core::profile::DELETE_ALL_CONFIRMATION));
+        assert!(db_path.exists());
+
+        run(Cli::try_parse_from(vec![
+            "polaris",
+            "--db",
+            db_path.to_str().unwrap(),
+            "profile",
+            "delete-all",
+            "--confirm",
+            polaris_core::profile::DELETE_ALL_CONFIRMATION,
+            "--backup",
+            backup_path.to_str().unwrap(),
+        ])
+        .unwrap())
+        .unwrap();
+
+        assert!(db_path.exists());
+        assert!(backup_path.exists());
+        let empty = Connection::open(&db_path).unwrap();
+        assert_eq!(
+            empty
+                .query_row("SELECT COUNT(*) FROM attempts", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+        drop(empty);
+        let backup = Connection::open(&backup_path).unwrap();
+        assert_eq!(
+            backup
+                .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+                .unwrap(),
+            CURRENT_SCHEMA_VERSION
+        );
+        drop(backup);
+        cleanup_db_path(&db_path);
+        cleanup_db_path(&backup_path);
+    }
+
+    #[test]
     fn config_list_flags_parse() {
         let cli = Cli::try_parse_from(vec![
             "polaris",
@@ -3215,7 +3678,7 @@ mod tests {
         cleanup_db_path(&db_path);
 
         assert_eq!(user_version, polaris_core::db::CURRENT_SCHEMA_VERSION);
-        assert_eq!(migration_count, 2);
+        assert_eq!(migration_count, 3);
         assert_eq!(active_pack, "rust");
     }
 
@@ -3490,7 +3953,7 @@ mod tests {
         assert!(report.ok);
         let text = doctor_report_text(&report);
         assert!(text.contains("schema_version="));
-        assert!(text.contains("migration_count=2"));
+        assert!(text.contains("migration_count=3"));
         assert!(text.contains("integrity=ok"));
         assert!(text.contains("replay_checked=0"));
 

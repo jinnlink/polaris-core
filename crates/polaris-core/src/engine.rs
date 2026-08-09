@@ -75,6 +75,14 @@ use crate::pedagogy::{record_move_effect_for_attempt, select_move_for_concept};
 use crate::phase::{determine_phase, Depth, Phase, PhaseInput, PhaseParams};
 use crate::phase_dynamics::{phase_dynamics_summary, PhaseDynamicsSummary};
 use crate::prediction_map::{prediction_map_snapshot, PredictionMapQuery, PredictionMapSnapshot};
+use crate::profile::{
+    export_global_profile, global_profile_integration_summary, global_profile_overview,
+    global_profile_settings, record_profile_measurement, record_profile_validation_run,
+    reset_global_profile, store_profile_dimension, update_global_profile_settings,
+    GlobalProfileExport, GlobalProfileIntegrationSummary, GlobalProfileOverview, ProfileDimension,
+    ProfileDimensionInput, ProfileMeasurementInput, ProfileMeasurementReceipt, ProfileResetReceipt,
+    ProfileSettings, ProfileSettingsUpdate, ProfileValidationRun, ProfileValidationRunInput,
+};
 use crate::report::{
     latest_mirror_report, record_report_feedback, run_mirror_report, run_mirror_report_with_config,
     run_mirror_report_with_static_narrative, MirrorReport,
@@ -230,6 +238,54 @@ impl Engine {
             Vec::new()
         };
         prediction_map_snapshot(&self.conn, knowledge, paths)
+    }
+
+    pub fn global_profile_settings(&self) -> Result<ProfileSettings> {
+        global_profile_settings(&self.conn)
+    }
+
+    pub fn update_global_profile_settings(
+        &self,
+        update: ProfileSettingsUpdate,
+    ) -> Result<ProfileSettings> {
+        update_global_profile_settings(&self.conn, update)
+    }
+
+    pub fn record_profile_measurement(
+        &self,
+        input: ProfileMeasurementInput,
+    ) -> Result<ProfileMeasurementReceipt> {
+        record_profile_measurement(&self.conn, input)
+    }
+
+    pub fn store_profile_dimension(
+        &self,
+        input: ProfileDimensionInput,
+    ) -> Result<ProfileDimension> {
+        store_profile_dimension(&self.conn, input)
+    }
+
+    pub fn record_profile_validation_run(
+        &self,
+        input: ProfileValidationRunInput,
+    ) -> Result<ProfileValidationRun> {
+        record_profile_validation_run(&self.conn, input)
+    }
+
+    pub fn export_global_profile(&self) -> Result<GlobalProfileExport> {
+        export_global_profile(&self.conn)
+    }
+
+    pub fn global_profile_overview(&self) -> Result<GlobalProfileOverview> {
+        global_profile_overview(&self.conn)
+    }
+
+    pub fn global_profile_integration_summary(&self) -> Result<GlobalProfileIntegrationSummary> {
+        global_profile_integration_summary(&self.conn)
+    }
+
+    pub fn reset_global_profile(&self) -> Result<ProfileResetReceipt> {
+        reset_global_profile(&self.conn)
     }
 
     pub fn list_packs(&self) -> Result<Vec<PackSummary>> {

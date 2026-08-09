@@ -67,6 +67,7 @@ impl McpSession {
                 "get_phase_snapshot" => self.get_phase_snapshot(),
                 "get_knowledge_map" => self.get_knowledge_map(arguments),
                 "get_prediction_map" => self.get_prediction_map(arguments),
+                "get_global_profile" => self.get_global_profile(),
                 "get_active_gu_rules" => self.get_active_gu_rules(arguments),
                 "run_mirror_report" => self.run_mirror_report(arguments),
                 "get_latest_mirror_report" => self.get_latest_mirror_report(),
@@ -277,6 +278,15 @@ impl McpSession {
         serde_json::to_value(
             self.engine
                 .prediction_map(query)
+                .map_err(|error| error.to_string())?,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    fn get_global_profile(&self) -> Result<Value, String> {
+        serde_json::to_value(
+            self.engine
+                .global_profile_integration_summary()
                 .map_err(|error| error.to_string())?,
         )
         .map_err(|error| error.to_string())
@@ -649,6 +659,15 @@ fn tool_definitions() -> Value {
                     "limit": {"type": "integer", "minimum": 1, "maximum": 500, "description": "Page size. Defaults to 100."},
                     "cursor": {"type": "string", "description": "Opaque next_cursor from a previous snapshot."}
                 },
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "get_global_profile",
+            "description": "Return the local Global Learner Profile summary only when the learner has explicitly enabled local integration sharing. Never returns raw measurement answers; every dimension includes uncertainty, model version, gate status, and provenance.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
                 "additionalProperties": false
             }
         },
@@ -1127,6 +1146,7 @@ fn write_message<W: Write>(
 mod tests {
     use polaris_core::db::migrate;
     use polaris_core::engine::Engine;
+    use polaris_core::profile::ProfileSettingsUpdate;
     use rusqlite::{params, Connection};
     use serde_json::{json, Value};
     use std::fs;
@@ -1155,6 +1175,7 @@ mod tests {
                 "get_phase_snapshot",
                 "get_knowledge_map",
                 "get_prediction_map",
+                "get_global_profile",
                 "get_active_gu_rules",
                 "run_mirror_report",
                 "get_latest_mirror_report",
@@ -1210,6 +1231,7 @@ mod tests {
             "get_next_task",
             "get_knowledge_map",
             "get_prediction_map",
+            "get_global_profile",
             "submit_evidence",
             "submit_task_response",
             "record_learner_feedback",
@@ -1230,6 +1252,49 @@ mod tests {
                 "API contract missing MCP item: {required}"
             );
         }
+    }
+
+    #[test]
+    fn mcp_global_profile_requires_opt_in_and_never_returns_raw_answers() {
+        let mut session = test_session();
+        let blocked = session
+            .handle_request(json!({
+                "jsonrpc": "2.0",
+                "id": 1601,
+                "method": "tools/call",
+                "params": {"name": "get_global_profile", "arguments": {}}
+            }))
+            .unwrap()
+            .unwrap();
+        assert_eq!(blocked["result"]["isError"], true);
+        assert!(blocked["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("summary_sharing_enabled"));
+
+        session
+            .engine()
+            .conn()
+            .execute(
+                "INSERT INTO behavior_events(id, session_id, at, type, payload_json)
+                 VALUES ('private-answer', 's1', strftime('%Y-%m-%dT%H:%M:%SZ','now'),
+                         'profile_measurement', '{\"response\":4}')",
+                [],
+            )
+            .unwrap();
+        session
+            .engine()
+            .update_global_profile_settings(ProfileSettingsUpdate {
+                acknowledge_disclosure: true,
+                summary_sharing_enabled: Some(true),
+                ..ProfileSettingsUpdate::default()
+            })
+            .unwrap();
+
+        let shared = call_tool_json(&mut session, "get_global_profile", json!({}));
+        assert!(shared["dimensions"].is_array());
+        assert!(shared.get("measurements").is_none());
+        assert!(!shared.to_string().contains("response"));
     }
 
     #[test]
@@ -1269,6 +1334,7 @@ mod tests {
                 "get_phase_snapshot",
                 "get_knowledge_map",
                 "get_prediction_map",
+                "get_global_profile",
                 "get_active_gu_rules",
                 "run_mirror_report",
                 "get_latest_mirror_report",

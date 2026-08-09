@@ -1,0 +1,76 @@
+[
+  {
+    "id": "ipip_learning_facets",
+    "title": "IPIP learning-relevant facets",
+    "version": "1.0",
+    "citation": "Johnson, J. A. (2014). Measuring thirty facets of the Five Factor Model with a 120-item public domain inventory. Journal of Research in Personality, 51, 78-89.",
+    "source_url": "https://ipip.ori.org/30FacetNEO-PI-RItems.htm",
+    "license": {
+      "name": "Public Domain",
+      "url": "https://ipip.ori.org/newPermission.htm",
+      "redistributable": true,
+      "attribution": "Items are from the public-domain International Personality Item Pool. This 16-item subset preserves four independently scored Johnson (2014) facets."
+    },
+    "locales": ["en"],
+    "items": [
+      {"id": "ipip_o5_01", "locale": "en", "dimension": "intellect", "prompt": "Love to read challenging material.", "keyed": "positive"},
+      {"id": "ipip_o5_02", "locale": "en", "dimension": "intellect", "prompt": "Avoid philosophical discussions.", "keyed": "negative"},
+      {"id": "ipip_o5_03", "locale": "en", "dimension": "intellect", "prompt": "Have difficulty understanding abstract ideas.", "keyed": "negative"},
+      {"id": "ipip_o5_04", "locale": "en", "dimension": "intellect", "prompt": "Am not interested in theoretical discussions.", "keyed": "negative"},
+      {"id": "ipip_c1_01", "locale": "en", "dimension": "competence", "prompt": "Complete tasks successfully.", "keyed": "positive"},
+      {"id": "ipip_c1_02", "locale": "en", "dimension": "competence", "prompt": "Excel in what I do.", "keyed": "positive"},
+      {"id": "ipip_c1_03", "locale": "en", "dimension": "competence", "prompt": "Handle tasks smoothly.", "keyed": "positive"},
+      {"id": "ipip_c1_04", "locale": "en", "dimension": "competence", "prompt": "Know how to get things done.", "keyed": "positive"},
+      {"id": "ipip_c4_01", "locale": "en", "dimension": "achievement_striving", "prompt": "Do more than what's expected of me.", "keyed": "positive"},
+      {"id": "ipip_c4_02", "locale": "en", "dimension": "achievement_striving", "prompt": "Work hard.", "keyed": "positive"},
+      {"id": "ipip_c4_03", "locale": "en", "dimension": "achievement_striving", "prompt": "Put little time and effort into my work.", "keyed": "negative"},
+      {"id": "ipip_c4_04", "locale": "en", "dimension": "achievement_striving", "prompt": "Do just enough work to get by.", "keyed": "negative"},
+      {"id": "ipip_c5_01", "locale": "en", "dimension": "self_discipline", "prompt": "Am always prepared.", "keyed": "positive"},
+      {"id": "ipip_c5_02", "locale": "en", "dimension": "self_discipline", "prompt": "Carry out my plans.", "keyed": "positive"},
+      {"id": "ipip_c5_03", "locale": "en", "dimension": "self_discipline", "prompt": "Waste my time.", "keyed": "negative"},
+      {"id": "ipip_c5_04", "locale": "en", "dimension": "self_discipline", "prompt": "Have difficulty starting tasks.", "keyed": "negative"}
+    ],
+    "scoring": {
+      "method": "facet_mean_after_reverse_scoring",
+      "response_min": 1,
+      "response_max": 5,
+      "reverse_formula": "6 - response"
+    },
+    "admin_modes": ["full_scale", "ema_single_item"],
+    "interpretation_notice": "Facet scores remain separate, local, uncertain estimates. They are not a personality type, diagnosis, learning style, or normative conclusion."
+  },
+  {
+    "id": "gse",
+    "title": "General Self-Efficacy Scale",
+    "version": "1.0",
+    "citation": "Schwarzer, R., & Jerusalem, M. (1995). Generalized Self-Efficacy scale. In J. Weinman, S. Wright, & M. Johnston (Eds.), Measures in health psychology: A user's portfolio. Causal and control beliefs (pp. 35-37). Windsor, UK: NFER-NELSON.",
+    "source_url": "https://openscales.net/scale.php?code=GSE",
+    "license": {
+      "name": "CC BY 4.0",
+      "url": "https://creativecommons.org/licenses/by/4.0/",
+      "redistributable": true,
+      "attribution": "General Self-Efficacy Scale by Ralf Schwarzer and Matthias Jerusalem, distributed by OpenScales under CC BY 4.0."
+    },
+    "locales": ["en"],
+    "items": [
+      {"id": "gse_01", "locale": "en", "dimension": "self_efficacy", "prompt": "I can always manage to solve difficult problems if I try hard enough.", "keyed": "positive"},
+      {"id": "gse_02", "locale": "en", "dimension": "self_efficacy", "prompt": "If someone opposes me, I can find the ways and means to get what I want.", "keyed": "positive"},
+      {"id": "gse_03", "locale": "en", "dimension": "self_efficacy", "prompt": "I am certain that I can accomplish my goals.", "keyed": "positive"},
+      {"id": "gse_04", "locale": "en", "dimension": "self_efficacy", "prompt": "I am confident that I could deal efficiently with unexpected events.", "keyed": "positive"},
+      {"id": "gse_05", "locale": "en", "dimension": "self_efficacy", "prompt": "Thanks to my resourcefulness, I can handle unforeseen situations.", "keyed": "positive"},
+      {"id": "gse_06", "locale": "en", "dimension": "self_efficacy", "prompt": "I can solve most problems if I invest the necessary effort.", "keyed": "positive"},
+      {"id": "gse_07", "locale": "en", "dimension": "self_efficacy", "prompt": "I can remain calm when facing difficulties because I can rely on my coping abilities.", "keyed": "positive"},
+      {"id": "gse_08", "locale": "en", "dimension": "self_efficacy", "prompt": "When I am confronted with a problem, I can find several solutions.", "keyed": "positive"},
+      {"id": "gse_09", "locale": "en", "dimension": "self_efficacy", "prompt": "If I am in trouble, I can think of a good solution.", "keyed": "positive"},
+      {"id": "gse_10", "locale": "en", "dimension": "self_efficacy", "prompt": "I can handle whatever comes my way.", "keyed": "positive"}
+    ],
+    "scoring": {
+      "method": "sum",
+      "response_min": 1,
+      "response_max": 4,
+      "reverse_formula": null
+    },
+    "admin_modes": ["full_scale", "ema_single_item"],
+    "interpretation_notice": "Only a completed 10-item administration may be called a GSE total score. Distributed EMA answers remain separate evidence and must not be presented as a standard score."
+  }
+]

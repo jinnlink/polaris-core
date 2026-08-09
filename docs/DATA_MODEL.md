@@ -22,8 +22,8 @@
 
 ### 1.1 Schema 版本与迁移账本
 
-- SQLite schema 版本权威源 = `PRAGMA user_version`，当前由 `db::CURRENT_SCHEMA_VERSION` 定义（P12C 后为 2）。
-- `schema_migrations(version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)` 是迁移账本；version 1 为 baseline，version 2 为 `capture_queue`。
+- SQLite schema 版本权威源 = `PRAGMA user_version`，当前由 `db::CURRENT_SCHEMA_VERSION` 定义（P16D 后为 3）。
+- `schema_migrations(version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)` 是迁移账本；version 1 为 baseline，version 2 为 `capture_queue`，version 3 为 `global_profile_governance`。
 - `migrate()` 对空库和旧的未版本化库都必须幂等：先补齐当前 schema，再写 baseline 与后续迁移账本并设置 `user_version`。
 - 旧库已有业务行和用户手动 `meta` 参数不得被迁移覆盖；默认参数继续使用 `INSERT OR IGNORE`。
 - 若数据库 `user_version` 高于当前二进制支持版本，写路径必须拒绝打开并提示版本不支持，避免旧程序误写新库。
@@ -74,11 +74,54 @@ mastery_states(concept_id TEXT PRIMARY KEY, p_known REAL, fsrs_json TEXT, next_d
 sessions(id TEXT PRIMARY KEY, started_at TEXT, ended_at TEXT, context_json TEXT)
 
 behavior_events(id TEXT PRIMARY KEY, session_id TEXT, at TEXT,
-       type TEXT,    -- latency|hint|abandon|resume|edit
+       type TEXT,    -- latency|hint|abandon|resume|edit|profile_measurement
        concept_id TEXT, payload_json TEXT)
 
 grade_queue(attempt_id TEXT PRIMARY KEY, enqueued_at TEXT, retry_count INTEGER DEFAULT 0, last_error TEXT)
 ```
+
+### P16D Global Learner Profile 治理
+
+```sql
+profile_settings(
+       id INTEGER PRIMARY KEY CHECK(id=1),
+       enabled INTEGER NOT NULL DEFAULT 1,
+       disclosure_acknowledged_at TEXT,
+       summary_sharing_enabled INTEGER NOT NULL DEFAULT 0,
+       paused_until TEXT,
+       created_at TEXT NOT NULL,
+       updated_at TEXT NOT NULL)
+
+profile_dimensions(
+       scope TEXT NOT NULL, scope_id TEXT NOT NULL DEFAULT '', dimension_key TEXT NOT NULL,
+       mean REAL NOT NULL, variance REAL NOT NULL, evidence_count INTEGER NOT NULL,
+       model_version TEXT NOT NULL, gate_status TEXT NOT NULL,
+       provenance_json TEXT NOT NULL, evidence_ids_json TEXT NOT NULL,
+       updated_at TEXT NOT NULL,
+       PRIMARY KEY(scope, scope_id, dimension_key))
+
+profile_validation_runs(
+       id TEXT PRIMARY KEY,
+       scope TEXT NOT NULL, scope_id TEXT NOT NULL DEFAULT '', dimension_key TEXT NOT NULL,
+       model_version TEXT NOT NULL, status TEXT NOT NULL,
+       metrics_json TEXT NOT NULL, provenance_json TEXT NOT NULL,
+       evidence_ids_json TEXT NOT NULL, ran_at TEXT NOT NULL)
+
+profile_data_actions(
+       id TEXT PRIMARY KEY, action TEXT NOT NULL,
+       measurements_deleted INTEGER NOT NULL,
+       dimensions_deleted INTEGER NOT NULL,
+       validation_runs_deleted INTEGER NOT NULL,
+       at TEXT NOT NULL)
+```
+
+- 原始画像回答只追加到 `behavior_events(type='profile_measurement')`；不得创建可覆盖回答的第二份事实表，也不得写入 mastery。
+- `profile_dimensions` 只保存 global / pack / goal 分域的均值、方差、证据数、模型版本、门状态和来源；不得合成单一人格类型。
+- 门状态稳定为 `unfit | shadow | active | suspended`；只有 P16E 验证为 `active` 后才允许被消费，本票不实现估计或调度消费。
+- `profile_settings.enabled` 默认 1，但首次回答前必须已有 `disclosure_acknowledged_at`；本地集成摘要分享默认 0。
+- `profile_data_actions` 只保留画像重置的非敏感计数，不复制回答内容。完整删除会移除数据库本身，因此只返回调用方回执，不制造无法留存的“审计行”。
+- 完整删除在 Engine 关闭后先建立临时一致性恢复快照，再把旧主库与 SQLite sidecar 隔离，执行调用方注入的本机密钥清理，并在原路径建立当前 schema 的空库；密钥清理失败时恢复原文件，旧文件清理失败时优先从一致性快照恢复逻辑数据库。成功后立即删除临时快照，回执报告真实删除的密钥数量，不伪造“已清理”布尔值。
+- v3 画像 DDL、默认设置、迁移台账与 `user_version` 在同一事务提交；失败时保持 v2，不留下半套画像表。
 
 P08A pack 状态放在 `meta`：`active_pack` 表示当前 pack；`pack.<id>.title` 保存显示名；`pack.<id>.theta_mode` 取 `shared|isolated`，默认 `shared`。
 

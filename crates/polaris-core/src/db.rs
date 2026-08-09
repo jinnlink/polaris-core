@@ -5,12 +5,14 @@ use rusqlite::{Connection, OpenFlags};
 use crate::config::default_registry;
 use crate::error::{PolarisError, Result};
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 2;
+pub const CURRENT_SCHEMA_VERSION: i64 = 3;
 
 const BASELINE_SCHEMA_VERSION: i64 = 1;
 const BASELINE_MIGRATION_NAME: &str = "baseline_current_schema";
 const CAPTURE_QUEUE_SCHEMA_VERSION: i64 = 2;
 const CAPTURE_QUEUE_MIGRATION_NAME: &str = "capture_queue";
+const GLOBAL_PROFILE_SCHEMA_VERSION: i64 = 3;
+const GLOBAL_PROFILE_MIGRATION_NAME: &str = "global_profile_governance";
 
 pub fn open_database(path: impl AsRef<Path>) -> Result<Connection> {
     let path = path.as_ref();
@@ -410,8 +412,97 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         CAPTURE_QUEUE_SCHEMA_VERSION,
         CAPTURE_QUEUE_MIGRATION_NAME,
     )?;
-    set_schema_version(conn, CURRENT_SCHEMA_VERSION)?;
+    migrate_global_profile_schema(conn)?;
 
+    Ok(())
+}
+
+fn migrate_global_profile_schema(conn: &Connection) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    tx.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS profile_settings(
+            id INTEGER PRIMARY KEY CHECK(id=1),
+            enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
+            disclosure_acknowledged_at TEXT,
+            summary_sharing_enabled INTEGER NOT NULL DEFAULT 0
+                CHECK(summary_sharing_enabled IN (0, 1)),
+            paused_until TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS profile_dimensions(
+            scope TEXT NOT NULL CHECK(scope IN ('global', 'pack', 'goal')),
+            scope_id TEXT NOT NULL DEFAULT '',
+            dimension_key TEXT NOT NULL,
+            mean REAL NOT NULL,
+            variance REAL NOT NULL CHECK(variance >= 0),
+            evidence_count INTEGER NOT NULL CHECK(evidence_count >= 0),
+            model_version TEXT NOT NULL,
+            gate_status TEXT NOT NULL
+                CHECK(gate_status IN ('unfit', 'shadow', 'active', 'suspended')),
+            provenance_json TEXT NOT NULL,
+            evidence_ids_json TEXT NOT NULL DEFAULT '[]',
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY(scope, scope_id, dimension_key),
+            CHECK(
+                (scope='global' AND scope_id='') OR
+                (scope IN ('pack', 'goal') AND length(scope_id) > 0)
+            )
+        );
+
+        CREATE TABLE IF NOT EXISTS profile_validation_runs(
+            id TEXT PRIMARY KEY,
+            scope TEXT NOT NULL CHECK(scope IN ('global', 'pack', 'goal')),
+            scope_id TEXT NOT NULL DEFAULT '',
+            dimension_key TEXT NOT NULL,
+            model_version TEXT NOT NULL,
+            status TEXT NOT NULL
+                CHECK(status IN ('unfit', 'shadow', 'active', 'suspended')),
+            metrics_json TEXT NOT NULL,
+            provenance_json TEXT NOT NULL,
+            evidence_ids_json TEXT NOT NULL DEFAULT '[]',
+            ran_at TEXT NOT NULL,
+            CHECK(
+                (scope='global' AND scope_id='') OR
+                (scope IN ('pack', 'goal') AND length(scope_id) > 0)
+            )
+        );
+
+        CREATE TABLE IF NOT EXISTS profile_data_actions(
+            id TEXT PRIMARY KEY,
+            action TEXT NOT NULL CHECK(action='profile_reset'),
+            measurements_deleted INTEGER NOT NULL CHECK(measurements_deleted >= 0),
+            dimensions_deleted INTEGER NOT NULL CHECK(dimensions_deleted >= 0),
+            validation_runs_deleted INTEGER NOT NULL CHECK(validation_runs_deleted >= 0),
+            at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_profile_dimensions_gate
+            ON profile_dimensions(gate_status, scope, scope_id);
+        CREATE INDEX IF NOT EXISTS idx_profile_validation_dimension_at
+            ON profile_validation_runs(scope, scope_id, dimension_key, ran_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_profile_data_actions_at
+            ON profile_data_actions(at DESC);
+
+        INSERT OR IGNORE INTO profile_settings(
+            id, enabled, disclosure_acknowledged_at, summary_sharing_enabled,
+            paused_until, created_at, updated_at
+        ) VALUES (
+            1, 1, NULL, 0, NULL,
+            strftime('%Y-%m-%dT%H:%M:%SZ','now'),
+            strftime('%Y-%m-%dT%H:%M:%SZ','now')
+        );
+        "#,
+    )?;
+    record_schema_migration(
+        &tx,
+        GLOBAL_PROFILE_SCHEMA_VERSION,
+        GLOBAL_PROFILE_MIGRATION_NAME,
+    )?;
+    set_schema_version(&tx, CURRENT_SCHEMA_VERSION)?;
+    tx.commit()?;
     Ok(())
 }
 
@@ -523,6 +614,10 @@ mod tests {
             "goals",
             "goal_dimensions",
             "goal_milestones",
+            "profile_settings",
+            "profile_dimensions",
+            "profile_validation_runs",
+            "profile_data_actions",
             "schema_migrations",
         ] {
             let exists: i64 = conn
@@ -599,7 +694,7 @@ mod tests {
             })
             .unwrap();
         assert_eq!(p_init, "0.33");
-        assert_eq!(first_count, 2);
+        assert_eq!(first_count, 3);
         assert_eq!(second_count, first_count);
     }
 
@@ -721,7 +816,7 @@ mod tests {
 
         assert_eq!(user_version, CURRENT_SCHEMA_VERSION);
         assert_eq!(p_init, "0.33");
-        assert_eq!(migration_count, 2);
+        assert_eq!(migration_count, 3);
         assert_eq!(journal_mode.to_lowercase(), "wal");
     }
 
@@ -784,6 +879,9 @@ mod tests {
             "idx_goal_dim_goal",
             "idx_milestone_goal",
             "idx_capture_queue_status_updated",
+            "idx_profile_dimensions_gate",
+            "idx_profile_validation_dimension_at",
+            "idx_profile_data_actions_at",
         ] {
             let exists: i64 = conn
                 .query_row(

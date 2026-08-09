@@ -6,6 +6,7 @@ use std::time::Duration;
 use polaris_core::ai_profile::AiInteractionProfileInput;
 use polaris_core::capture_queue::{CaptureEffect, CaptureInput, LearnerCaptureKind};
 use polaris_core::engine::{Engine, SubmitInput};
+use polaris_core::error::PolarisError;
 use polaris_core::inbox_practice::InboxPracticeSubmissionInput;
 use polaris_core::knowledge_map::{KnowledgeMapDueStatus, KnowledgeMapQuery, KnowledgeMapScope};
 use polaris_core::learner_feedback::LearnerFeedbackInput;
@@ -63,6 +64,7 @@ impl HttpApi {
             )),
             ("GET", "/knowledge-map") => self.knowledge_map(query_string),
             ("GET", "/prediction-map") => self.prediction_map(query_string),
+            ("GET", "/profile") => self.global_profile(),
             ("GET", "/learner-mirror") => Ok(response(
                 200,
                 serde_json::to_value(self.engine.learner_mirror_snapshot()?)?,
@@ -95,6 +97,7 @@ impl HttpApi {
             | ("POST", "/status")
             | ("POST", "/knowledge-map")
             | ("POST", "/prediction-map")
+            | ("POST", "/profile")
             | ("POST", "/learner-mirror")
             | (_, "/trust") => Ok(response(405, json!({"error": "method not allowed"}))),
             (_, "/ai-profile") => Ok(response(405, json!({"error": "method not allowed"}))),
@@ -127,6 +130,16 @@ impl HttpApi {
         match self.engine.prediction_map(query) {
             Ok(snapshot) => Ok(response(200, serde_json::to_value(snapshot)?)),
             Err(error) => Ok(response(400, json!({"error": error.to_string()}))),
+        }
+    }
+
+    fn global_profile(&self) -> Result<HttpResponse, Box<dyn std::error::Error>> {
+        match self.engine.global_profile_integration_summary() {
+            Ok(summary) => Ok(response(200, serde_json::to_value(summary)?)),
+            Err(error @ PolarisError::ProfileSummarySharingDisabled) => {
+                Ok(response(403, json!({"error": error.to_string()})))
+            }
+            Err(error) => Err(Box::new(error)),
         }
     }
 
@@ -744,6 +757,7 @@ fn status_text(status: u16) -> &'static str {
         200 => "OK",
         204 => "No Content",
         400 => "Bad Request",
+        403 => "Forbidden",
         404 => "Not Found",
         405 => "Method Not Allowed",
         500 => "Internal Server Error",
@@ -755,6 +769,7 @@ fn status_text(status: u16) -> &'static str {
 mod tests {
     use polaris_core::db::migrate;
     use polaris_core::engine::Engine;
+    use polaris_core::profile::ProfileSettingsUpdate;
     use rusqlite::Connection;
     use serde_json::{json, Value};
     use std::io::{Read, Write};
@@ -778,6 +793,44 @@ mod tests {
     }
 
     #[test]
+    fn http_global_profile_requires_opt_in_and_never_returns_raw_answers() {
+        let mut api = test_api();
+
+        let blocked = api.handle("GET", "/profile", "").unwrap();
+        assert_eq!(blocked.status, 403);
+        assert!(blocked.body["error"]
+            .as_str()
+            .unwrap()
+            .contains("summary_sharing_enabled"));
+
+        api.engine()
+            .conn()
+            .execute(
+                "INSERT INTO behavior_events(id, session_id, at, type, payload_json)
+                 VALUES ('private-answer', 's1', strftime('%Y-%m-%dT%H:%M:%SZ','now'),
+                         'profile_measurement', '{\"response\":4}')",
+                [],
+            )
+            .unwrap();
+        api.engine()
+            .update_global_profile_settings(ProfileSettingsUpdate {
+                acknowledge_disclosure: true,
+                summary_sharing_enabled: Some(true),
+                ..ProfileSettingsUpdate::default()
+            })
+            .unwrap();
+
+        let shared = api.handle("GET", "/profile", "").unwrap();
+        assert_eq!(shared.status, 200);
+        assert!(shared.body["dimensions"].is_array());
+        assert!(shared.body.get("measurements").is_none());
+        assert!(!shared.body.to_string().contains("response"));
+
+        let post = api.handle("POST", "/profile", "{}").unwrap();
+        assert_eq!(post.status, 405);
+    }
+
+    #[test]
     fn http_contract_document_names_stable_routes_and_policy() {
         for required in [
             "# API 稳定性合约",
@@ -786,6 +839,7 @@ mod tests {
             "GET /status",
             "GET /knowledge-map",
             "GET /prediction-map",
+            "GET /profile",
             "GET /learner-mirror",
             "GET /trust",
             "GET /ai-profile",

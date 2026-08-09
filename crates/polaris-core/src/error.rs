@@ -24,6 +24,10 @@ pub enum PolarisError {
     InvalidParameter { key: String, value: String },
     #[error("invalid task turn: {0}")]
     InvalidTaskTurn(String),
+    #[error(
+        "global profile is disabled or summary_sharing_enabled is false; enable both locally before HTTP/MCP access"
+    )]
+    ProfileSummarySharingDisabled,
     #[error("unsupported database schema version {found}; current binary supports {current}")]
     UnsupportedSchemaVersion { found: i64, current: i64 },
 }

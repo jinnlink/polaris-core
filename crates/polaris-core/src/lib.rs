@@ -35,6 +35,7 @@ pub mod phase;
 pub mod phase_dynamics;
 pub mod prediction_map;
 pub mod privacy;
+pub mod profile;
 pub mod project_manifest;
 pub mod report;
 pub mod sandbox;

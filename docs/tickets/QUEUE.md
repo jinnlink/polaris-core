@@ -1,6 +1,6 @@
 # 票队列（单票制）
 
-状态：**P16C 已完成并通过验收，已获用户提交与推送授权；当前无后续票 In Progress。P16B 已提交（`60effc0`）；P16A 已提交（`fbcad7b`）；P15B 已提交（`a9fd13b`）**。任何时刻只允许 1 张票 In Progress。
+状态：**P16D 已实现并通过验收，已获用户提交确认；当前无后续票 In Progress。P16C 已提交（`7dc54f2`）；P16B 已提交（`60effc0`）；P16A 已提交（`fbcad7b`）；P15B 已提交（`a9fd13b`）**。任何时刻只允许 1 张票 In Progress。
 P12F 已登记为正式排队票；P12G 是 `Learned` 仓库外部依赖门，必须另开该仓库正式票并取得写权限，不能从本队列直接认领。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 **Phase 7+ 产品形态轴线见 `docs/PRODUCT_ROADMAP.md`**（轴 6 学习者形态 / 轴 7 多 Pack 承载 / 轴 8 工程演进 / 轴 9 信任面板）。
@@ -116,8 +116,8 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 
 - [x] **P16A 蓝图与 Atlas 收口**（`TICKET_P16A_BLUEPRINT_ATLAS_ALIGNMENT.md`）← 已实现、通过验收并提交（`fbcad7b`）；建立蓝图能力—实现—票据状态矩阵，纠正 P04A/Tauri 与 Aura/Coursebook 边界，让开发者 Atlas 从 QUEUE 动态生成真实进度；服务环节：全环节（工程事实可审计）
 - [x] **P16B 实时知识地图契约**（`TICKET_P16B_KNOWLEDGE_MAP_CONTRACT.md`）← 已实现并通过验收，提交哈希见 Git 历史；依赖 P16A；从现有事实表推导分页/子图知识地图，统一 Core/HTTP/MCP/Tauri DTO，不建立第二份 mastery 真相；服务环节：定位模糊
-- [x] **P16C 跨域预测地图**（`TICKET_P16C_CROSS_DOMAIN_PREDICTION_MAP.md`）← 已实现并通过验收，已获用户提交与推送授权；依赖 P16B（`60effc0`）；三分栏预测、结构/几何锚点与只读 2–3 条初始路径已统一暴露给 Core/HTTP/MCP，isolated Pack 不继承 shared θ；服务环节：定位模糊 → 针对性补缺
-- [ ] **P16D Global Learner Profile 数据与治理**（`TICKET_P16D_GLOBAL_PROFILE_GOVERNANCE.md`）← 依赖 P16A；画像测量注册、设置、事件、派生状态、验证记录、导出与两级清除；服务环节：验证真懂 → 定位模糊
+- [x] **P16C 跨域预测地图**（`TICKET_P16C_CROSS_DOMAIN_PREDICTION_MAP.md`）← 已实现、通过验收并提交（`7dc54f2`）；依赖 P16B（`60effc0`）；三分栏预测、结构/几何锚点与只读 2–3 条初始路径已统一暴露给 Core/HTTP/MCP，isolated Pack 不继承 shared θ；服务环节：定位模糊 → 针对性补缺
+- [x] **P16D Global Learner Profile 数据与治理**（`TICKET_P16D_GLOBAL_PROFILE_GOVERNANCE.md`）← 已实现并通过验收，已获用户提交确认；依赖 P16A；画像测量注册、设置、事件、派生状态、验证记录、导出与两级清除；服务环节：验证真懂 → 定位模糊
 - [ ] **P16E Global Learner Profile 估计与验证**（`TICKET_P16E_GLOBAL_PROFILE_ESTIMATION.md`）← 依赖 P16D；行为画像、慢特质后验、EMA 调度与前瞻验证，未过门不影响 mastery/调度；服务环节：定位模糊 → 针对性补缺
 - [ ] **P16F 目标产品契约**（`TICKET_P16F_GOAL_PRODUCT_CONTRACT.md`）← 依赖 P16A；把已有 goals/dimensions/milestones 暴露为稳定契约，目标只限定候选范围；服务环节：针对性补缺
 
