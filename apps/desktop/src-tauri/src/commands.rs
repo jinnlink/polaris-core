@@ -3,7 +3,10 @@ use polaris_core::status::StatusSnapshot;
 use tauri::{AppHandle, Emitter, State, WebviewWindow};
 use tauri_plugin_notification::NotificationExt;
 
-use crate::contracts::{CommandError, NotificationReceipt, TodaySnapshot, WindowModeReceipt};
+use crate::contracts::{
+    CommandError, MapWorkspaceQuery, MapWorkspaceSnapshot, NotificationReceipt, TodaySnapshot,
+    WindowModeReceipt,
+};
 use crate::shell::apply_window_mode;
 use crate::state::{notification_receipt, DesktopState};
 use crate::DATA_CHANGED_EVENT;
@@ -16,6 +19,14 @@ pub fn status(state: State<'_, DesktopState>) -> Result<StatusSnapshot, CommandE
 #[tauri::command(async)]
 pub fn today(state: State<'_, DesktopState>) -> Result<TodaySnapshot, CommandError> {
     state.today()
+}
+
+#[tauri::command(async)]
+pub fn map_workspace(
+    state: State<'_, DesktopState>,
+    query: MapWorkspaceQuery,
+) -> Result<MapWorkspaceSnapshot, CommandError> {
+    state.map_workspace(query)
 }
 
 #[tauri::command(async)]

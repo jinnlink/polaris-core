@@ -39,6 +39,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::status,
             commands::today,
+            commands::map_workspace,
             commands::switch_pack,
             commands::set_window_mode,
             commands::hide_to_tray,

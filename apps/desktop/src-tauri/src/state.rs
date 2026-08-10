@@ -1,14 +1,22 @@
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 
 use polaris_core::db::open_database;
 use polaris_core::engine::{Engine, TaskAssignment};
+use polaris_core::knowledge_map::{
+    KnowledgeMapDueStatus, KnowledgeMapGateStatus, KnowledgeMapQuery, KnowledgeMapScope,
+    KnowledgeMapSnapshot, KnowledgeMapStateSource,
+};
 use polaris_core::notification::NotificationPolicy;
 use polaris_core::pack_state::{PackSwitchReceipt, ThetaMode};
+use polaris_core::prediction_map::{PredictionEstimate, PredictionMapSnapshot};
 use polaris_core::status::StatusSnapshot;
 
 use crate::contracts::{
-    CommandError, NotificationReceipt, TodayAction, TodaySignal, TodaySnapshot,
+    CommandError, MapWorkspaceAggregate, MapWorkspaceAnchor, MapWorkspaceEdge, MapWorkspaceLayer,
+    MapWorkspaceNode, MapWorkspacePath, MapWorkspaceQuery, MapWorkspaceSnapshot,
+    NotificationReceipt, TodayAction, TodaySignal, TodaySnapshot,
 };
 
 pub struct DesktopState {
@@ -80,6 +88,282 @@ impl DesktopState {
             .notification_policy()
             .map_err(CommandError::core)
     }
+
+    pub fn map_workspace(
+        &self,
+        request: MapWorkspaceQuery,
+    ) -> Result<MapWorkspaceSnapshot, CommandError> {
+        let query = core_map_query(&request)?;
+        let engine = self.engine()?;
+        match request.view.as_str() {
+            "current" | "global" => engine
+                .knowledge_map(query)
+                .map(|snapshot| map_from_knowledge(&request.view, snapshot))
+                .map_err(CommandError::core),
+            "prediction" => engine
+                .knowledge_and_prediction_map(query)
+                .map(|(knowledge, prediction)| map_from_prediction(knowledge, prediction))
+                .map_err(CommandError::core),
+            other => Err(CommandError::state(format!("unknown map view: {other}"))),
+        }
+    }
+}
+
+fn core_map_query(request: &MapWorkspaceQuery) -> Result<KnowledgeMapQuery, CommandError> {
+    let scope = match request.view.as_str() {
+        "current" | "prediction" => KnowledgeMapScope::Pack,
+        "global" => KnowledgeMapScope::Global,
+        other => return Err(CommandError::state(format!("unknown map view: {other}"))),
+    };
+    let due = request
+        .due
+        .as_deref()
+        .map(|value| match value {
+            "new" => Ok(KnowledgeMapDueStatus::New),
+            "due" => Ok(KnowledgeMapDueStatus::Due),
+            "scheduled" => Ok(KnowledgeMapDueStatus::Scheduled),
+            "unscheduled" => Ok(KnowledgeMapDueStatus::Unscheduled),
+            other => Err(CommandError::state(format!("unknown due status: {other}"))),
+        })
+        .transpose()?;
+    Ok(KnowledgeMapQuery {
+        scope,
+        pack: request.pack.clone(),
+        root: request.root.clone(),
+        depth: request.depth,
+        phase: request.phase.clone(),
+        due,
+        min_confidence: request.min_confidence,
+        limit: request.limit,
+        cursor: request.cursor.clone(),
+    })
+}
+
+fn map_from_knowledge(view: &str, snapshot: KnowledgeMapSnapshot) -> MapWorkspaceSnapshot {
+    let aggregates = map_aggregates(&snapshot);
+    let model_version = snapshot.model_version.clone();
+    let nodes = snapshot
+        .nodes
+        .into_iter()
+        .map(|node| MapWorkspaceNode {
+            id: node.id,
+            name: node.name,
+            kind: node.kind,
+            pack: node.pack,
+            phase: node.phase,
+            phase_label: node.phase_label,
+            phase_summary: node.phase_summary,
+            due_status: due_status(node.due_status),
+            attempt_count: node.attempt_count,
+            evidence_count: node.evidence_count,
+            layers: vec![MapWorkspaceLayer {
+                source: state_source(node.provenance.source),
+                cross_domain: false,
+                value: node.p_known,
+                confidence: Some(node.uncertainty.confidence),
+                lower: None,
+                upper: None,
+                gate_status: gate_status(node.provenance.gate_status),
+                model_version: model_version.clone(),
+                origin: node.provenance.origin,
+                evidence_ids: node.provenance.evidence_ids,
+                provenance_complete: node.provenance.complete,
+            }],
+        })
+        .collect();
+    MapWorkspaceSnapshot {
+        generated_at: snapshot.generated_at,
+        view: view.to_owned(),
+        resolved_pack: snapshot.summary.resolved_pack,
+        theta_mode: None,
+        total_nodes: snapshot.summary.total_nodes,
+        returned_nodes: snapshot.summary.returned_nodes,
+        next_cursor: snapshot.next_cursor,
+        nodes,
+        edges: map_edges(snapshot.edges),
+        aggregates,
+        anchors: Vec::new(),
+        paths: Vec::new(),
+    }
+}
+
+fn map_from_prediction(
+    knowledge: KnowledgeMapSnapshot,
+    prediction: PredictionMapSnapshot,
+) -> MapWorkspaceSnapshot {
+    let aggregates = map_aggregates(&knowledge);
+    let metadata = knowledge
+        .nodes
+        .iter()
+        .map(|node| (node.id.clone(), node))
+        .collect::<BTreeMap<_, _>>();
+    let nodes = prediction
+        .nodes
+        .into_iter()
+        .map(|node| {
+            let current = metadata.get(&node.id);
+            let mut layers = Vec::new();
+            for estimate in [node.observed, node.latent_prediction, node.inherited_prior]
+                .into_iter()
+                .flatten()
+            {
+                layers.push(map_prediction_layer(estimate));
+            }
+            MapWorkspaceNode {
+                id: node.id,
+                name: node.name,
+                kind: node.kind,
+                pack: node.pack,
+                phase: node.phase,
+                phase_label: current
+                    .map(|item| item.phase_label.clone())
+                    .unwrap_or_default(),
+                phase_summary: current
+                    .map(|item| item.phase_summary.clone())
+                    .unwrap_or_default(),
+                due_status: due_status(node.due_status),
+                attempt_count: node.attempt_count,
+                evidence_count: node.evidence_count,
+                layers,
+            }
+        })
+        .collect::<Vec<_>>();
+    MapWorkspaceSnapshot {
+        generated_at: prediction.generated_at,
+        view: "prediction".to_owned(),
+        resolved_pack: prediction.summary.resolved_pack,
+        theta_mode: prediction.summary.theta_mode,
+        total_nodes: prediction.summary.total_nodes,
+        returned_nodes: prediction.summary.returned_nodes,
+        next_cursor: prediction.next_cursor,
+        nodes,
+        edges: map_edges(knowledge.edges),
+        aggregates,
+        anchors: prediction
+            .anchors
+            .into_iter()
+            .map(|anchor| MapWorkspaceAnchor {
+                id: anchor.id,
+                source_concept_id: anchor.source_concept_id,
+                source_name: anchor.source_name,
+                source_pack: anchor.source_pack,
+                target_id: anchor.target_id,
+                target_name: anchor.target_name,
+                target_pack: anchor.target_pack,
+                structural_score: anchor.structural_score,
+                difference: anchor.difference,
+                origin: anchor.provenance.origin,
+                evidence_ids: anchor.provenance.evidence_ids,
+            })
+            .collect(),
+        paths: prediction
+            .initial_paths
+            .into_iter()
+            .map(|path| MapWorkspacePath {
+                rank: path.rank,
+                concept_id: path.concept_id,
+                concept_name: path.concept_name,
+                move_name: path.move_name,
+                expected_success: path.expected_success,
+            })
+            .collect(),
+    }
+}
+
+fn map_prediction_layer(estimate: PredictionEstimate) -> MapWorkspaceLayer {
+    MapWorkspaceLayer {
+        source: state_source(estimate.source),
+        cross_domain: estimate.cross_domain,
+        value: estimate.value,
+        confidence: None,
+        lower: Some(estimate.interval.lower),
+        upper: Some(estimate.interval.upper),
+        gate_status: gate_status(estimate.gate_status),
+        model_version: estimate.model_version,
+        origin: estimate.provenance.origin,
+        evidence_ids: estimate.provenance.evidence_ids,
+        provenance_complete: estimate.provenance.complete,
+    }
+}
+
+fn map_edges(edges: Vec<polaris_core::knowledge_map::KnowledgeMapEdge>) -> Vec<MapWorkspaceEdge> {
+    edges
+        .into_iter()
+        .map(|edge| MapWorkspaceEdge {
+            id: edge.id,
+            source_id: edge.source_id,
+            target_id: edge.target_id,
+            kind: edge.kind,
+            weight: edge.weight,
+            origin: edge.provenance.origin,
+            evidence_ids: edge.provenance.evidence_ids,
+        })
+        .collect()
+}
+
+fn map_aggregates(snapshot: &KnowledgeMapSnapshot) -> Vec<MapWorkspaceAggregate> {
+    let packs = snapshot
+        .summary
+        .packs
+        .iter()
+        .map(|pack| MapWorkspaceAggregate {
+            id: pack.id.clone().unwrap_or_else(|| "unassigned".to_owned()),
+            label: pack
+                .title
+                .clone()
+                .or_else(|| pack.id.clone())
+                .unwrap_or_else(|| "未分组".to_owned()),
+            kind: "pack".to_owned(),
+            concept_count: pack.concept_count,
+            due_count: Some(pack.due_count),
+            observed_count: Some(pack.observed_count),
+            mean_value: pack.mean_p_known,
+            mean_confidence: pack.mean_confidence,
+        });
+    let dimensions = snapshot
+        .summary
+        .dimensions
+        .iter()
+        .map(|dimension| MapWorkspaceAggregate {
+            id: dimension.id.clone(),
+            label: dimension.id.clone(),
+            kind: "dimension".to_owned(),
+            concept_count: dimension.concept_count,
+            due_count: None,
+            observed_count: None,
+            mean_value: dimension.mean_p_known,
+            mean_confidence: dimension.mean_confidence,
+        });
+    packs.chain(dimensions).collect()
+}
+
+fn due_status(status: KnowledgeMapDueStatus) -> String {
+    match status {
+        KnowledgeMapDueStatus::New => "new",
+        KnowledgeMapDueStatus::Due => "due",
+        KnowledgeMapDueStatus::Scheduled => "scheduled",
+        KnowledgeMapDueStatus::Unscheduled => "unscheduled",
+    }
+    .to_owned()
+}
+
+fn state_source(source: KnowledgeMapStateSource) -> String {
+    match source {
+        KnowledgeMapStateSource::Observed => "observed",
+        KnowledgeMapStateSource::LatentPrediction => "latent_prediction",
+        KnowledgeMapStateSource::InheritedPrior => "inherited_prior",
+    }
+    .to_owned()
+}
+
+fn gate_status(status: KnowledgeMapGateStatus) -> String {
+    match status {
+        KnowledgeMapGateStatus::Active => "active",
+        KnowledgeMapGateStatus::Shadow => "shadow",
+        KnowledgeMapGateStatus::Unfit => "unfit",
+        KnowledgeMapGateStatus::PriorOnly => "prior_only",
+    }
+    .to_owned()
 }
 
 pub fn build_today_actions(assignments: Vec<TaskAssignment>) -> Vec<TodayAction> {

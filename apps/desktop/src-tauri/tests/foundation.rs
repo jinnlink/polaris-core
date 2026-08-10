@@ -2,6 +2,7 @@ use std::time::{Duration, Instant};
 
 use polaris_core::db::{open_database, CURRENT_SCHEMA_VERSION};
 use polaris_core::engine::Engine;
+use polaris_desktop_lib::contracts::MapWorkspaceQuery;
 use polaris_desktop_lib::state::{notification_receipt, DesktopState};
 use tempfile::tempdir;
 
@@ -67,6 +68,78 @@ fn today_uses_scheduler_and_pack_switch_is_immediate() {
     assert_eq!(today.theta_mode.as_deref(), Some("isolated"));
     assert_eq!(today.actions.len(), 3);
     assert!(today.actions.iter().any(|action| action.kind == "practice"));
+}
+
+fn map_query(view: &str, pack: Option<&str>) -> MapWorkspaceQuery {
+    MapWorkspaceQuery {
+        view: view.to_owned(),
+        pack: pack.map(str::to_owned),
+        root: None,
+        depth: None,
+        phase: None,
+        due: None,
+        min_confidence: None,
+        limit: 100,
+        cursor: None,
+    }
+}
+
+#[test]
+fn map_workspace_preserves_current_prediction_and_global_contracts() {
+    let dir = tempdir().unwrap();
+    let database = dir.path().join("maps.sqlite");
+    let connection = open_database(&database).unwrap();
+    let mut engine = Engine::new(connection);
+    engine.init_pack(workspace_path("packs/rust")).unwrap();
+    engine
+        .init_pack(workspace_path("packs/algorithms"))
+        .unwrap();
+    drop(engine);
+    let state = DesktopState::open(&database).unwrap();
+
+    let current = state
+        .map_workspace(map_query("current", Some("rust")))
+        .unwrap();
+    assert_eq!(current.view, "current");
+    assert!(!current.nodes.is_empty());
+    assert!(current.nodes.len() <= 100);
+    assert!(current
+        .nodes
+        .iter()
+        .flat_map(|node| &node.layers)
+        .all(|layer| !layer.cross_domain));
+    let mut neighborhood_query = map_query("current", Some("rust"));
+    neighborhood_query.root = Some(current.nodes[0].id.clone());
+    neighborhood_query.depth = Some(1);
+    let neighborhood = state.map_workspace(neighborhood_query).unwrap();
+    assert!(neighborhood
+        .nodes
+        .iter()
+        .any(|node| node.id == current.nodes[0].id));
+    let mut due_query = map_query("current", Some("rust"));
+    due_query.due = Some("new".to_owned());
+    let new_nodes = state.map_workspace(due_query).unwrap();
+    assert!(new_nodes.nodes.iter().all(|node| node.due_status == "new"));
+
+    state.switch_pack("rust", Some("isolated")).unwrap();
+    let prediction = state
+        .map_workspace(map_query("prediction", Some("rust")))
+        .unwrap();
+    assert_eq!(prediction.theta_mode.as_deref(), Some("isolated"));
+    assert!(prediction
+        .nodes
+        .iter()
+        .flat_map(|node| &node.layers)
+        .all(|layer| !layer.cross_domain));
+
+    let global = state.map_workspace(map_query("global", None)).unwrap();
+    assert_eq!(global.view, "global");
+    assert!(global.nodes.is_empty());
+    assert!(global.aggregates.iter().any(|item| item.kind == "pack"));
+    assert!(global
+        .aggregates
+        .iter()
+        .any(|item| item.kind == "dimension"));
 }
 
 #[test]

@@ -294,13 +294,22 @@ impl Engine {
     }
 
     pub fn prediction_map(&self, query: PredictionMapQuery) -> Result<PredictionMapSnapshot> {
+        self.knowledge_and_prediction_map(query)
+            .map(|(_, prediction)| prediction)
+    }
+
+    pub fn knowledge_and_prediction_map(
+        &self,
+        query: PredictionMapQuery,
+    ) -> Result<(KnowledgeMapSnapshot, PredictionMapSnapshot)> {
         let knowledge = knowledge_map_snapshot(&self.conn, query)?;
         let paths = if knowledge.summary.scope == crate::knowledge_map::KnowledgeMapScope::Pack {
             self.preview_learning_paths_for_pack(knowledge.summary.resolved_pack.as_deref(), 3)?
         } else {
             Vec::new()
         };
-        prediction_map_snapshot(&self.conn, knowledge, paths)
+        let prediction = prediction_map_snapshot(&self.conn, knowledge.clone(), paths)?;
+        Ok((knowledge, prediction))
     }
 
     pub fn global_profile_settings(&self) -> Result<ProfileSettings> {

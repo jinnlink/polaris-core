@@ -1,8 +1,14 @@
+import { lazy, Suspense } from "react";
 import { createHashRouter } from "react-router-dom";
 
 import { AppShell } from "../components/AppShell";
 import { RoutePlaceholder } from "../components/RoutePlaceholder";
 import { TodayPage } from "../components/TodayPage";
+
+const MapPage = lazy(async () => {
+  const module = await import("../components/MapPage");
+  return { default: module.MapPage };
+});
 
 export const routeDefinitions = [
   { path: "/", key: "today", label: "Today", description: "今天最值得完成的 2–3 个行动。" },
@@ -21,8 +27,10 @@ export const router = createHashRouter([
     element: <AppShell />,
     children: routeDefinitions.map((route) => ({
       path: route.path,
-      element: route.key === "today" ? (
-        <TodayPage />
+      element: route.key === "today" ? <TodayPage /> : route.key === "map" ? (
+        <Suspense fallback={<section className="map-loading" role="status">正在加载知识地图…</section>}>
+          <MapPage />
+        </Suspense>
       ) : (
         <RoutePlaceholder
           eyebrow={route.key}

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 
 import { routeDefinitions } from "../app/routes";
 import {
@@ -11,6 +11,8 @@ import {
 } from "../lib/commands";
 
 export function AppShell() {
+  const location = useLocation();
+  const isMapRoute = location.pathname === "/map";
   const [windowMode, setLocalWindowMode] = useState<"compact" | "workspace">("compact");
   const status = useQuery({
     queryKey: commandKeys.status,
@@ -21,9 +23,9 @@ export function AppShell() {
   const error = status.error ? normalizeCommandError(status.error) : null;
 
   return (
-    <div className="app-frame" data-window-mode={windowMode}>
+    <div className="app-frame" data-window-mode={windowMode} data-route={isMapRoute ? "map" : "default"}>
       <a className="skip-link" href="#main-content">跳到主要内容</a>
-      <aside className="sidebar" aria-label="主导航">
+      <aside className="sidebar" aria-label="主导航" aria-hidden={isMapRoute || undefined}>
         <header className="brand">
           <span className="brand__mark" aria-hidden="true">P</span>
           <div>
