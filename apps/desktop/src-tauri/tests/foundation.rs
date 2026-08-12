@@ -2,9 +2,13 @@ use std::time::{Duration, Instant};
 
 use polaris_core::db::{open_database, CURRENT_SCHEMA_VERSION};
 use polaris_core::engine::Engine;
+use polaris_core::profile::{ProfileDimensionInput, ProfileGateStatus, ProfileScope};
 use polaris_desktop_lib::contracts::{
-    CaptureWorkspaceInput, InboxActionInput, InboxPracticeSubmitInput, InboxWorkspaceQuery,
-    MapWorkspaceQuery, PracticeSubmitInput,
+    AiInteractionProfileUpdate, CaptureWorkspaceInput, FullDeleteInput, GoalDimensionInput,
+    GoalEditorInput, GoalMilestoneInput, GoalScopeInput, InboxActionInput,
+    InboxPracticeSubmitInput, InboxWorkspaceQuery, MapWorkspaceQuery, PracticeSubmitInput,
+    ProfileExportInput, ProfileMeasurementSubmitInput, ProfileSettingsUpdateInput,
+    ReportFeedbackInput,
 };
 use polaris_desktop_lib::state::{notification_receipt, DesktopState};
 use tempfile::tempdir;
@@ -28,6 +32,349 @@ fn fresh_database_opens_and_returns_status() {
     assert!(database.exists());
     assert!(snapshot.current_pack.is_none());
     assert!(snapshot.concepts.is_empty());
+}
+
+#[test]
+fn profile_workspace_keeps_shadow_dimensions_non_authoritative() {
+    let dir = tempdir().unwrap();
+    let database = dir.path().join("profile-workspace.sqlite");
+    let connection = open_database(&database).unwrap();
+    let engine = Engine::new(connection);
+    engine
+        .store_profile_dimension(ProfileDimensionInput {
+            scope: ProfileScope::Global,
+            scope_id: None,
+            dimension_key: "self_efficacy".to_owned(),
+            mean: 0.72,
+            variance: 0.04,
+            evidence_count: 12,
+            model_version: "test-v1".to_owned(),
+            gate_status: ProfileGateStatus::Shadow,
+            provenance: serde_json::json!({"source":"test"}),
+            evidence_ids: vec!["evidence-profile-1".to_owned()],
+        })
+        .unwrap();
+    drop(engine);
+
+    let snapshot = DesktopState::open(&database)
+        .unwrap()
+        .profile_workspace()
+        .unwrap();
+    let dimension = snapshot
+        .dimensions
+        .iter()
+        .find(|item| item.key == "self_efficacy")
+        .unwrap();
+
+    assert_eq!(dimension.gate_status, "shadow");
+    assert!(dimension.lower < dimension.mean && dimension.mean < dimension.upper);
+    assert!(dimension.will_not_affect.contains("不会参与调度"));
+    assert_eq!(dimension.evidence_count, 12);
+    assert_eq!(snapshot.actions.len(), 3);
+}
+
+#[test]
+fn goals_workspace_supports_crud_progress_actions_and_distinct_archive_delete() {
+    let dir = tempdir().unwrap();
+    let database = dir.path().join("goals-workspace.sqlite");
+    let connection = open_database(&database).unwrap();
+    let mut engine = Engine::new(connection);
+    engine
+        .init_pack(workspace_path("packs/algorithms"))
+        .unwrap();
+    drop(engine);
+    let state = DesktopState::open(&database).unwrap();
+    let mut input = GoalEditorInput {
+        id: "desktop-goal".to_owned(),
+        title: "掌握算法边界".to_owned(),
+        description: Some("用证据验证复杂度和边界条件。".to_owned()),
+        status: "active".to_owned(),
+        deadline: Some("2026-09-01".to_owned()),
+        pace: Some("steady".to_owned()),
+        priority: 70,
+        scope: GoalScopeInput {
+            pack_ids: vec!["algorithms".to_owned()],
+            dimension_keys: Vec::new(),
+            concept_ids: Vec::new(),
+        },
+        dimensions: vec![GoalDimensionInput {
+            id: "goal-dim".to_owned(),
+            dimension_key: "mastery".to_owned(),
+            display_name: "平均掌握度".to_owned(),
+            metric_type: "mastery_mean".to_owned(),
+            target_value: 0.8,
+            weight: 1.0,
+        }],
+        milestones: vec![GoalMilestoneInput {
+            id: "goal-milestone".to_owned(),
+            title: "达到稳定掌握".to_owned(),
+            dimension_key: Some("mastery".to_owned()),
+            threshold: Some(0.8),
+            manual: false,
+        }],
+    };
+    assert_eq!(state.save_goal(input.clone()).unwrap().effect, "created");
+    let workspace = state.goals_workspace(Some("desktop-goal")).unwrap();
+    assert_eq!(workspace.goals.len(), 1);
+    assert_eq!(workspace.goals[0].dimensions.len(), 1);
+    assert!((2..=3).contains(&workspace.actions.len()));
+    let connection = open_database(&database).unwrap();
+    connection
+        .execute(
+            "UPDATE goal_dimensions SET current_value=0.4 WHERE id='goal-dim'",
+            [],
+        )
+        .unwrap();
+    connection
+        .execute(
+            "UPDATE goal_milestones SET status='reached', reached_at='2026-08-12T00:00:00Z' WHERE id='goal-milestone'",
+            [],
+        )
+        .unwrap();
+    drop(connection);
+    input.title = "掌握算法边界（更新）".to_owned();
+    assert_eq!(state.save_goal(input.clone()).unwrap().effect, "updated");
+    let updated = state.goals_workspace(Some("desktop-goal")).unwrap();
+    assert_eq!(updated.goals[0].title, "掌握算法边界（更新）");
+    let connection = open_database(&database).unwrap();
+    let stored_progress: f64 = connection
+        .query_row(
+            "SELECT current_value FROM goal_dimensions WHERE id='goal-dim'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let stored_milestone: String = connection
+        .query_row(
+            "SELECT status FROM goal_milestones WHERE id='goal-milestone'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(stored_progress, 0.4);
+    assert_eq!(stored_milestone, "reached");
+    drop(connection);
+    input.status = "paused".to_owned();
+    state.save_goal(input.clone()).unwrap();
+    let paused = state.goals_workspace(Some("desktop-goal")).unwrap();
+    assert!(paused.actions.is_empty());
+    assert_eq!(paused.goals[0].dimensions[0].current_value, 0.4);
+    assert_eq!(paused.goals[0].milestones[0].status, "reached");
+    assert_eq!(paused.goals[0].overall_progress, 0.5);
+    input.status = "active".to_owned();
+    state.save_goal(input).unwrap();
+    assert_eq!(
+        state.refresh_goal("desktop-goal").unwrap().effect,
+        "refreshed"
+    );
+    assert_eq!(
+        state.archive_goal("desktop-goal").unwrap().effect,
+        "archived"
+    );
+    assert_eq!(
+        state.goals_workspace(Some("desktop-goal")).unwrap().goals[0].status,
+        "archived"
+    );
+    assert_eq!(state.delete_goal("desktop-goal").unwrap().effect, "deleted");
+    assert!(state.goals_workspace(None).unwrap().goals.is_empty());
+}
+
+#[test]
+fn reports_and_trust_expose_evidence_gates_and_record_both_feedback_verdicts() {
+    let dir = tempdir().unwrap();
+    let database = dir.path().join("governance-workspace.sqlite");
+    let state = DesktopState::open(&database).unwrap();
+    assert_eq!(state.run_report().unwrap().effect, "generated");
+    let report_json = serde_json::json!({
+        "schema_version": 1,
+        "id": "desktop-report",
+        "week": "2099-W01",
+        "generated_at": "2099-01-05T00:00:00Z",
+        "window_days": 7,
+        "assertions": [{
+            "id": "assertion-1",
+            "kind": "calibration",
+            "subject": "concept-1",
+            "claim": "把握度高于实际表现。",
+            "confidence": 0.8,
+            "evidence_ids": ["attempt-1"],
+            "stats": {},
+            "suggested_action": "继续验证。"
+        }],
+        "hypotheses": [],
+        "suggestions": [],
+        "top_signal": {
+            "id": "assertion-1",
+            "kind": "calibration",
+            "subject": "concept-1",
+            "claim": "把握度高于实际表现。",
+            "confidence": 0.8,
+            "evidence_ids": ["attempt-1"],
+            "stats": {},
+            "suggested_action": "继续验证。"
+        },
+        "skipped": [],
+        "hazard_gate": { "participates": false, "reason": "below gate", "validation_auc": 0.6, "auc_gate": 0.7 },
+        "reflection_prompts": ["哪条不符合你的实际？"],
+        "narrative": null
+    })
+    .to_string();
+    let connection = open_database(&database).unwrap();
+    connection.execute(
+        "INSERT INTO mirror_reports(id, week, generated_at, report_json, assertion_count, skipped_count)
+         VALUES ('desktop-report', '2099-W01', '2099-01-05T00:00:00Z', ?1, 1, 0)",
+        [&report_json],
+    ).unwrap();
+    drop(connection);
+    let workspace = state.reports_workspace().unwrap();
+    let report = workspace.report.unwrap();
+    assert_eq!(report.top_signal.unwrap().evidence_ids, ["attempt-1"]);
+    assert_eq!(report.citation_status, "structured_evidence");
+    for verdict in ["accurate", "inaccurate"] {
+        let receipt = state
+            .report_feedback(ReportFeedbackInput {
+                report_id: "desktop-report".to_owned(),
+                assertion_id: "assertion-1".to_owned(),
+                verdict: verdict.to_owned(),
+            })
+            .unwrap();
+        assert_eq!(receipt.effect, format!("feedback_{verdict}"));
+    }
+    let trust = state.trust_workspace().unwrap();
+    assert_eq!(trust.gates.len(), 5);
+    assert_eq!(
+        trust
+            .gates
+            .iter()
+            .map(|gate| gate.framework.as_str())
+            .collect::<Vec<_>>(),
+        ["F1", "F2", "F3", "F4", "F5"]
+    );
+    assert_eq!(trust.governance.len(), 3);
+    let connection = open_database(&database).unwrap();
+    let feedback_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM behavior_events WHERE type='report_feedback'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(feedback_count, 2);
+}
+
+#[test]
+fn settings_controls_profile_ai_measurement_export_and_profile_only_reset() {
+    let dir = tempdir().unwrap();
+    let database = dir.path().join("settings.sqlite");
+    let state = DesktopState::open(&database).unwrap();
+    let initial = state.settings_workspace().unwrap();
+    assert!(initial.profile.enabled);
+    assert_eq!(initial.privacy_calls.len(), 3);
+    assert!(initial.instruments.iter().all(|instrument| instrument
+        .admin_modes
+        .contains(&"ema_single_item".to_owned())));
+    state
+        .update_profile_settings(ProfileSettingsUpdateInput {
+            enabled: None,
+            acknowledge_disclosure: true,
+            summary_sharing_enabled: None,
+            paused_until: None,
+            clear_pause: false,
+        })
+        .unwrap();
+    state
+        .update_ai_profile(AiInteractionProfileUpdate {
+            persona: Some("socratic_tutor".to_owned()),
+            verbosity: None,
+            explanation_depth: None,
+            proactivity: None,
+            intervention_frequency: None,
+            correction_style: None,
+            custom_notes: Some("先问边界".to_owned()),
+        })
+        .unwrap();
+    let instrument = initial
+        .instruments
+        .iter()
+        .find(|item| item.id == "gse")
+        .unwrap();
+    let item = instrument.items.first().unwrap();
+    state
+        .submit_profile_measurement(ProfileMeasurementSubmitInput {
+            session_id: "settings-session".to_owned(),
+            instrument_id: instrument.id.clone(),
+            instrument_version: instrument.version.clone(),
+            item_id: item.id.clone(),
+            locale: "en".to_owned(),
+            admin_mode: "ema_single_item".to_owned(),
+            response: instrument.response_min,
+        })
+        .unwrap();
+    let export_path = dir.path().join("profile.json");
+    state
+        .export_profile(ProfileExportInput {
+            output_path: export_path.display().to_string(),
+        })
+        .unwrap();
+    assert!(export_path.is_file());
+    let reset = state.reset_profile().unwrap();
+    assert!(reset.message.contains("学习尝试保持不变"));
+    let updated = state.settings_workspace().unwrap();
+    assert_eq!(updated.profile_measurement_count, 0);
+    assert_eq!(updated.ai_profile.persona, "socratic_tutor");
+}
+
+#[test]
+fn desktop_full_delete_previews_scope_rejects_wrong_confirmation_and_reopens_empty_database() {
+    let dir = tempdir().unwrap();
+    let database = dir.path().join("delete-all.sqlite");
+    let state = DesktopState::open(&database).unwrap();
+    state
+        .save_goal(GoalEditorInput {
+            id: "delete-me".to_owned(),
+            title: "待清除目标".to_owned(),
+            description: None,
+            status: "active".to_owned(),
+            deadline: None,
+            pace: None,
+            priority: 50,
+            scope: GoalScopeInput {
+                pack_ids: Vec::new(),
+                dimension_keys: Vec::new(),
+                concept_ids: Vec::new(),
+            },
+            dimensions: vec![GoalDimensionInput {
+                id: "delete-dim".to_owned(),
+                dimension_key: "attempts".to_owned(),
+                display_name: "回答".to_owned(),
+                metric_type: "graded_attempts".to_owned(),
+                target_value: 1.0,
+                weight: 1.0,
+            }],
+            milestones: Vec::new(),
+        })
+        .unwrap();
+    let scope = state.full_delete_scope().unwrap();
+    assert_eq!(scope.goals, 1);
+    let error = state
+        .delete_all_data(FullDeleteInput {
+            confirmation: "wrong".to_owned(),
+            backup_path: None,
+        })
+        .unwrap_err();
+    assert!(error.message.contains("DELETE ALL POLARIS LEARNING DATA"));
+    assert_eq!(state.full_delete_scope().unwrap().goals, 1);
+    let backup = dir.path().join("explicit-backup.sqlite");
+    let receipt = state
+        .delete_all_data(FullDeleteInput {
+            confirmation: scope.confirmation_phrase,
+            backup_path: Some(backup.display().to_string()),
+        })
+        .unwrap();
+    assert!(receipt.empty_database_created);
+    assert!(backup.is_file());
+    assert_eq!(state.full_delete_scope().unwrap().goals, 0);
+    assert!(state.today().is_ok());
 }
 
 #[test]

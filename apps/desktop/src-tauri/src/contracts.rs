@@ -314,6 +314,414 @@ pub struct InboxPracticeSubmitReceipt {
     pub degraded: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct ProfileSettingsView {
+    pub enabled: bool,
+    pub disclosure_required: bool,
+    pub disclosure_acknowledged: bool,
+    pub summary_sharing_enabled: bool,
+    pub paused_until: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+pub struct ProfileBehaviorFact {
+    pub id: String,
+    pub label: String,
+    pub value: String,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+pub struct ProfileDimensionView {
+    pub key: String,
+    pub label: String,
+    pub mean: f64,
+    pub lower: f64,
+    pub upper: f64,
+    pub evidence_count: i32,
+    pub gate_status: String,
+    pub gate_label: String,
+    pub purpose: String,
+    pub will_not_affect: String,
+    pub evidence_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+pub struct ProfileWorkspaceSnapshot {
+    pub generated_at: String,
+    pub settings: ProfileSettingsView,
+    pub facts: Vec<ProfileBehaviorFact>,
+    pub dimensions: Vec<ProfileDimensionView>,
+    pub notice: String,
+    pub actions: Vec<WorkbenchAction>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, TS)]
+pub struct GoalScopeInput {
+    pub pack_ids: Vec<String>,
+    pub dimension_keys: Vec<String>,
+    pub concept_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, TS)]
+pub struct GoalDimensionInput {
+    pub id: String,
+    pub dimension_key: String,
+    pub display_name: String,
+    pub metric_type: String,
+    pub target_value: f64,
+    pub weight: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, TS)]
+pub struct GoalMilestoneInput {
+    pub id: String,
+    pub title: String,
+    pub dimension_key: Option<String>,
+    pub threshold: Option<f64>,
+    pub manual: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, TS)]
+pub struct GoalEditorInput {
+    pub id: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub status: String,
+    pub deadline: Option<String>,
+    pub pace: Option<String>,
+    pub priority: i32,
+    pub scope: GoalScopeInput,
+    pub dimensions: Vec<GoalDimensionInput>,
+    pub milestones: Vec<GoalMilestoneInput>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+pub struct GoalDimensionView {
+    pub id: String,
+    pub dimension_key: String,
+    pub display_name: String,
+    pub metric_type: String,
+    pub current_value: f64,
+    pub target_value: f64,
+    pub weight: f64,
+    pub progress: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+pub struct GoalMilestoneView {
+    pub id: String,
+    pub title: String,
+    pub status: String,
+    pub reached_at: Option<String>,
+    pub dimension_key: Option<String>,
+    pub threshold: Option<f64>,
+    pub manual: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+pub struct GoalView {
+    pub id: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub status: String,
+    pub deadline: Option<String>,
+    pub pace: Option<String>,
+    pub priority: i32,
+    pub scope: GoalScopeInput,
+    pub overall_progress: f64,
+    pub dimensions: Vec<GoalDimensionView>,
+    pub milestones: Vec<GoalMilestoneView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+pub struct GoalWorkspaceSnapshot {
+    pub generated_at: String,
+    pub goals: Vec<GoalView>,
+    pub selected_goal_id: Option<String>,
+    pub actions: Vec<TodayAction>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct GoalMutationReceipt {
+    pub goal_id: String,
+    pub effect: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+pub struct MirrorCurvePoint {
+    pub attempt_id: String,
+    pub concept_id: String,
+    pub created_at: String,
+    pub confidence: f64,
+    pub actual_score: f64,
+    pub is_final: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct MirrorPhaseItem {
+    pub phase: String,
+    pub label: String,
+    pub summary: String,
+    pub count: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+pub struct ReportItemView {
+    pub id: String,
+    pub category: String,
+    pub kind: String,
+    pub subject: String,
+    pub claim: String,
+    pub confidence: f64,
+    pub evidence_ids: Vec<String>,
+    pub suggested_action: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct ReportSkippedView {
+    pub id: String,
+    pub kind: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct ReportCitationView {
+    pub evidence_id: String,
+    pub quote: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct ReportNarrativeView {
+    pub text: String,
+    pub citations: Vec<ReportCitationView>,
+    pub degraded: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+pub struct MirrorReportView {
+    pub id: String,
+    pub week: String,
+    pub generated_at: String,
+    pub window_days: i32,
+    pub items: Vec<ReportItemView>,
+    pub top_signal: Option<ReportItemView>,
+    pub skipped: Vec<ReportSkippedView>,
+    pub hazard_participates: bool,
+    pub hazard_reason: String,
+    pub hazard_validation_auc: Option<f64>,
+    pub reflection_prompts: Vec<String>,
+    pub narrative: Option<ReportNarrativeView>,
+    pub citation_status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+pub struct ReportsWorkspaceSnapshot {
+    pub generated_at: String,
+    pub confidence_curve: Vec<MirrorCurvePoint>,
+    pub phase_distribution: Vec<MirrorPhaseItem>,
+    pub report: Option<MirrorReportView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, TS)]
+pub struct ReportFeedbackInput {
+    pub report_id: String,
+    pub assertion_id: String,
+    pub verdict: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct ReportMutationReceipt {
+    pub report_id: String,
+    pub effect: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct TrustGateView {
+    pub framework: String,
+    pub name: String,
+    pub status: String,
+    pub gate: String,
+    pub metric: Option<String>,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+pub struct TrustExperimentView {
+    pub id: String,
+    pub kind: String,
+    pub title: String,
+    pub status: String,
+    pub metric: Option<f64>,
+    pub sample_summary: String,
+    pub hypothesis: Option<String>,
+    pub at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct TrustActivityView {
+    pub id: String,
+    pub label: String,
+    pub count_7d: i32,
+    pub last_at: Option<String>,
+    pub last_status: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct TrustParameterView {
+    pub key: String,
+    pub current_value: String,
+    pub default_value: String,
+    pub class: String,
+    pub bounds: Option<String>,
+    pub tuning_route: String,
+    pub is_governance_gate: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+pub struct TrustWorkspaceSnapshot {
+    pub generated_at: String,
+    pub window_days: i32,
+    pub gates: Vec<TrustGateView>,
+    pub breeding_experiments: Vec<TrustExperimentView>,
+    pub mrt_experiments: Vec<TrustExperimentView>,
+    pub recent_activity: Vec<TrustActivityView>,
+    pub current_pack_id: Option<String>,
+    pub governance: Vec<TrustParameterView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct AiInteractionProfileView {
+    pub persona: String,
+    pub verbosity: String,
+    pub explanation_depth: String,
+    pub proactivity: String,
+    pub intervention_frequency: String,
+    pub correction_style: String,
+    pub custom_notes: Option<String>,
+    pub guidance: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, TS)]
+pub struct AiInteractionProfileUpdate {
+    pub persona: Option<String>,
+    pub verbosity: Option<String>,
+    pub explanation_depth: Option<String>,
+    pub proactivity: Option<String>,
+    pub intervention_frequency: Option<String>,
+    pub correction_style: Option<String>,
+    pub custom_notes: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct PrivacyCallView {
+    pub id: String,
+    pub tier: String,
+    pub trigger: String,
+    pub data_sent: Vec<String>,
+    pub degradation: String,
+    pub disabled_when_tier0_only: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct ProfileInstrumentItemView {
+    pub id: String,
+    pub dimension: String,
+    pub prompt: String,
+    pub keyed: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct ProfileInstrumentView {
+    pub id: String,
+    pub title: String,
+    pub version: String,
+    pub citation: String,
+    pub source_url: String,
+    pub response_min: i32,
+    pub response_max: i32,
+    pub admin_modes: Vec<String>,
+    pub interpretation_notice: String,
+    pub items: Vec<ProfileInstrumentItemView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct SettingsWorkspaceSnapshot {
+    pub generated_at: String,
+    pub profile: ProfileSettingsView,
+    pub ai_profile: AiInteractionProfileView,
+    pub tier0_only: bool,
+    pub privacy_calls: Vec<PrivacyCallView>,
+    pub instruments: Vec<ProfileInstrumentView>,
+    pub profile_measurement_count: i32,
+    pub profile_dimension_count: i32,
+    pub valid_session_count: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, TS)]
+pub struct ProfileSettingsUpdateInput {
+    pub enabled: Option<bool>,
+    pub acknowledge_disclosure: bool,
+    pub summary_sharing_enabled: Option<bool>,
+    pub paused_until: Option<String>,
+    pub clear_pause: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, TS)]
+pub struct ProfileMeasurementSubmitInput {
+    pub session_id: String,
+    pub instrument_id: String,
+    pub instrument_version: String,
+    pub item_id: String,
+    pub locale: String,
+    pub admin_mode: String,
+    pub response: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct SettingsMutationReceipt {
+    pub effect: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, TS)]
+pub struct ProfileExportInput {
+    pub output_path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct FullDeleteScopePreview {
+    pub database_path: String,
+    pub learning_attempts: i32,
+    pub evidence_records: i32,
+    pub goals: i32,
+    pub profile_measurements: i32,
+    pub reports: i32,
+    pub behavior_events: i32,
+    pub sqlite_files: Vec<String>,
+    pub confirmation_phrase: String,
+    pub backup_supported: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, TS)]
+pub struct FullDeleteInput {
+    pub confirmation: String,
+    pub backup_path: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct FullDeleteReceiptView {
+    pub deleted_at: String,
+    pub database_path: String,
+    pub backup_path: Option<String>,
+    pub files_deleted: i32,
+    pub local_secrets_deleted: i32,
+    pub empty_database_created: bool,
+    pub message: String,
+}
+
 impl std::fmt::Display for CommandError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str(&self.message)
@@ -379,6 +787,47 @@ pub fn generated_typescript_contracts() -> String {
         InboxPracticeDraft::decl(&config),
         InboxPracticeSubmitInput::decl(&config),
         InboxPracticeSubmitReceipt::decl(&config),
+        ProfileSettingsView::decl(&config),
+        ProfileBehaviorFact::decl(&config),
+        ProfileDimensionView::decl(&config),
+        ProfileWorkspaceSnapshot::decl(&config),
+        GoalScopeInput::decl(&config),
+        GoalDimensionInput::decl(&config),
+        GoalMilestoneInput::decl(&config),
+        GoalEditorInput::decl(&config),
+        GoalDimensionView::decl(&config),
+        GoalMilestoneView::decl(&config),
+        GoalView::decl(&config),
+        GoalWorkspaceSnapshot::decl(&config),
+        GoalMutationReceipt::decl(&config),
+        MirrorCurvePoint::decl(&config),
+        MirrorPhaseItem::decl(&config),
+        ReportItemView::decl(&config),
+        ReportSkippedView::decl(&config),
+        ReportCitationView::decl(&config),
+        ReportNarrativeView::decl(&config),
+        MirrorReportView::decl(&config),
+        ReportsWorkspaceSnapshot::decl(&config),
+        ReportFeedbackInput::decl(&config),
+        ReportMutationReceipt::decl(&config),
+        TrustGateView::decl(&config),
+        TrustExperimentView::decl(&config),
+        TrustActivityView::decl(&config),
+        TrustParameterView::decl(&config),
+        TrustWorkspaceSnapshot::decl(&config),
+        AiInteractionProfileView::decl(&config),
+        AiInteractionProfileUpdate::decl(&config),
+        PrivacyCallView::decl(&config),
+        ProfileInstrumentItemView::decl(&config),
+        ProfileInstrumentView::decl(&config),
+        SettingsWorkspaceSnapshot::decl(&config),
+        ProfileSettingsUpdateInput::decl(&config),
+        ProfileMeasurementSubmitInput::decl(&config),
+        SettingsMutationReceipt::decl(&config),
+        ProfileExportInput::decl(&config),
+        FullDeleteScopePreview::decl(&config),
+        FullDeleteInput::decl(&config),
+        FullDeleteReceiptView::decl(&config),
         CommandError::decl(&config),
     ];
     format!(

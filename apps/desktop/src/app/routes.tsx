@@ -2,7 +2,6 @@ import { lazy, Suspense } from "react";
 import { createHashRouter } from "react-router-dom";
 
 import { AppShell } from "../components/AppShell";
-import { RoutePlaceholder } from "../components/RoutePlaceholder";
 import { TodayPage } from "../components/TodayPage";
 
 const MapPage = lazy(async () => {
@@ -16,6 +15,26 @@ const PracticePage = lazy(async () => {
 const InboxPage = lazy(async () => {
   const module = await import("../components/InboxPage");
   return { default: module.InboxPage };
+});
+const ProfilePage = lazy(async () => {
+  const module = await import("../components/ProfilePage");
+  return { default: module.ProfilePage };
+});
+const GoalsPage = lazy(async () => {
+  const module = await import("../components/GoalsPage");
+  return { default: module.GoalsPage };
+});
+const ReportsPage = lazy(async () => {
+  const module = await import("../components/ReportsPage");
+  return { default: module.ReportsPage };
+});
+const TrustPage = lazy(async () => {
+  const module = await import("../components/TrustPage");
+  return { default: module.TrustPage };
+});
+const SettingsPage = lazy(async () => {
+  const module = await import("../components/SettingsPage");
+  return { default: module.SettingsPage };
 });
 
 export const routeDefinitions = [
@@ -47,12 +66,26 @@ export const router = createHashRouter([
         <Suspense fallback={<div className="route-loading" role="status">正在读取收件箱…</div>}>
           <InboxPage />
         </Suspense>
+      ) : route.key === "profile" ? (
+        <Suspense fallback={<div className="route-loading" role="status">正在整理画像证据…</div>}>
+          <ProfilePage />
+        </Suspense>
+      ) : route.key === "goals" ? (
+        <Suspense fallback={<div className="route-loading" role="status">正在计算目标路径…</div>}>
+          <GoalsPage />
+        </Suspense>
+      ) : route.key === "reports" ? (
+        <Suspense fallback={<div className="route-loading" role="status">正在整理有出处的学习信号…</div>}>
+          <ReportsPage />
+        </Suspense>
+      ) : route.key === "trust" ? (
+        <Suspense fallback={<div className="route-loading" role="status">正在核对实验门与后台活动…</div>}>
+          <TrustPage />
+        </Suspense>
       ) : (
-        <RoutePlaceholder
-          eyebrow={route.key}
-          title={route.label}
-          description={route.description}
-        />
+        <Suspense fallback={<div className="route-loading" role="status">正在读取本地设置…</div>}>
+          <SettingsPage />
+        </Suspense>
       ),
     })),
   },

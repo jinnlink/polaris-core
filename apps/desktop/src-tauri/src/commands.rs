@@ -4,11 +4,16 @@ use tauri::{AppHandle, Emitter, State, WebviewWindow};
 use tauri_plugin_notification::NotificationExt;
 
 use crate::contracts::{
-    AttemptGradeStatus, CaptureWorkspaceInput, CaptureWorkspaceReceipt, CommandError,
-    GradeQueueReceipt, InboxActionInput, InboxActionReceipt, InboxPracticeDraft,
-    InboxPracticeSubmitInput, InboxPracticeSubmitReceipt, InboxWorkspaceItem, InboxWorkspaceQuery,
-    MapWorkspaceQuery, MapWorkspaceSnapshot, NotificationReceipt, PracticeSubmitInput,
-    PracticeSubmitReceipt, PracticeWorkspaceSnapshot, TodaySnapshot, WindowModeReceipt,
+    AiInteractionProfileUpdate, AttemptGradeStatus, CaptureWorkspaceInput, CaptureWorkspaceReceipt,
+    CommandError, FullDeleteInput, FullDeleteReceiptView, FullDeleteScopePreview, GoalEditorInput,
+    GoalMutationReceipt, GoalWorkspaceSnapshot, GradeQueueReceipt, InboxActionInput,
+    InboxActionReceipt, InboxPracticeDraft, InboxPracticeSubmitInput, InboxPracticeSubmitReceipt,
+    InboxWorkspaceItem, InboxWorkspaceQuery, MapWorkspaceQuery, MapWorkspaceSnapshot,
+    NotificationReceipt, PracticeSubmitInput, PracticeSubmitReceipt, PracticeWorkspaceSnapshot,
+    ProfileExportInput, ProfileMeasurementSubmitInput, ProfileSettingsUpdateInput,
+    ProfileWorkspaceSnapshot, ReportFeedbackInput, ReportMutationReceipt, ReportsWorkspaceSnapshot,
+    SettingsMutationReceipt, SettingsWorkspaceSnapshot, TodaySnapshot, TrustWorkspaceSnapshot,
+    WindowModeReceipt,
 };
 use crate::shell::apply_window_mode;
 use crate::state::{notification_receipt, DesktopState};
@@ -38,6 +43,182 @@ pub fn practice_workspace(
     session_id: String,
 ) -> Result<PracticeWorkspaceSnapshot, CommandError> {
     state.practice_workspace(&session_id)
+}
+
+#[tauri::command(async)]
+pub fn profile_workspace(
+    state: State<'_, DesktopState>,
+) -> Result<ProfileWorkspaceSnapshot, CommandError> {
+    state.profile_workspace()
+}
+
+#[tauri::command(async)]
+pub fn goals_workspace(
+    state: State<'_, DesktopState>,
+    selected_goal_id: Option<String>,
+) -> Result<GoalWorkspaceSnapshot, CommandError> {
+    state.goals_workspace(selected_goal_id.as_deref())
+}
+
+#[tauri::command(async)]
+pub fn save_goal(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    input: GoalEditorInput,
+) -> Result<GoalMutationReceipt, CommandError> {
+    let receipt = state.save_goal(input)?;
+    emit_data_changed(&app, &["goals", "today"], "goal_saved")?;
+    Ok(receipt)
+}
+
+#[tauri::command(async)]
+pub fn refresh_goal(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    goal_id: String,
+) -> Result<GoalMutationReceipt, CommandError> {
+    let receipt = state.refresh_goal(&goal_id)?;
+    emit_data_changed(&app, &["goals"], "goal_refreshed")?;
+    Ok(receipt)
+}
+
+#[tauri::command(async)]
+pub fn archive_goal(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    goal_id: String,
+) -> Result<GoalMutationReceipt, CommandError> {
+    let receipt = state.archive_goal(&goal_id)?;
+    emit_data_changed(&app, &["goals", "today"], "goal_archived")?;
+    Ok(receipt)
+}
+
+#[tauri::command(async)]
+pub fn delete_goal(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    goal_id: String,
+) -> Result<GoalMutationReceipt, CommandError> {
+    let receipt = state.delete_goal(&goal_id)?;
+    emit_data_changed(&app, &["goals", "today"], "goal_deleted")?;
+    Ok(receipt)
+}
+
+#[tauri::command(async)]
+pub fn reports_workspace(
+    state: State<'_, DesktopState>,
+) -> Result<ReportsWorkspaceSnapshot, CommandError> {
+    state.reports_workspace()
+}
+
+#[tauri::command(async)]
+pub fn run_report(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+) -> Result<ReportMutationReceipt, CommandError> {
+    let receipt = state.run_report()?;
+    emit_data_changed(&app, &["reports", "today", "trust"], "report_generated")?;
+    Ok(receipt)
+}
+
+#[tauri::command(async)]
+pub fn report_feedback(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    input: ReportFeedbackInput,
+) -> Result<ReportMutationReceipt, CommandError> {
+    let receipt = state.report_feedback(input)?;
+    emit_data_changed(&app, &["reports"], "report_feedback")?;
+    Ok(receipt)
+}
+
+#[tauri::command(async)]
+pub fn trust_workspace(
+    state: State<'_, DesktopState>,
+) -> Result<TrustWorkspaceSnapshot, CommandError> {
+    state.trust_workspace()
+}
+
+#[tauri::command(async)]
+pub fn settings_workspace(
+    state: State<'_, DesktopState>,
+) -> Result<SettingsWorkspaceSnapshot, CommandError> {
+    state.settings_workspace()
+}
+
+#[tauri::command(async)]
+pub fn update_profile_settings(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    input: ProfileSettingsUpdateInput,
+) -> Result<SettingsMutationReceipt, CommandError> {
+    let receipt = state.update_profile_settings(input)?;
+    emit_data_changed(&app, &["settings", "profile"], "profile_settings_updated")?;
+    Ok(receipt)
+}
+
+#[tauri::command(async)]
+pub fn update_ai_profile(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    input: AiInteractionProfileUpdate,
+) -> Result<SettingsMutationReceipt, CommandError> {
+    let receipt = state.update_ai_profile(input)?;
+    emit_data_changed(&app, &["settings"], "ai_profile_updated")?;
+    Ok(receipt)
+}
+
+#[tauri::command(async)]
+pub fn submit_profile_measurement(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    input: ProfileMeasurementSubmitInput,
+) -> Result<SettingsMutationReceipt, CommandError> {
+    let receipt = state.submit_profile_measurement(input)?;
+    emit_data_changed(&app, &["settings", "profile"], "profile_measurement")?;
+    Ok(receipt)
+}
+
+#[tauri::command(async)]
+pub fn reset_profile(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+) -> Result<SettingsMutationReceipt, CommandError> {
+    let receipt = state.reset_profile()?;
+    emit_data_changed(&app, &["settings", "profile"], "profile_reset")?;
+    Ok(receipt)
+}
+
+#[tauri::command(async)]
+pub fn export_profile(
+    state: State<'_, DesktopState>,
+    input: ProfileExportInput,
+) -> Result<SettingsMutationReceipt, CommandError> {
+    state.export_profile(input)
+}
+
+#[tauri::command(async)]
+pub fn full_delete_scope(
+    state: State<'_, DesktopState>,
+) -> Result<FullDeleteScopePreview, CommandError> {
+    state.full_delete_scope()
+}
+
+#[tauri::command(async)]
+pub fn delete_all_data(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    input: FullDeleteInput,
+) -> Result<FullDeleteReceiptView, CommandError> {
+    let receipt = state.delete_all_data(input)?;
+    emit_data_changed(
+        &app,
+        &[
+            "today", "map", "practice", "inbox", "profile", "goals", "reports", "trust", "settings",
+        ],
+        "all_data_deleted",
+    )?;
+    Ok(receipt)
 }
 
 #[tauri::command(async)]

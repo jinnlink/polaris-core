@@ -7,6 +7,9 @@ import type {
   CaptureWorkspaceReceipt,
   CommandError,
   GradeQueueReceipt,
+  GoalEditorInput,
+  GoalMutationReceipt,
+  GoalWorkspaceSnapshot,
   InboxActionInput,
   InboxActionReceipt,
   InboxPracticeDraft,
@@ -20,11 +23,28 @@ import type {
   PracticeSubmitInput,
   PracticeSubmitReceipt,
   PracticeWorkspaceSnapshot,
+  ProfileWorkspaceSnapshot,
+  ReportFeedbackInput,
+  ReportMutationReceipt,
+  ReportsWorkspaceSnapshot,
+  AiInteractionProfileUpdate,
+  ProfileExportInput,
+  ProfileMeasurementSubmitInput,
+  ProfileSettingsUpdateInput,
+  SettingsMutationReceipt,
+  SettingsWorkspaceSnapshot,
+  FullDeleteInput,
+  FullDeleteReceiptView,
+  FullDeleteScopePreview,
   StatusSnapshot,
   TodaySnapshot,
+  TrustWorkspaceSnapshot,
   WindowModeReceipt,
 } from "../contracts/core";
 import { previewMapWorkspace } from "./mapPreview";
+import { previewGoalMutation, previewGoalsWorkspace, previewSaveGoal } from "./goalsPreview";
+import { previewReportFeedback, previewReportsWorkspace, previewRunReport, previewTrustWorkspace } from "./governancePreview";
+import { previewResetProfile, previewSettingsWorkspace, previewSubmitMeasurement, previewUpdateAiProfile, previewUpdateProfileSettings } from "./settingsPreview";
 import {
   previewActOnInbox,
   previewAttemptGradeStatus,
@@ -44,6 +64,11 @@ export const commandKeys = {
   practice: (sessionId: string) => ["core", "practice", sessionId] as const,
   grade: (attemptId: string) => ["core", "grade", attemptId] as const,
   inbox: (query: InboxWorkspaceQuery) => ["core", "inbox", query] as const,
+  profile: ["core", "profile"] as const,
+  goals: (selectedGoalId: string | null) => ["core", "goals", selectedGoalId] as const,
+  reports: ["core", "reports"] as const,
+  trust: ["core", "trust"] as const,
+  settings: ["core", "settings"] as const,
 };
 
 function isBrowserPreview() {
@@ -96,6 +121,82 @@ export async function getPracticeWorkspace(sessionId: string): Promise<PracticeW
   if (isBrowserPreview()) return Promise.resolve(previewPracticeWorkspace(sessionId));
   return invoke<PracticeWorkspaceSnapshot>("practice_workspace", { sessionId });
 }
+
+export async function getProfileWorkspace(): Promise<ProfileWorkspaceSnapshot> {
+  if (isBrowserPreview()) {
+    return Promise.resolve({
+      generated_at: new Date().toISOString(),
+      settings: { enabled: true, disclosure_required: true, disclosure_acknowledged: true, summary_sharing_enabled: false, paused_until: null },
+      facts: [
+        { id: "sessions", label: "有效会话", value: "18", detail: "只统计已完成且可用于行为估计的会话。" },
+        { id: "calibration", label: "校准差", value: "+0.08", detail: "比较反馈前把握度与实际表现，不解释人格。" },
+        { id: "move-effects", label: "教法观测", value: "42", detail: "用于检验哪种教学行动在什么情境下有效。" },
+        { id: "abandons", label: "中断记录", value: "3", detail: "只描述行为事实，不推断意志力或性格。" },
+      ],
+      dimensions: [
+        { key: "self_efficacy", label: "学习自我效能", mean: 0.64, lower: 0.39, upper: 0.89, evidence_count: 21, gate_status: "shadow", gate_label: "尚未通过验证", purpose: "当前只在影子模式检验预测增益。", will_not_affect: "不会参与调度、评分、掌握度或确定性解释。", evidence_ids: ["profile-evidence-21"] },
+        { key: "self_discipline", label: "自我调节", mean: 0.58, lower: 0.47, upper: 0.69, evidence_count: 168, gate_status: "active", gate_label: "已通过前瞻验证", purpose: "仅作为策略与节律的慢先验，实际干预仍需通过 MRT。", will_not_affect: "不会直接改写掌握度、评分或知识图谱。", evidence_ids: ["profile-evidence-168"] },
+      ],
+      notice: "画像是带不确定度的慢先验，不是人格类型，也不是对你的最终判断。",
+      actions: [{ id: "settings", label: "管理画像", kind: "primary" }, { id: "goals", label: "查看目标", kind: "secondary" }, { id: "today", label: "返回 Today", kind: "quiet" }],
+    });
+  }
+  return invoke<ProfileWorkspaceSnapshot>("profile_workspace");
+}
+
+export async function getGoalsWorkspace(selectedGoalId: string | null): Promise<GoalWorkspaceSnapshot> {
+  if (isBrowserPreview()) return Promise.resolve(previewGoalsWorkspace(selectedGoalId));
+  return invoke<GoalWorkspaceSnapshot>("goals_workspace", { selectedGoalId });
+}
+
+export async function saveGoal(input: GoalEditorInput): Promise<GoalMutationReceipt> {
+  if (isBrowserPreview()) return Promise.resolve(previewSaveGoal(input));
+  return invoke<GoalMutationReceipt>("save_goal", { input });
+}
+
+export async function refreshGoal(goalId: string): Promise<GoalMutationReceipt> {
+  if (isBrowserPreview()) return Promise.resolve(previewGoalMutation(goalId, "refreshed"));
+  return invoke<GoalMutationReceipt>("refresh_goal", { goalId });
+}
+
+export async function archiveGoal(goalId: string): Promise<GoalMutationReceipt> {
+  if (isBrowserPreview()) return Promise.resolve(previewGoalMutation(goalId, "archived"));
+  return invoke<GoalMutationReceipt>("archive_goal", { goalId });
+}
+
+export async function deleteGoal(goalId: string): Promise<GoalMutationReceipt> {
+  if (isBrowserPreview()) return Promise.resolve(previewGoalMutation(goalId, "deleted"));
+  return invoke<GoalMutationReceipt>("delete_goal", { goalId });
+}
+
+export async function getReportsWorkspace(): Promise<ReportsWorkspaceSnapshot> {
+  if (isBrowserPreview()) return Promise.resolve(previewReportsWorkspace());
+  return invoke<ReportsWorkspaceSnapshot>("reports_workspace");
+}
+
+export async function runReport(): Promise<ReportMutationReceipt> {
+  if (isBrowserPreview()) return Promise.resolve(previewRunReport());
+  return invoke<ReportMutationReceipt>("run_report");
+}
+
+export async function submitReportFeedback(input: ReportFeedbackInput): Promise<ReportMutationReceipt> {
+  if (isBrowserPreview()) return Promise.resolve(previewReportFeedback(input));
+  return invoke<ReportMutationReceipt>("report_feedback", { input });
+}
+
+export async function getTrustWorkspace(): Promise<TrustWorkspaceSnapshot> {
+  if (isBrowserPreview()) return Promise.resolve(previewTrustWorkspace());
+  return invoke<TrustWorkspaceSnapshot>("trust_workspace");
+}
+
+export async function getSettingsWorkspace(): Promise<SettingsWorkspaceSnapshot> { if (isBrowserPreview()) return Promise.resolve(previewSettingsWorkspace()); return invoke<SettingsWorkspaceSnapshot>("settings_workspace"); }
+export async function updateProfileSettings(input: ProfileSettingsUpdateInput): Promise<SettingsMutationReceipt> { if (isBrowserPreview()) return Promise.resolve(previewUpdateProfileSettings(input)); return invoke<SettingsMutationReceipt>("update_profile_settings", { input }); }
+export async function updateAiProfile(input: AiInteractionProfileUpdate): Promise<SettingsMutationReceipt> { if (isBrowserPreview()) return Promise.resolve(previewUpdateAiProfile(input)); return invoke<SettingsMutationReceipt>("update_ai_profile", { input }); }
+export async function submitProfileMeasurement(input: ProfileMeasurementSubmitInput): Promise<SettingsMutationReceipt> { if (isBrowserPreview()) return Promise.resolve(previewSubmitMeasurement(input)); return invoke<SettingsMutationReceipt>("submit_profile_measurement", { input }); }
+export async function resetProfile(): Promise<SettingsMutationReceipt> { if (isBrowserPreview()) return Promise.resolve(previewResetProfile()); return invoke<SettingsMutationReceipt>("reset_profile"); }
+export async function exportProfile(input: ProfileExportInput): Promise<SettingsMutationReceipt> { if (isBrowserPreview()) return Promise.resolve({ effect: "profile_exported", message: `预览模式不会写文件：${input.output_path}` }); return invoke<SettingsMutationReceipt>("export_profile", { input }); }
+export async function getFullDeleteScope(): Promise<FullDeleteScopePreview> { if (isBrowserPreview()) return Promise.resolve({ database_path: "C:\\Users\\you\\polaris.sqlite", learning_attempts: 42, evidence_records: 96, goals: 2, profile_measurements: 6, reports: 4, behavior_events: 130, sqlite_files: ["C:\\Users\\you\\polaris.sqlite"], confirmation_phrase: "DELETE ALL POLARIS LEARNING DATA", backup_supported: true }); return invoke<FullDeleteScopePreview>("full_delete_scope"); }
+export async function deleteAllData(input: FullDeleteInput): Promise<FullDeleteReceiptView> { if (isBrowserPreview()) return Promise.resolve({ deleted_at: new Date().toISOString(), database_path: "preview", backup_path: input.backup_path, files_deleted: 1, local_secrets_deleted: 0, empty_database_created: true, message: "预览数据已清除。" }); return invoke<FullDeleteReceiptView>("delete_all_data", { input }); }
 
 export async function submitPractice(input: PracticeSubmitInput): Promise<PracticeSubmitReceipt> {
   if (isBrowserPreview()) return Promise.resolve(previewSubmitPractice(input));
