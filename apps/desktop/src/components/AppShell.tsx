@@ -51,7 +51,10 @@ export function AppShell() {
 
   return (
     <div className="app-frame" data-window-mode={windowMode} data-route={isMapRoute ? "map" : "default"}>
-      <a className="skip-link" href="#main-content">跳到主要内容</a>
+      <a className="skip-link" href="#main-content" onClick={(event) => {
+        event.preventDefault();
+        document.getElementById("main-content")?.focus();
+      }}>跳到主要内容</a>
       <aside className="sidebar" aria-label="主导航" aria-hidden={isMapRoute || undefined}>
         <header className="brand">
           <span className="brand__mark" aria-hidden="true">P</span>

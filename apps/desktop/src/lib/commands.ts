@@ -78,7 +78,7 @@ export const commandKeys = {
 };
 
 function isBrowserPreview() {
-  return import.meta.env.DEV && !("__TAURI_INTERNALS__" in window);
+  return (import.meta.env.DEV || import.meta.env.MODE === "release-test") && !("__TAURI_INTERNALS__" in window);
 }
 
 function previewPacks() {

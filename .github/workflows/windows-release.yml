@@ -1,0 +1,167 @@
+name: Windows release
+
+on:
+  pull_request:
+    paths:
+      - "apps/desktop/**"
+      - "crates/**"
+      - "scripts/*Windows*.ps1"
+      - "scripts/New-TauriReleaseConfig.ps1"
+      - ".github/workflows/windows-release.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "待创建的版本标签（例如 v0.1.0）"
+        required: true
+        type: string
+      notes:
+        description: "Draft Release 变更说明"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  pr-unsigned-package:
+    if: github.event_name == 'pull_request'
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.16.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: apps/desktop/pnpm-lock.yaml
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy,rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: 安装前端依赖与 Chromium
+        working-directory: apps/desktop
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install chromium
+      - name: 无障碍、键盘、视觉与性能门
+        working-directory: apps/desktop
+        run: pnpm test:release
+      - name: Rust 与前端基线
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace
+          Push-Location apps/desktop
+          pnpm lint
+          pnpm typecheck
+          pnpm test
+          pnpm contracts:check
+          Pop-Location
+      - name: 构建无签名 PR 安装包
+        working-directory: apps/desktop
+        run: pnpm tauri build --bundles nsis
+      - name: 生成并复核 SHA-256
+        run: |
+          $bundle = "target/release/bundle/nsis"
+          $lines = Get-ChildItem -LiteralPath $bundle -File -Filter "*-setup.exe" | ForEach-Object {
+            "$((Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant())  $($_.Name)"
+          }
+          if (-not $lines) { throw "NSIS installer was not generated." }
+          $lines | Set-Content -LiteralPath "$bundle/SHA256SUMS.txt" -Encoding ascii
+          ./scripts/Test-WindowsReleaseArtifacts.ps1 -ArtifactDirectory $bundle
+      - uses: actions/upload-artifact@v4
+        with:
+          name: polaris-windows-pr-unsigned
+          path: |
+            target/release/bundle/nsis/*-setup.exe
+            target/release/bundle/nsis/SHA256SUMS.txt
+          if-no-files-found: error
+
+  signed-draft-release:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    environment: windows-release
+    permissions:
+      contents: write
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      POLARIS_UPDATER_PUBLIC_KEY: ${{ secrets.POLARIS_UPDATER_PUBLIC_KEY }}
+      VITE_POLARIS_UPDATER_ENABLED: "true"
+      GH_TOKEN: ${{ github.token }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.16.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: apps/desktop/pnpm-lock.yaml
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy,rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: 校验 release 环境与版本
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          foreach ($name in @("TAURI_SIGNING_PRIVATE_KEY", "TAURI_SIGNING_PRIVATE_KEY_PASSWORD", "POLARIS_UPDATER_PUBLIC_KEY")) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) { throw "Release secret is missing: $name" }
+          }
+          $version = (Get-Content -Raw apps/desktop/src-tauri/tauri.conf.json | ConvertFrom-Json).version
+          if ("v$version" -ne $env:RELEASE_TAG) { throw "Tag $env:RELEASE_TAG does not match app version v$version" }
+      - name: 安装依赖并执行全基线
+        run: |
+          Push-Location apps/desktop
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install chromium
+          pnpm lint
+          pnpm typecheck
+          pnpm test
+          pnpm test:release
+          pnpm contracts:check
+          Pop-Location
+          cargo fmt --all -- --check
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace
+      - name: 生成仅供本次构建使用的签名配置
+        run: |
+          $endpoint = "https://github.com/${{ github.repository }}/releases/latest/download/latest.json"
+          ./scripts/New-TauriReleaseConfig.ps1 -PublicKey $env:POLARIS_UPDATER_PUBLIC_KEY -Endpoint $endpoint -OutputPath "$env:RUNNER_TEMP/tauri.release.conf.json"
+      - name: 构建签名更新与 NSIS 安装包
+        working-directory: apps/desktop
+        run: pnpm tauri build --bundles nsis --config "$env:RUNNER_TEMP/tauri.release.conf.json"
+      - name: 生成并复核更新清单与 hash
+        env:
+          RELEASE_NOTES: ${{ inputs.notes }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          $bundle = "target/release/bundle/nsis"
+          $base = "https://github.com/${{ github.repository }}/releases/download/$env:RELEASE_TAG/"
+          ./scripts/New-WindowsReleaseManifest.ps1 -BundleDirectory $bundle -Version $env:RELEASE_TAG -AssetBaseUrl $base -Notes $env:RELEASE_NOTES
+          ./scripts/Test-WindowsReleaseArtifacts.ps1 -ArtifactDirectory $bundle -RequireSignature
+      - name: 创建待人工审核的 GitHub Draft Release
+        env:
+          RELEASE_NOTES: ${{ inputs.notes }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          $notesPath = "$env:RUNNER_TEMP/release-notes.md"
+          $env:RELEASE_NOTES | Set-Content -LiteralPath $notesPath -Encoding utf8NoBOM
+          $assets = Get-ChildItem -LiteralPath "target/release/bundle/nsis" -File | Select-Object -ExpandProperty FullName
+          gh release create $env:RELEASE_TAG $assets --draft --target "${{ github.sha }}" --title "Polaris $env:RELEASE_TAG" --notes-file $notesPath

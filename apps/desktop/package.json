@@ -11,6 +11,8 @@
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
+    "test:release": "playwright test",
+    "test:visual:update": "playwright test tests/release/visual.spec.ts --update-snapshots",
     "tauri": "tauri"
   },
   "dependencies": {
@@ -18,13 +20,16 @@
     "@tanstack/react-query": "5.101.4",
     "@tauri-apps/api": "2.11.1",
     "@tauri-apps/plugin-opener": "2.5.4",
+    "@tauri-apps/plugin-updater": "2.10.1",
     "cytoscape": "^3.34.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-router-dom": "7.18.2"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@eslint/js": "10.0.1",
+    "@playwright/test": "^1.62.1",
     "@tauri-apps/cli": "2.11.4",
     "@testing-library/jest-dom": "7.0.0",
     "@testing-library/react": "16.3.2",

@@ -429,7 +429,7 @@ function GlobalOverview({ snapshot }: { snapshot: MapWorkspaceSnapshot }) {
       <header><span>全局诊断</span><h2>哪些领域正在形成，哪些已经到期。</h2></header>
       <div className="atlas-global__chart">
         {snapshot.aggregates.map((item) => (
-          <article key={`${item.kind}:${item.id}`} className="atlas-global__row">
+          <article key={`${item.kind}:${item.id}`} className="atlas-global__row" data-kind={item.kind} data-concept-count={item.concept_count}>
             <div><small>{item.kind === "pack" ? "PACK" : "能力维度"}</small><h3>{item.label}</h3></div>
             <div className="atlas-global__bar"><span style={{ width: `${String(Math.max(4, item.mean_value * 100))}%` }} /></div>
             <span>{String(Math.round(item.mean_value * 100))}%</span>
@@ -579,7 +579,7 @@ export function MapPage() {
             );
           })}
         </aside>
-        <main className="atlas-main">
+        <div className="atlas-main">
           <h1 id="map-title" className="sr-only">{VIEW_COPY[view].label}</h1>
           <div className="atlas-toolbar">
             {view !== "global" && <button className="atlas-filter-button" type="button" aria-expanded={filtersOpen} onClick={() => { setFiltersOpen((value) => !value); }}><Funnel size={18} /> 筛选{activeFilterCount > 0 && <b>{activeFilterCount}</b>} <CaretDown size={14} /></button>}
@@ -600,7 +600,7 @@ export function MapPage() {
             <button type="button" disabled={history.length === 0} onClick={() => { const previous = history.at(-1) ?? null; setHistory((items) => items.slice(0, -1)); setCursor(previous); }}>上一页</button>
             <button type="button" disabled={!map.data.next_cursor} onClick={() => { setHistory((items) => [...items, cursor]); setCursor(map.data.next_cursor); }}>下一页 <ArrowRight size={16} /></button>
           </nav>}
-        </main>
+        </div>
       </div>
     </section>
   );

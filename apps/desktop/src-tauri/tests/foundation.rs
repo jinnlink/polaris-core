@@ -796,7 +796,20 @@ fn csp_capability_and_telemetry_baseline_are_minimal() {
     assert_eq!(config["app"]["security"]["capabilities"][0], "main");
 
     let permissions = capability["permissions"].as_array().unwrap();
-    assert_eq!(permissions.len(), 3);
+    assert_eq!(
+        permissions,
+        serde_json::json!([
+            "core:event:allow-listen",
+            "core:event:allow-unlisten",
+            "updater:default",
+            {
+                "identifier": "opener:allow-open-url",
+                "allow": [{ "url": "https://*" }]
+            }
+        ])
+        .as_array()
+        .unwrap()
+    );
     let serialized_permissions = serde_json::to_string(permissions).unwrap();
     for forbidden in ["fs:", "shell:", "sql:", "process:"] {
         assert!(!serialized_permissions.contains(forbidden));
