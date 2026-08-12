@@ -4,7 +4,7 @@ import { ArchiveIcon, ArrowRightIcon, BookOpenTextIcon, CheckCircleIcon, PlusIco
 import { Link, useSearchParams } from "react-router-dom";
 
 import type { InboxPracticeDraft, InboxPracticeSubmitReceipt, InboxWorkspaceItem } from "../contracts/core";
-import { actOnInbox, captureWorkspace, commandKeys, draftInboxPractice, getInboxWorkspace, normalizeCommandError, processGradeQueue, submitInboxPractice } from "../lib/commands";
+import { actOnInbox, captureWorkspace, commandKeys, draftInboxPractice, enqueueBackgroundJob, getInboxWorkspace, normalizeCommandError, submitInboxPractice } from "../lib/commands";
 
 const OPEN_INBOX = { statuses: [] as string[], limit: 50 };
 const SESSION_KEY = "polaris.practice.session.v1";
@@ -79,7 +79,9 @@ export function InboxPage() {
         setPracticeReceipt({ receipt: nextReceipt, evidenceId: draft.evidence_id });
       }
       setDraft(null); setAnswer(""); setConfidence(null); await refresh();
-      void processGradeQueue().catch(() => undefined);
+      void enqueueBackgroundJob("grade_queue")
+        .then(() => queryClient.invalidateQueries({ queryKey: commandKeys.lifecycle }))
+        .catch(() => undefined);
     },
   });
 

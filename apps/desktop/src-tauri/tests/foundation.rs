@@ -10,6 +10,7 @@ use polaris_desktop_lib::contracts::{
     ProfileExportInput, ProfileMeasurementSubmitInput, ProfileSettingsUpdateInput,
     ReportFeedbackInput,
 };
+use polaris_desktop_lib::lifecycle::{save_config, save_pending_jobs, DesktopConfig};
 use polaris_desktop_lib::state::{notification_receipt, DesktopState};
 use tempfile::tempdir;
 
@@ -804,4 +805,98 @@ fn csp_capability_and_telemetry_baseline_are_minimal() {
         assert!(!package.to_ascii_lowercase().contains(telemetry));
     }
     assert!(frontend_events.contains(polaris_desktop_lib::DATA_CHANGED_EVENT));
+}
+
+#[test]
+fn bootstrap_quarantines_bad_config_and_keeps_recovery_visible() {
+    let dir = tempdir().unwrap();
+    std::fs::write(dir.path().join("desktop.json"), "{broken").unwrap();
+    let state = DesktopState::bootstrap(dir.path()).unwrap();
+    let lifecycle = state.lifecycle_snapshot().unwrap();
+
+    assert_eq!(lifecycle.startup_status, "ready");
+    assert!(lifecycle.config_warning.unwrap().contains("已隔离"));
+    assert!(std::fs::read_dir(dir.path()).unwrap().any(|entry| {
+        entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with("desktop.corrupt-")
+    }));
+    state.shutdown(true).unwrap();
+}
+
+#[test]
+fn bootstrap_recovers_unfinished_job_and_shutdown_releases_database_lock() {
+    let dir = tempdir().unwrap();
+    save_pending_jobs(dir.path(), &["backup".to_owned()]).unwrap();
+    let state = DesktopState::bootstrap(dir.path()).unwrap();
+    assert_eq!(
+        state
+            .lifecycle_snapshot()
+            .unwrap()
+            .recovered_background_jobs,
+        vec!["backup"]
+    );
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !state
+        .lifecycle_snapshot()
+        .unwrap()
+        .pending_background_jobs
+        .is_empty()
+        && Instant::now() < deadline
+    {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(state
+        .lifecycle_snapshot()
+        .unwrap()
+        .pending_background_jobs
+        .is_empty());
+    state.shutdown(true).unwrap();
+
+    let database = dir.path().join("polaris.sqlite");
+    let moved = dir.path().join("released.sqlite");
+    std::fs::rename(&database, &moved).unwrap();
+    std::fs::rename(moved, database).unwrap();
+}
+
+#[test]
+fn newer_database_stays_untouched_until_user_selects_a_supported_path() {
+    let dir = tempdir().unwrap();
+    let newer = dir.path().join("newer.sqlite");
+    let connection = open_database(&newer).unwrap();
+    connection
+        .pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION + 1)
+        .unwrap();
+    drop(connection);
+    save_config(
+        dir.path(),
+        &DesktopConfig {
+            database_path: Some(newer.clone()),
+            database_path_acknowledged: true,
+            startup_enabled: false,
+        },
+    )
+    .unwrap();
+    save_pending_jobs(dir.path(), &["grade_queue".to_owned()]).unwrap();
+    let state = DesktopState::bootstrap(dir.path()).unwrap();
+    assert_eq!(state.lifecycle_snapshot().unwrap().startup_status, "newer");
+    assert!(state.status().is_err());
+    assert_eq!(
+        state.lifecycle_snapshot().unwrap().pending_background_jobs,
+        vec!["grade_queue"]
+    );
+
+    let supported = dir.path().join("supported.sqlite");
+    state
+        .select_database_path(supported.to_str().unwrap())
+        .unwrap();
+    assert!(state.status().is_ok());
+    state.shutdown(true).unwrap();
+    let version: i64 = rusqlite::Connection::open(newer)
+        .unwrap()
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, CURRENT_SCHEMA_VERSION + 1);
 }

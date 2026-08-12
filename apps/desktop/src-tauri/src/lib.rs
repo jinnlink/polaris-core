@@ -1,4 +1,6 @@
+pub mod background;
 pub mod contracts;
+pub mod lifecycle;
 pub mod state;
 
 mod commands;
@@ -21,7 +23,7 @@ pub fn run() {
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             fs::create_dir_all(&data_dir)?;
-            app.manage(state::DesktopState::open(data_dir.join("polaris.sqlite"))?);
+            app.manage(state::DesktopState::bootstrap(&data_dir)?);
             shell::install_tray(app)?;
             Ok(())
         })
@@ -38,6 +40,15 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::status,
+            commands::lifecycle_status,
+            commands::acknowledge_database_path,
+            commands::select_database_path,
+            commands::set_startup_enabled,
+            commands::save_api_key,
+            commands::delete_api_key,
+            commands::export_diagnostics,
+            commands::enqueue_background_job,
+            commands::poll_background_events,
             commands::today,
             commands::map_workspace,
             commands::practice_workspace,
@@ -72,8 +83,15 @@ pub fn run() {
             commands::hide_to_tray,
             commands::show_notification
         ])
-        .run(tauri::generate_context!())
-        .expect("Polaris desktop failed to start");
+        .build(tauri::generate_context!())
+        .expect("Polaris desktop failed to build")
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
+                if let Some(state) = app.try_state::<state::DesktopState>() {
+                    let _ = state.shutdown(false);
+                }
+            }
+        });
 }
 
 #[cfg(test)]

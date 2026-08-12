@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircleIcon, QuotesIcon, SealCheckIcon, ThumbsDownIcon, ThumbsUpIcon, WarningCircleIcon } from "@phosphor-icons/react";
 
 import type { MirrorCurvePoint, ReportItemView } from "../contracts/core";
-import { commandKeys, getReportsWorkspace, normalizeCommandError, runReport, submitReportFeedback } from "../lib/commands";
+import { commandKeys, enqueueBackgroundJob, getReportsWorkspace, normalizeCommandError, submitReportFeedback } from "../lib/commands";
 
 const chartWidth = 560;
 const chartHeight = 176;
@@ -24,7 +24,7 @@ export function ReportsPage() {
   const client = useQueryClient();
   const [feedback, setFeedback] = useState<Record<string, string>>({});
   const workspace = useQuery({ queryKey: commandKeys.reports, queryFn: getReportsWorkspace });
-  const regenerate = useMutation({ mutationFn: runReport, onSuccess: async () => client.invalidateQueries({ queryKey: commandKeys.reports }) });
+  const regenerate = useMutation({ mutationFn: () => enqueueBackgroundJob("mirror_report"), onSuccess: async () => client.invalidateQueries({ queryKey: commandKeys.lifecycle }) });
   const judge = useMutation({
     mutationFn: submitReportFeedback,
     onSuccess: (_receipt, input) => { setFeedback((current) => ({ ...current, [input.assertion_id]: input.verdict })); },

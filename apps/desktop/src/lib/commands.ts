@@ -6,6 +6,10 @@ import type {
   CaptureWorkspaceInput,
   CaptureWorkspaceReceipt,
   CommandError,
+  CredentialInput,
+  DiagnosticExportInput,
+  DatabasePathInput,
+  BackgroundEventView,
   GradeQueueReceipt,
   GoalEditorInput,
   GoalMutationReceipt,
@@ -36,6 +40,7 @@ import type {
   FullDeleteInput,
   FullDeleteReceiptView,
   FullDeleteScopePreview,
+  LifecycleSnapshot,
   StatusSnapshot,
   TodaySnapshot,
   TrustWorkspaceSnapshot,
@@ -68,6 +73,7 @@ export const commandKeys = {
   goals: (selectedGoalId: string | null) => ["core", "goals", selectedGoalId] as const,
   reports: ["core", "reports"] as const,
   trust: ["core", "trust"] as const,
+  lifecycle: ["desktop", "lifecycle"] as const,
   settings: ["core", "settings"] as const,
 };
 
@@ -190,6 +196,15 @@ export async function getTrustWorkspace(): Promise<TrustWorkspaceSnapshot> {
 }
 
 export async function getSettingsWorkspace(): Promise<SettingsWorkspaceSnapshot> { if (isBrowserPreview()) return Promise.resolve(previewSettingsWorkspace()); return invoke<SettingsWorkspaceSnapshot>("settings_workspace"); }
+export async function getLifecycleStatus(): Promise<LifecycleSnapshot> { if (isBrowserPreview()) return Promise.resolve({ database_path: "C:\\Users\\you\\AppData\\Local\\Polaris\\polaris.sqlite", database_source: "local_app_data", database_path_acknowledged: false, startup_status: "ready", startup_message: "数据库完整且版本受支持。", schema_version: 9, upgrade_required: false, pre_upgrade_backup: null, previous_run_incomplete: false, recovered_background_jobs: [], pending_background_jobs: [], config_warning: null, startup_enabled: false, fast_api_key_configured: false, strong_api_key_configured: false, embed_api_key_configured: false }); return invoke<LifecycleSnapshot>("lifecycle_status"); }
+export async function acknowledgeDatabasePath(): Promise<SettingsMutationReceipt> { if (isBrowserPreview()) return Promise.resolve({ effect: "database_path_acknowledged", message: "当前数据库路径已确认。" }); return invoke<SettingsMutationReceipt>("acknowledge_database_path"); }
+export async function selectDatabasePath(input: DatabasePathInput): Promise<SettingsMutationReceipt> { if (isBrowserPreview()) return Promise.resolve({ effect: "database_path_changed", message: `预览切换到 ${input.path}` }); return invoke<SettingsMutationReceipt>("select_database_path", { input }); }
+export async function setStartupEnabled(enabled: boolean): Promise<SettingsMutationReceipt> { if (isBrowserPreview()) return Promise.resolve({ effect: "startup_updated", message: enabled ? "已启用开机启动。" : "开机启动已关闭。" }); return invoke<SettingsMutationReceipt>("set_startup_enabled", { enabled }); }
+export async function saveApiKey(input: CredentialInput): Promise<SettingsMutationReceipt> { if (isBrowserPreview()) return Promise.resolve({ effect: "credential_saved", message: `${input.slot} 凭据已保存。` }); return invoke<SettingsMutationReceipt>("save_api_key", { input }); }
+export async function deleteApiKey(slot: string): Promise<SettingsMutationReceipt> { if (isBrowserPreview()) return Promise.resolve({ effect: "credential_deleted", message: `${slot} 凭据已删除。` }); return invoke<SettingsMutationReceipt>("delete_api_key", { slot }); }
+export async function exportDiagnostics(input: DiagnosticExportInput): Promise<SettingsMutationReceipt> { if (isBrowserPreview()) return Promise.resolve({ effect: "diagnostics_exported", message: `预览模式不会写文件：${input.output_path}` }); return invoke<SettingsMutationReceipt>("export_diagnostics", { input }); }
+export async function enqueueBackgroundJob(job: string): Promise<SettingsMutationReceipt> { if (isBrowserPreview()) return Promise.resolve({ effect: "background_job_enqueued", message: `${job} 已排队。` }); return invoke<SettingsMutationReceipt>("enqueue_background_job", { job }); }
+export async function pollBackgroundEvents(): Promise<BackgroundEventView[]> { if (isBrowserPreview()) return Promise.resolve([]); return invoke<BackgroundEventView[]>("poll_background_events"); }
 export async function updateProfileSettings(input: ProfileSettingsUpdateInput): Promise<SettingsMutationReceipt> { if (isBrowserPreview()) return Promise.resolve(previewUpdateProfileSettings(input)); return invoke<SettingsMutationReceipt>("update_profile_settings", { input }); }
 export async function updateAiProfile(input: AiInteractionProfileUpdate): Promise<SettingsMutationReceipt> { if (isBrowserPreview()) return Promise.resolve(previewUpdateAiProfile(input)); return invoke<SettingsMutationReceipt>("update_ai_profile", { input }); }
 export async function submitProfileMeasurement(input: ProfileMeasurementSubmitInput): Promise<SettingsMutationReceipt> { if (isBrowserPreview()) return Promise.resolve(previewSubmitMeasurement(input)); return invoke<SettingsMutationReceipt>("submit_profile_measurement", { input }); }

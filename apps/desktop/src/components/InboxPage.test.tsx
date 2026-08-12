@@ -10,7 +10,7 @@ const commands = vi.hoisted(() => ({
   captureWorkspace: vi.fn(),
   draftInboxPractice: vi.fn(),
   getInboxWorkspace: vi.fn(),
-  processGradeQueue: vi.fn(),
+  enqueueBackgroundJob: vi.fn(),
   submitInboxPractice: vi.fn(),
 }));
 
@@ -53,7 +53,7 @@ describe("InboxPage", () => {
     commands.actOnInbox.mockResolvedValue({ capture_id: "capture-1", status: "practice_ready", effect: "recorded_only", message: "已准备小题" });
     commands.draftInboxPractice.mockResolvedValue({ capture_id: "capture-1", evidence_id: "evidence-1", status: "practice_ready", concept_hint: "ownership", task_type: "free_recall", prompt: "解释借用为何不能越过所有者生命周期。", source_excerpt: item.text_preview, message: "请亲自作答" });
     commands.submitInboxPractice.mockResolvedValue({ capture_id: "capture-1", attempt_id: "attempt-1", status: "submitted", effect: "provisional", message: "回答已本地落账", provisional_score: 0.7, degraded: false });
-    commands.processGradeQueue.mockResolvedValue({ processed: 0, pending: 1 });
+    commands.enqueueBackgroundJob.mockResolvedValue({ effect: "background_job_enqueued", message: "已排队" });
   });
 
   it("keeps raw capture separate from mastery and turns it into a verified answer", async () => {

@@ -61,7 +61,12 @@ pub fn apply_shell_effect(app: &AppHandle, effect: ShellEffect) {
                 let _ = apply_window_mode(&window, "workspace");
             }
         }
-        ShellEffect::Exit => app.exit(0),
+        ShellEffect::Exit => {
+            if let Some(state) = app.try_state::<crate::state::DesktopState>() {
+                let _ = state.shutdown(true);
+            }
+            app.exit(0);
+        }
     }
 }
 

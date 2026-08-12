@@ -686,6 +686,50 @@ pub struct SettingsMutationReceipt {
     pub message: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct LifecycleSnapshot {
+    pub database_path: String,
+    pub database_source: String,
+    pub database_path_acknowledged: bool,
+    pub startup_status: String,
+    pub startup_message: String,
+    pub schema_version: Option<i32>,
+    pub upgrade_required: bool,
+    pub pre_upgrade_backup: Option<String>,
+    pub previous_run_incomplete: bool,
+    pub recovered_background_jobs: Vec<String>,
+    pub pending_background_jobs: Vec<String>,
+    pub config_warning: Option<String>,
+    pub startup_enabled: bool,
+    pub fast_api_key_configured: bool,
+    pub strong_api_key_configured: bool,
+    pub embed_api_key_configured: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, TS)]
+pub struct DatabasePathInput {
+    pub path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, TS)]
+pub struct CredentialInput {
+    pub slot: String,
+    pub secret: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, TS)]
+pub struct DiagnosticExportInput {
+    pub output_path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct BackgroundEventView {
+    pub job: Option<String>,
+    pub status: String,
+    pub invalidates: Vec<String>,
+    pub message: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, TS)]
 pub struct ProfileExportInput {
     pub output_path: String,
@@ -824,6 +868,11 @@ pub fn generated_typescript_contracts() -> String {
         ProfileSettingsUpdateInput::decl(&config),
         ProfileMeasurementSubmitInput::decl(&config),
         SettingsMutationReceipt::decl(&config),
+        LifecycleSnapshot::decl(&config),
+        DatabasePathInput::decl(&config),
+        CredentialInput::decl(&config),
+        DiagnosticExportInput::decl(&config),
+        BackgroundEventView::decl(&config),
         ProfileExportInput::decl(&config),
         FullDeleteScopePreview::decl(&config),
         FullDeleteInput::decl(&config),

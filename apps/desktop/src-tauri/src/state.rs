@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
+use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use polaris_core::ai_profile::{AiInteractionProfile, AiInteractionProfileInput};
 use polaris_core::capture_queue::{CaptureInput, CaptureStatus, LearnerCaptureKind};
@@ -30,16 +31,17 @@ use polaris_core::report::{MirrorReport, ReportItem};
 use polaris_core::status::StatusSnapshot;
 use polaris_core::trust::{TrustPanel, TrustParameter};
 
+use crate::background::{BackgroundEvent, BackgroundJob, BackgroundJobResult, SerialWorker};
 use crate::contracts::{
-    AiInteractionProfileUpdate, AiInteractionProfileView, AttemptGradeStatus,
+    AiInteractionProfileUpdate, AiInteractionProfileView, AttemptGradeStatus, BackgroundEventView,
     CaptureWorkspaceInput, CaptureWorkspaceReceipt, CommandError, FullDeleteInput,
     FullDeleteReceiptView, FullDeleteScopePreview, GoalDimensionView, GoalEditorInput,
     GoalMilestoneView, GoalMutationReceipt, GoalScopeInput, GoalView, GoalWorkspaceSnapshot,
     GradeQueueReceipt, InboxActionInput, InboxActionOption, InboxActionReceipt, InboxPracticeDraft,
     InboxPracticeSubmitInput, InboxPracticeSubmitReceipt, InboxWorkspaceItem, InboxWorkspaceQuery,
-    MapWorkspaceAggregate, MapWorkspaceAnchor, MapWorkspaceEdge, MapWorkspaceLayer,
-    MapWorkspaceNode, MapWorkspacePath, MapWorkspaceQuery, MapWorkspaceSnapshot, MirrorCurvePoint,
-    MirrorPhaseItem, MirrorReportView, NotificationReceipt, PracticeSubmitInput,
+    LifecycleSnapshot, MapWorkspaceAggregate, MapWorkspaceAnchor, MapWorkspaceEdge,
+    MapWorkspaceLayer, MapWorkspaceNode, MapWorkspacePath, MapWorkspaceQuery, MapWorkspaceSnapshot,
+    MirrorCurvePoint, MirrorPhaseItem, MirrorReportView, NotificationReceipt, PracticeSubmitInput,
     PracticeSubmitReceipt, PracticeTask, PracticeWorkspaceSnapshot, PrivacyCallView,
     ProfileBehaviorFact, ProfileDimensionView, ProfileExportInput, ProfileInstrumentItemView,
     ProfileInstrumentView, ProfileMeasurementSubmitInput, ProfileSettingsUpdateInput,
@@ -49,26 +51,790 @@ use crate::contracts::{
     TodaySignal, TodaySnapshot, TrustActivityView, TrustExperimentView, TrustGateView,
     TrustParameterView, TrustWorkspaceSnapshot, WorkbenchAction,
 };
+use crate::lifecycle::{
+    append_redacted_log, backup_database_to, begin_run, export_diagnostic_bundle, finish_run,
+    load_config_recovering, load_pending_jobs, prepare_database_for_open, resolve_database_path,
+    save_config, save_pending_jobs, CrashMarkerReceipt, DatabasePathSource, DatabasePreparation,
+    DatabaseResolution, DesktopConfig, StartupDatabaseState,
+};
 
 pub struct DesktopState {
-    engine: Mutex<Engine>,
-    database_path: PathBuf,
+    engine: Arc<Mutex<Option<Engine>>>,
+    database_path: Arc<Mutex<PathBuf>>,
+    worker: SerialWorker,
+    app_data_dir: PathBuf,
+    config: Mutex<DesktopConfig>,
+    resolution: Mutex<DatabaseResolution>,
+    startup_state: Mutex<StartupDatabaseState>,
+    pre_upgrade_backup: Mutex<Option<PathBuf>>,
+    crash_marker: Option<CrashMarkerReceipt>,
+    pending_jobs: Arc<Mutex<Vec<String>>>,
+    recovered_background_jobs: Vec<String>,
+    config_warning: Option<String>,
+    manage_platform_credentials: bool,
+}
+
+fn start_worker(
+    engine: Arc<Mutex<Option<Engine>>>,
+    database_path: Arc<Mutex<PathBuf>>,
+    app_data_dir: PathBuf,
+    pending_jobs: Arc<Mutex<Vec<String>>>,
+) -> SerialWorker {
+    SerialWorker::start(move |job| {
+        let result = (|| {
+            if job == BackgroundJob::Backup {
+                let path = database_path
+                    .lock()
+                    .map_err(|_| "数据库路径状态不可用".to_owned())?
+                    .clone();
+                let timestamp = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_err(|error| error.to_string())?
+                    .as_secs();
+                let backup = path
+                    .parent()
+                    .unwrap_or_else(|| Path::new("."))
+                    .join("backups")
+                    .join(format!("polaris-{timestamp}.sqlite"));
+                backup_database_to(&path, &backup)?;
+                return Ok(BackgroundJobResult {
+                    invalidates: vec!["settings".to_owned()],
+                    message: format!("一致性备份已写入 {}", backup.display()),
+                });
+            }
+            let mut slot = engine
+                .lock()
+                .map_err(|_| "Polaris 引擎状态锁不可用".to_owned())?;
+            let engine = slot
+                .as_mut()
+                .ok_or_else(|| "数据库尚未就绪，后台任务已跳过".to_owned())?;
+            let (invalidates, message) = match job {
+                BackgroundJob::GradeQueue => {
+                    let summary = engine.grade_pending().map_err(|error| error.to_string())?;
+                    (
+                        vec!["practice", "today", "map", "reports"],
+                        format!(
+                            "后台评分已处理 {} 条，剩余 {} 条",
+                            summary.processed, summary.pending
+                        ),
+                    )
+                }
+                BackgroundJob::MirrorReport => {
+                    engine
+                        .run_mirror_report()
+                        .map_err(|error| error.to_string())?;
+                    (
+                        vec!["reports", "today", "trust"],
+                        "镜像报告已更新".to_owned(),
+                    )
+                }
+                BackgroundJob::NightlyConsolidation => {
+                    engine
+                        .run_nightly_consolidation()
+                        .map_err(|error| error.to_string())?;
+                    (vec!["map", "trust"], "夜间巩固已完成".to_owned())
+                }
+                BackgroundJob::MentalDynamicsFit => {
+                    engine
+                        .run_mental_dynamics_fit()
+                        .map_err(|error| error.to_string())?;
+                    (vec!["trust", "reports"], "心智动力学拟合已完成".to_owned())
+                }
+                BackgroundJob::ParameterTuning => {
+                    engine
+                        .run_param_tuning()
+                        .map_err(|error| error.to_string())?;
+                    (vec!["trust", "today"], "参数重放调优已完成".to_owned())
+                }
+                BackgroundJob::FsrsFit => {
+                    engine
+                        .fit_fsrs_personal_params()
+                        .map_err(|error| error.to_string())?;
+                    (
+                        vec!["today", "map", "trust"],
+                        "FSRS 个人参数拟合已完成".to_owned(),
+                    )
+                }
+                BackgroundJob::Backup => unreachable!(),
+            };
+            Ok(BackgroundJobResult {
+                invalidates: invalidates.into_iter().map(str::to_owned).collect(),
+                message,
+            })
+        })();
+        if !app_data_dir.as_os_str().is_empty() {
+            if let Ok(mut pending) = pending_jobs.lock() {
+                if let Some(index) = pending.iter().position(|id| id == job.id()) {
+                    pending.remove(index);
+                }
+                let _ = save_pending_jobs(&app_data_dir, &pending);
+            }
+            let outcome = if result.is_ok() { "finished" } else { "failed" };
+            let _ = append_redacted_log(
+                &app_data_dir,
+                &format!("background {} {outcome}", job.id()),
+                &[],
+                1_048_576,
+            );
+        }
+        result
+    })
+}
+
+struct EngineGuard<'a>(MutexGuard<'a, Option<Engine>>);
+
+fn startup_view(state: &StartupDatabaseState) -> (String, String, Option<i32>, bool) {
+    match state {
+        StartupDatabaseState::Missing => (
+            "ready".to_owned(),
+            "将于此路径建立新的本地数据库。".to_owned(),
+            Some(i32::try_from(polaris_core::db::CURRENT_SCHEMA_VERSION).unwrap_or(i32::MAX)),
+            false,
+        ),
+        StartupDatabaseState::Ready {
+            user_version,
+            upgrade_required,
+        } => (
+            "ready".to_owned(),
+            if *upgrade_required {
+                "已有数据库将在一致性备份后升级。".to_owned()
+            } else {
+                "数据库完整且版本受支持。".to_owned()
+            },
+            Some(i32::try_from(*user_version).unwrap_or(i32::MAX)),
+            *upgrade_required,
+        ),
+        StartupDatabaseState::Locked { message } => (
+            "locked".to_owned(),
+            format!("数据库正被其他进程锁定：{message}"),
+            None,
+            false,
+        ),
+        StartupDatabaseState::Corrupt { message } => (
+            "corrupt".to_owned(),
+            format!("数据库完整性检查未通过：{message}"),
+            None,
+            false,
+        ),
+        StartupDatabaseState::Newer { found, supported } => (
+            "newer".to_owned(),
+            format!("数据库版本 {found} 高于当前程序支持的 {supported}，已保持只读保护。"),
+            Some(i32::try_from(*found).unwrap_or(i32::MAX)),
+            false,
+        ),
+        StartupDatabaseState::Unavailable { message } => (
+            "unavailable".to_owned(),
+            format!("数据库暂时不可用：{message}"),
+            None,
+            false,
+        ),
+    }
+}
+
+fn parse_background_job(value: &str) -> Result<BackgroundJob, CommandError> {
+    match value {
+        "grade_queue" => Ok(BackgroundJob::GradeQueue),
+        "mirror_report" => Ok(BackgroundJob::MirrorReport),
+        "nightly_consolidation" => Ok(BackgroundJob::NightlyConsolidation),
+        "mental_dynamics_fit" => Ok(BackgroundJob::MentalDynamicsFit),
+        "parameter_tuning" => Ok(BackgroundJob::ParameterTuning),
+        "fsrs_fit" => Ok(BackgroundJob::FsrsFit),
+        "backup" => Ok(BackgroundJob::Backup),
+        other => Err(CommandError::state(format!("未知后台任务：{other}"))),
+    }
+}
+
+fn background_event_view(event: BackgroundEvent) -> BackgroundEventView {
+    match event {
+        BackgroundEvent::Started(job) => BackgroundEventView {
+            job: Some(job.id().to_owned()),
+            status: "started".to_owned(),
+            invalidates: Vec::new(),
+            message: format!("{} 已开始", job.id()),
+        },
+        BackgroundEvent::Finished {
+            job,
+            invalidates,
+            message,
+        } => BackgroundEventView {
+            job: Some(job.id().to_owned()),
+            status: "finished".to_owned(),
+            invalidates,
+            message,
+        },
+        BackgroundEvent::Failed { job, message } => BackgroundEventView {
+            job: Some(job.id().to_owned()),
+            status: "failed".to_owned(),
+            invalidates: Vec::new(),
+            message,
+        },
+        BackgroundEvent::Cancelled(job) => BackgroundEventView {
+            job: Some(job.id().to_owned()),
+            status: "cancelled".to_owned(),
+            invalidates: Vec::new(),
+            message: format!("{} 已在安全边界取消", job.id()),
+        },
+        BackgroundEvent::Stopped => BackgroundEventView {
+            job: None,
+            status: "stopped".to_owned(),
+            invalidates: Vec::new(),
+            message: "后台 worker 已停止".to_owned(),
+        },
+    }
+}
+
+fn credential_target(slot: &str) -> Result<&'static str, CommandError> {
+    match slot {
+        "fast" => Ok("Polaris/LLM/Fast"),
+        "strong" => Ok("Polaris/LLM/Strong"),
+        "embed" => Ok("Polaris/Embedding"),
+        other => Err(CommandError::state(format!("未知凭据槽位：{other}"))),
+    }
+}
+
+fn credential_environment(slot: &str) -> Result<&'static str, CommandError> {
+    match slot {
+        "fast" => Ok("POLARIS_LLM_FAST_API_KEY"),
+        "strong" => Ok("POLARIS_LLM_STRONG_API_KEY"),
+        "embed" => Ok("POLARIS_EMBED_API_KEY"),
+        other => Err(CommandError::state(format!("未知凭据槽位：{other}"))),
+    }
+}
+
+#[cfg(windows)]
+fn credential_configured(slot: &str) -> Result<bool, CommandError> {
+    let target = credential_target(slot)?;
+    crate::lifecycle::windows::read_credential(target)
+        .map(|value| value.is_some())
+        .map_err(CommandError::state)
+}
+
+#[cfg(not(windows))]
+fn credential_configured(slot: &str) -> Result<bool, CommandError> {
+    let _ = credential_target(slot)?;
+    Ok(false)
+}
+
+#[cfg(windows)]
+fn platform_write_credential(slot: &str, secret: &str) -> Result<(), CommandError> {
+    crate::lifecycle::windows::write_credential(credential_target(slot)?, "Polaris", secret)
+        .map_err(CommandError::state)?;
+    std::env::set_var(credential_environment(slot)?, secret);
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn platform_write_credential(slot: &str, _secret: &str) -> Result<(), CommandError> {
+    let _ = credential_target(slot)?;
+    Err(CommandError::state(
+        "当前平台不支持 Windows Credential Manager",
+    ))
+}
+
+#[cfg(windows)]
+fn platform_delete_credential(slot: &str) -> Result<(), CommandError> {
+    crate::lifecycle::windows::delete_credential(credential_target(slot)?)
+        .map(|_| ())
+        .map_err(CommandError::state)?;
+    std::env::remove_var(credential_environment(slot)?);
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn platform_delete_credential(slot: &str) -> Result<(), CommandError> {
+    let _ = credential_target(slot)?;
+    Ok(())
+}
+
+#[cfg(windows)]
+fn platform_load_credentials() -> Result<(), CommandError> {
+    for slot in ["fast", "strong", "embed"] {
+        if let Some(secret) = crate::lifecycle::windows::read_credential(credential_target(slot)?)
+            .map_err(CommandError::state)?
+        {
+            std::env::set_var(credential_environment(slot)?, secret);
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn platform_load_credentials() -> Result<(), CommandError> {
+    Ok(())
+}
+
+fn platform_delete_all_credentials() -> polaris_core::error::Result<usize> {
+    let mut deleted = 0;
+    for slot in ["fast", "strong", "embed"] {
+        #[cfg(windows)]
+        {
+            if crate::lifecycle::windows::delete_credential(
+                credential_target(slot).map_err(|error| std::io::Error::other(error.message))?,
+            )
+            .map_err(std::io::Error::other)?
+            {
+                deleted += 1;
+            }
+            std::env::remove_var(
+                credential_environment(slot)
+                    .map_err(|error| std::io::Error::other(error.message))?,
+            );
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = slot;
+        }
+    }
+    Ok(deleted)
+}
+
+#[cfg(windows)]
+fn platform_startup_enabled() -> Result<bool, CommandError> {
+    crate::lifecycle::windows::startup_enabled().map_err(CommandError::state)
+}
+
+#[cfg(not(windows))]
+fn platform_startup_enabled() -> Result<bool, CommandError> {
+    Ok(false)
+}
+
+#[cfg(windows)]
+fn platform_set_startup(enabled: bool) -> Result<(), CommandError> {
+    let executable = std::env::current_exe().map_err(CommandError::core)?;
+    crate::lifecycle::windows::set_startup_enabled(enabled, &executable.display().to_string())
+        .map_err(CommandError::state)
+}
+
+#[cfg(not(windows))]
+fn platform_set_startup(enabled: bool) -> Result<(), CommandError> {
+    if enabled {
+        Err(CommandError::state("当前平台不支持 Windows 开机启动"))
+    } else {
+        Ok(())
+    }
+}
+
+impl Deref for EngineGuard<'_> {
+    type Target = Engine;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.as_ref().expect("EngineGuard only wraps Some")
+    }
+}
+
+impl DerefMut for EngineGuard<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.0.as_mut().expect("EngineGuard only wraps Some")
+    }
 }
 
 impl DesktopState {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, CommandError> {
         let database_path = std::path::absolute(path).map_err(CommandError::core)?;
         let connection = open_database(&database_path).map_err(CommandError::core)?;
+        connection
+            .busy_timeout(std::time::Duration::from_secs(5))
+            .map_err(CommandError::core)?;
+        let engine = Arc::new(Mutex::new(Some(Engine::new(connection))));
+        let database_path = Arc::new(Mutex::new(database_path));
+        let pending_jobs = Arc::new(Mutex::new(Vec::new()));
+        let worker = start_worker(
+            Arc::clone(&engine),
+            Arc::clone(&database_path),
+            PathBuf::new(),
+            Arc::clone(&pending_jobs),
+        );
+        let resolution = DatabaseResolution {
+            path: database_path
+                .lock()
+                .map_err(|_| CommandError::state("数据库路径状态不可用"))?
+                .clone(),
+            source: DatabasePathSource::Saved,
+            needs_acknowledgement: false,
+        };
         Ok(Self {
-            engine: Mutex::new(Engine::new(connection)),
+            engine,
             database_path,
+            worker,
+            app_data_dir: PathBuf::new(),
+            config: Mutex::new(DesktopConfig {
+                database_path: Some(resolution.path.clone()),
+                database_path_acknowledged: true,
+                startup_enabled: false,
+            }),
+            resolution: Mutex::new(resolution),
+            startup_state: Mutex::new(StartupDatabaseState::Ready {
+                user_version: polaris_core::db::CURRENT_SCHEMA_VERSION,
+                upgrade_required: false,
+            }),
+            pre_upgrade_backup: Mutex::new(None),
+            crash_marker: None,
+            pending_jobs,
+            recovered_background_jobs: Vec::new(),
+            config_warning: None,
+            manage_platform_credentials: false,
         })
     }
 
-    fn engine(&self) -> Result<MutexGuard<'_, Engine>, CommandError> {
-        self.engine
+    pub fn bootstrap(app_data_dir: impl AsRef<Path>) -> Result<Self, CommandError> {
+        let app_data_dir = std::path::absolute(app_data_dir).map_err(CommandError::core)?;
+        std::fs::create_dir_all(&app_data_dir).map_err(CommandError::core)?;
+        let (config, quarantined_config) =
+            load_config_recovering(&app_data_dir).map_err(CommandError::state)?;
+        platform_load_credentials()?;
+        let environment_path = std::env::var_os("POLARIS_CORE_DB").map(PathBuf::from);
+        let resolution = resolve_database_path(&config, environment_path.as_deref(), &app_data_dir)
+            .map_err(CommandError::state)?;
+        let preparation =
+            prepare_database_for_open(&resolution.path, &app_data_dir.join("backups"))
+                .map_err(CommandError::state)?;
+        let crash_marker = begin_run(&app_data_dir).map_err(CommandError::state)?;
+        Self::from_bootstrap(
+            app_data_dir,
+            config,
+            resolution,
+            preparation,
+            crash_marker,
+            quarantined_config.map(|path| {
+                format!(
+                    "损坏的桌面配置已隔离到 {}，已使用安全默认值启动。",
+                    path.display()
+                )
+            }),
+        )
+    }
+
+    fn from_bootstrap(
+        app_data_dir: PathBuf,
+        config: DesktopConfig,
+        resolution: DatabaseResolution,
+        preparation: DatabasePreparation,
+        crash_marker: CrashMarkerReceipt,
+        config_warning: Option<String>,
+    ) -> Result<Self, CommandError> {
+        let engine_ready = matches!(
+            preparation.state,
+            StartupDatabaseState::Missing | StartupDatabaseState::Ready { .. }
+        );
+        let engine = if engine_ready {
+            let connection = open_database(&resolution.path).map_err(CommandError::core)?;
+            connection
+                .busy_timeout(std::time::Duration::from_secs(5))
+                .map_err(CommandError::core)?;
+            Some(Engine::new(connection))
+        } else {
+            None
+        };
+        let engine = Arc::new(Mutex::new(engine));
+        let database_path = Arc::new(Mutex::new(resolution.path.clone()));
+        let recovered_background_jobs = load_pending_jobs(&app_data_dir)
+            .map_err(CommandError::state)?
+            .into_iter()
+            .filter(|id| parse_background_job(id).is_ok())
+            .collect::<Vec<_>>();
+        save_pending_jobs(&app_data_dir, &recovered_background_jobs)
+            .map_err(CommandError::state)?;
+        let pending_jobs = Arc::new(Mutex::new(recovered_background_jobs.clone()));
+        let worker = start_worker(
+            Arc::clone(&engine),
+            Arc::clone(&database_path),
+            app_data_dir.clone(),
+            Arc::clone(&pending_jobs),
+        );
+        let state = Self {
+            engine,
+            database_path,
+            worker,
+            app_data_dir,
+            config: Mutex::new(config),
+            resolution: Mutex::new(resolution),
+            startup_state: Mutex::new(preparation.state),
+            pre_upgrade_backup: Mutex::new(preparation.pre_upgrade_backup),
+            crash_marker: Some(crash_marker),
+            pending_jobs,
+            recovered_background_jobs: recovered_background_jobs.clone(),
+            config_warning,
+            manage_platform_credentials: true,
+        };
+        if engine_ready {
+            for id in recovered_background_jobs {
+                state
+                    .worker
+                    .enqueue(parse_background_job(&id)?)
+                    .map_err(CommandError::state)?;
+            }
+        }
+        Ok(state)
+    }
+
+    fn engine(&self) -> Result<EngineGuard<'_>, CommandError> {
+        let engine = self
+            .engine
             .lock()
-            .map_err(|_| CommandError::state("Polaris 引擎暂时不可用，请重试"))
+            .map_err(|_| CommandError::state("Polaris 引擎暂时不可用，请重试"))?;
+        if engine.is_none() {
+            return Err(CommandError::state(
+                "数据库尚未就绪，请先在恢复面板检查或改选路径",
+            ));
+        }
+        Ok(EngineGuard(engine))
+    }
+
+    fn database_path(&self) -> Result<PathBuf, CommandError> {
+        self.database_path
+            .lock()
+            .map(|path| path.clone())
+            .map_err(|_| CommandError::state("数据库路径状态暂时不可用"))
+    }
+
+    pub fn enqueue_background_job(&self, job: BackgroundJob) -> Result<(), CommandError> {
+        if !self.app_data_dir.as_os_str().is_empty() {
+            let mut pending = self
+                .pending_jobs
+                .lock()
+                .map_err(|_| CommandError::state("后台任务恢复状态不可用"))?;
+            pending.push(job.id().to_owned());
+            save_pending_jobs(&self.app_data_dir, &pending).map_err(CommandError::state)?;
+            if let Err(error) = self.worker.enqueue(job) {
+                pending.pop();
+                let _ = save_pending_jobs(&self.app_data_dir, &pending);
+                return Err(CommandError::state(error));
+            }
+            Ok(())
+        } else {
+            self.worker.enqueue(job).map_err(CommandError::state)
+        }
+    }
+
+    pub fn take_background_events(&self) -> Vec<BackgroundEvent> {
+        self.worker.take_events()
+    }
+
+    pub fn shutdown(&self, drain: bool) -> Result<(), CommandError> {
+        if drain {
+            self.worker.drain_and_stop()
+        } else {
+            self.worker.cancel_and_stop()
+        }
+        .map_err(CommandError::state)?;
+        let mut engine = self
+            .engine
+            .lock()
+            .map_err(|_| CommandError::state("关闭引擎时状态锁不可用"))?;
+        *engine = None;
+        if let Some(marker) = &self.crash_marker {
+            finish_run(&marker.marker_path).map_err(CommandError::state)?;
+        }
+        Ok(())
+    }
+
+    pub fn lifecycle_snapshot(&self) -> Result<LifecycleSnapshot, CommandError> {
+        let resolution = self
+            .resolution
+            .lock()
+            .map_err(|_| CommandError::state("数据库解析状态不可用"))?
+            .clone();
+        let startup = self
+            .startup_state
+            .lock()
+            .map_err(|_| CommandError::state("数据库启动状态不可用"))?
+            .clone();
+        let (startup_status, startup_message, schema_version, upgrade_required) =
+            startup_view(&startup);
+        let startup_enabled = platform_startup_enabled()?;
+        Ok(LifecycleSnapshot {
+            database_path: resolution.path.display().to_string(),
+            database_source: match resolution.source {
+                DatabasePathSource::Saved => "saved",
+                DatabasePathSource::Environment => "environment",
+                DatabasePathSource::LocalAppData => "local_app_data",
+            }
+            .to_owned(),
+            database_path_acknowledged: !resolution.needs_acknowledgement,
+            startup_status,
+            startup_message,
+            schema_version,
+            upgrade_required,
+            pre_upgrade_backup: self
+                .pre_upgrade_backup
+                .lock()
+                .map_err(|_| CommandError::state("升级备份状态不可用"))?
+                .as_ref()
+                .map(|path| path.display().to_string()),
+            previous_run_incomplete: self
+                .crash_marker
+                .as_ref()
+                .is_some_and(|marker| marker.previous_run_incomplete),
+            recovered_background_jobs: self.recovered_background_jobs.clone(),
+            pending_background_jobs: self
+                .pending_jobs
+                .lock()
+                .map_err(|_| CommandError::state("后台任务恢复状态不可用"))?
+                .clone(),
+            config_warning: self.config_warning.clone(),
+            startup_enabled,
+            fast_api_key_configured: credential_configured("fast")?,
+            strong_api_key_configured: credential_configured("strong")?,
+            embed_api_key_configured: credential_configured("embed")?,
+        })
+    }
+
+    pub fn acknowledge_database_path(&self) -> Result<(), CommandError> {
+        let path = self.database_path()?;
+        let mut config = self
+            .config
+            .lock()
+            .map_err(|_| CommandError::state("桌面配置状态不可用"))?;
+        config.database_path = Some(path);
+        config.database_path_acknowledged = true;
+        save_config(&self.app_data_dir, &config).map_err(CommandError::state)?;
+        self.resolution
+            .lock()
+            .map_err(|_| CommandError::state("数据库解析状态不可用"))?
+            .needs_acknowledgement = false;
+        Ok(())
+    }
+
+    pub fn select_database_path(&self, path: &str) -> Result<(), CommandError> {
+        let was_recovery = self
+            .engine
+            .lock()
+            .map_err(|_| CommandError::state("切换数据库时引擎状态不可用"))?
+            .is_none();
+        let requested = std::path::absolute(path.trim()).map_err(CommandError::core)?;
+        let preparation = prepare_database_for_open(&requested, &self.app_data_dir.join("backups"))
+            .map_err(CommandError::state)?;
+        if !matches!(
+            preparation.state,
+            StartupDatabaseState::Missing | StartupDatabaseState::Ready { .. }
+        ) {
+            let (_, message, _, _) = startup_view(&preparation.state);
+            return Err(CommandError::state(format!(
+                "没有切换数据库；所选文件不可用：{message}"
+            )));
+        }
+        let connection = open_database(&requested).map_err(CommandError::core)?;
+        connection
+            .busy_timeout(std::time::Duration::from_secs(5))
+            .map_err(CommandError::core)?;
+        let new_engine = Engine::new(connection);
+        let new_config = DesktopConfig {
+            database_path: Some(requested.clone()),
+            database_path_acknowledged: true,
+            startup_enabled: platform_startup_enabled()?,
+        };
+        save_config(&self.app_data_dir, &new_config).map_err(CommandError::state)?;
+        *self
+            .engine
+            .lock()
+            .map_err(|_| CommandError::state("切换数据库时引擎状态不可用"))? = Some(new_engine);
+        *self
+            .database_path
+            .lock()
+            .map_err(|_| CommandError::state("切换数据库时路径状态不可用"))? = requested.clone();
+        *self
+            .config
+            .lock()
+            .map_err(|_| CommandError::state("切换数据库时配置状态不可用"))? = new_config;
+        *self
+            .resolution
+            .lock()
+            .map_err(|_| CommandError::state("切换数据库时解析状态不可用"))? = DatabaseResolution {
+            path: requested,
+            source: DatabasePathSource::Saved,
+            needs_acknowledgement: false,
+        };
+        *self
+            .startup_state
+            .lock()
+            .map_err(|_| CommandError::state("切换数据库时启动状态不可用"))? =
+            StartupDatabaseState::Ready {
+                user_version: polaris_core::db::CURRENT_SCHEMA_VERSION,
+                upgrade_required: false,
+            };
+        *self
+            .pre_upgrade_backup
+            .lock()
+            .map_err(|_| CommandError::state("升级备份状态不可用"))? =
+            preparation.pre_upgrade_backup;
+        if was_recovery {
+            let pending = self
+                .pending_jobs
+                .lock()
+                .map_err(|_| CommandError::state("后台任务恢复状态不可用"))?
+                .clone();
+            for id in pending {
+                self.worker
+                    .enqueue(parse_background_job(&id)?)
+                    .map_err(CommandError::state)?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn set_startup_enabled(&self, enabled: bool) -> Result<(), CommandError> {
+        platform_set_startup(enabled)?;
+        let mut config = self
+            .config
+            .lock()
+            .map_err(|_| CommandError::state("桌面配置状态不可用"))?;
+        config.startup_enabled = enabled;
+        save_config(&self.app_data_dir, &config).map_err(CommandError::state)
+    }
+
+    pub fn save_api_key(&self, slot: &str, secret: &str) -> Result<(), CommandError> {
+        if secret.trim().is_empty() {
+            return Err(CommandError::state("API Key 不能为空"));
+        }
+        platform_write_credential(slot, secret.trim())
+    }
+
+    pub fn delete_api_key(&self, slot: &str) -> Result<(), CommandError> {
+        platform_delete_credential(slot)
+    }
+
+    pub fn export_diagnostics(&self, output_path: &str) -> Result<(), CommandError> {
+        let output_path = std::path::absolute(output_path.trim()).map_err(CommandError::core)?;
+        let startup = self
+            .startup_state
+            .lock()
+            .map_err(|_| CommandError::state("数据库启动状态不可用"))?
+            .clone();
+        let pending = self
+            .pending_jobs
+            .lock()
+            .map_err(|_| CommandError::state("后台任务恢复状态不可用"))?
+            .clone();
+        let owned_secrets = [
+            std::env::var("POLARIS_LLM_FAST_API_KEY").ok(),
+            std::env::var("POLARIS_LLM_STRONG_API_KEY").ok(),
+            std::env::var("POLARIS_EMBED_API_KEY").ok(),
+        ];
+        let secrets = owned_secrets
+            .iter()
+            .filter_map(Option::as_deref)
+            .collect::<Vec<_>>();
+        export_diagnostic_bundle(
+            &self.app_data_dir,
+            &output_path,
+            &self.database_path()?,
+            &startup,
+            &pending,
+            &secrets,
+        )
+        .map_err(CommandError::state)
+    }
+
+    pub fn enqueue_background_job_by_id(&self, job: &str) -> Result<(), CommandError> {
+        let job = parse_background_job(job)?;
+        self.enqueue_background_job(job)
+    }
+
+    pub fn background_events(&self) -> Vec<BackgroundEventView> {
+        self.take_background_events()
+            .into_iter()
+            .map(background_event_view)
+            .collect()
     }
 
     pub fn status(&self) -> Result<StatusSnapshot, CommandError> {
@@ -620,7 +1386,8 @@ impl DesktopState {
     }
 
     pub fn full_delete_scope(&self) -> Result<FullDeleteScopePreview, CommandError> {
-        let connection = open_database(&self.database_path).map_err(CommandError::core)?;
+        let database_path = self.database_path()?;
+        let connection = open_database(&database_path).map_err(CommandError::core)?;
         let count = |table: &str, condition: &str| -> Result<i32, CommandError> {
             let sql = format!("SELECT COUNT(*) FROM {table} WHERE {condition}");
             let value: i64 = connection
@@ -629,13 +1396,13 @@ impl DesktopState {
             Ok(bounded_i32(value))
         };
         let mut sqlite_files = Vec::new();
-        for path in sqlite_family_paths(&self.database_path) {
+        for path in sqlite_family_paths(&database_path) {
             if path.is_file() {
                 sqlite_files.push(path.display().to_string());
             }
         }
         Ok(FullDeleteScopePreview {
-            database_path: self.database_path.display().to_string(),
+            database_path: database_path.display().to_string(),
             learning_attempts: count("attempts", "1=1")?,
             evidence_records: count("evidence_items", "1=1")?,
             goals: count("goals", "1=1")?,
@@ -658,9 +1425,8 @@ impl DesktopState {
             .map(|value| std::path::absolute(value.trim()))
             .transpose()
             .map_err(CommandError::core)?;
-        let placeholder_path = self
-            .database_path
-            .with_extension("delete-placeholder.sqlite");
+        let database_path = self.database_path()?;
+        let placeholder_path = database_path.with_extension("delete-placeholder.sqlite");
         if sqlite_family_paths(&placeholder_path)
             .iter()
             .any(|path| path.exists())
@@ -673,15 +1439,22 @@ impl DesktopState {
         let mut engine = self.engine()?;
         let active_engine = std::mem::replace(&mut *engine, Engine::new(placeholder));
         drop(active_engine);
+        let delete_credentials = || {
+            if self.manage_platform_credentials {
+                platform_delete_all_credentials()
+            } else {
+                Ok(0)
+            }
+        };
         let result = polaris_core::profile::delete_all_learning_data(
             FullDataDeletionRequest {
-                database_path: self.database_path.clone(),
+                database_path: database_path.clone(),
                 backup_path,
                 confirmation: input.confirmation,
             },
-            || Ok(0),
+            delete_credentials,
         );
-        let reopened = open_database(&self.database_path).map(Engine::new);
+        let reopened = open_database(&database_path).map(Engine::new);
         let outcome = match (result, reopened) {
             (Ok(receipt), Ok(fresh_engine)) => {
                 *engine = fresh_engine;

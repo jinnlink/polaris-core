@@ -7,10 +7,10 @@ import type { PracticeSubmitReceipt } from "../contracts/core";
 import {
   captureWorkspace,
   commandKeys,
+  enqueueBackgroundJob,
   getAttemptGradeStatus,
   getPracticeWorkspace,
   normalizeCommandError,
-  processGradeQueue,
   submitPractice,
 } from "../lib/commands";
 
@@ -67,8 +67,8 @@ export function PracticePage() {
       setReceipt(nextReceipt);
       setSavedMessage(null);
       await queryClient.invalidateQueries({ queryKey: ["core"] });
-      void processGradeQueue()
-        .then(() => queryClient.invalidateQueries({ queryKey: ["core", "grade"] }))
+      void enqueueBackgroundJob("grade_queue")
+        .then(() => queryClient.invalidateQueries({ queryKey: commandKeys.lifecycle }))
         .catch(() => undefined);
     },
   });

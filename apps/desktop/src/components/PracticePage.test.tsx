@@ -9,7 +9,7 @@ const commands = vi.hoisted(() => ({
   captureWorkspace: vi.fn(),
   getAttemptGradeStatus: vi.fn(),
   getPracticeWorkspace: vi.fn(),
-  processGradeQueue: vi.fn(),
+  enqueueBackgroundJob: vi.fn(),
   submitPractice: vi.fn(),
 }));
 
@@ -50,7 +50,7 @@ describe("PracticePage", () => {
     commands.getPracticeWorkspace.mockResolvedValue(workspace);
     commands.submitPractice.mockResolvedValue({ attempt_id: "attempt-1", provisional_score: 0.72, degraded: false, message: "回答已本地落账" });
     commands.getAttemptGradeStatus.mockResolvedValue({ attempt_id: "attempt-1", evidence_id: "evidence-answer-1", provisional_score: 0.72, final_score: null, graded_at: null, queued: true });
-    commands.processGradeQueue.mockResolvedValue({ processed: 0, pending: 1 });
+    commands.enqueueBackgroundJob.mockResolvedValue({ effect: "background_job_enqueued", message: "已排队" });
   });
 
   it("requires pre-feedback confidence and returns a zero-wait local receipt", async () => {

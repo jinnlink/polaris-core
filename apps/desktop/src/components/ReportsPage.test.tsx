@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { previewReportsWorkspace } from "../lib/governancePreview";
 import { ReportsPage } from "./ReportsPage";
 
-const commands = vi.hoisted(() => ({ getReportsWorkspace: vi.fn(), runReport: vi.fn(), submitReportFeedback: vi.fn() }));
+const commands = vi.hoisted(() => ({ enqueueBackgroundJob: vi.fn(), getReportsWorkspace: vi.fn(), submitReportFeedback: vi.fn() }));
 vi.mock("../lib/commands", async (importOriginal) => ({ ...await importOriginal<typeof import("../lib/commands")>(), ...commands }));
 
 function renderPage() {
@@ -18,7 +18,7 @@ describe("ReportsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     commands.getReportsWorkspace.mockResolvedValue(previewReportsWorkspace());
-    commands.runReport.mockResolvedValue({ report_id: "report-2026-w33", effect: "generated", message: "已生成" });
+    commands.enqueueBackgroundJob.mockResolvedValue({ effect: "background_job_enqueued", message: "已排队" });
     commands.submitReportFeedback.mockResolvedValue({ report_id: "report-2026-w33", effect: "feedback_inaccurate", message: "已记录" });
   });
 

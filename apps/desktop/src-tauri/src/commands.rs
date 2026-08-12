@@ -4,20 +4,121 @@ use tauri::{AppHandle, Emitter, State, WebviewWindow};
 use tauri_plugin_notification::NotificationExt;
 
 use crate::contracts::{
-    AiInteractionProfileUpdate, AttemptGradeStatus, CaptureWorkspaceInput, CaptureWorkspaceReceipt,
-    CommandError, FullDeleteInput, FullDeleteReceiptView, FullDeleteScopePreview, GoalEditorInput,
-    GoalMutationReceipt, GoalWorkspaceSnapshot, GradeQueueReceipt, InboxActionInput,
-    InboxActionReceipt, InboxPracticeDraft, InboxPracticeSubmitInput, InboxPracticeSubmitReceipt,
-    InboxWorkspaceItem, InboxWorkspaceQuery, MapWorkspaceQuery, MapWorkspaceSnapshot,
-    NotificationReceipt, PracticeSubmitInput, PracticeSubmitReceipt, PracticeWorkspaceSnapshot,
-    ProfileExportInput, ProfileMeasurementSubmitInput, ProfileSettingsUpdateInput,
-    ProfileWorkspaceSnapshot, ReportFeedbackInput, ReportMutationReceipt, ReportsWorkspaceSnapshot,
-    SettingsMutationReceipt, SettingsWorkspaceSnapshot, TodaySnapshot, TrustWorkspaceSnapshot,
-    WindowModeReceipt,
+    AiInteractionProfileUpdate, AttemptGradeStatus, BackgroundEventView, CaptureWorkspaceInput,
+    CaptureWorkspaceReceipt, CommandError, CredentialInput, DatabasePathInput,
+    DiagnosticExportInput, FullDeleteInput, FullDeleteReceiptView, FullDeleteScopePreview,
+    GoalEditorInput, GoalMutationReceipt, GoalWorkspaceSnapshot, GradeQueueReceipt,
+    InboxActionInput, InboxActionReceipt, InboxPracticeDraft, InboxPracticeSubmitInput,
+    InboxPracticeSubmitReceipt, InboxWorkspaceItem, InboxWorkspaceQuery, LifecycleSnapshot,
+    MapWorkspaceQuery, MapWorkspaceSnapshot, NotificationReceipt, PracticeSubmitInput,
+    PracticeSubmitReceipt, PracticeWorkspaceSnapshot, ProfileExportInput,
+    ProfileMeasurementSubmitInput, ProfileSettingsUpdateInput, ProfileWorkspaceSnapshot,
+    ReportFeedbackInput, ReportMutationReceipt, ReportsWorkspaceSnapshot, SettingsMutationReceipt,
+    SettingsWorkspaceSnapshot, TodaySnapshot, TrustWorkspaceSnapshot, WindowModeReceipt,
 };
 use crate::shell::apply_window_mode;
 use crate::state::{notification_receipt, DesktopState};
 use crate::DATA_CHANGED_EVENT;
+
+#[tauri::command(async)]
+pub fn lifecycle_status(state: State<'_, DesktopState>) -> Result<LifecycleSnapshot, CommandError> {
+    state.lifecycle_snapshot()
+}
+
+#[tauri::command(async)]
+pub fn acknowledge_database_path(
+    state: State<'_, DesktopState>,
+) -> Result<SettingsMutationReceipt, CommandError> {
+    state.acknowledge_database_path()?;
+    Ok(SettingsMutationReceipt {
+        effect: "database_path_acknowledged".to_owned(),
+        message: "当前数据库路径已确认；Polaris 不会静默搬迁数据。".to_owned(),
+    })
+}
+
+#[tauri::command(async)]
+pub fn select_database_path(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    input: DatabasePathInput,
+) -> Result<SettingsMutationReceipt, CommandError> {
+    state.select_database_path(&input.path)?;
+    emit_data_changed(&app, &["all"], "database_path_changed")?;
+    Ok(SettingsMutationReceipt {
+        effect: "database_path_changed".to_owned(),
+        message: "已切换到所选数据库；原数据库保留在原路径。".to_owned(),
+    })
+}
+
+#[tauri::command(async)]
+pub fn set_startup_enabled(
+    state: State<'_, DesktopState>,
+    enabled: bool,
+) -> Result<SettingsMutationReceipt, CommandError> {
+    state.set_startup_enabled(enabled)?;
+    Ok(SettingsMutationReceipt {
+        effect: "startup_updated".to_owned(),
+        message: if enabled {
+            "已按你的选择启用开机启动。"
+        } else {
+            "开机启动已关闭。"
+        }
+        .to_owned(),
+    })
+}
+
+#[tauri::command(async)]
+pub fn save_api_key(
+    state: State<'_, DesktopState>,
+    input: CredentialInput,
+) -> Result<SettingsMutationReceipt, CommandError> {
+    state.save_api_key(&input.slot, &input.secret)?;
+    Ok(SettingsMutationReceipt {
+        effect: "credential_saved".to_owned(),
+        message: "API Key 已写入 Windows Credential Manager，不会进入数据库或日志。".to_owned(),
+    })
+}
+
+#[tauri::command(async)]
+pub fn delete_api_key(
+    state: State<'_, DesktopState>,
+    slot: String,
+) -> Result<SettingsMutationReceipt, CommandError> {
+    state.delete_api_key(&slot)?;
+    Ok(SettingsMutationReceipt {
+        effect: "credential_deleted".to_owned(),
+        message: "Credential Manager 中对应的 API Key 已删除。".to_owned(),
+    })
+}
+
+#[tauri::command(async)]
+pub fn export_diagnostics(
+    state: State<'_, DesktopState>,
+    input: DiagnosticExportInput,
+) -> Result<SettingsMutationReceipt, CommandError> {
+    state.export_diagnostics(&input.output_path)?;
+    Ok(SettingsMutationReceipt {
+        effect: "diagnostics_exported".to_owned(),
+        message: format!("脱敏诊断包已导出到 {}。", input.output_path),
+    })
+}
+
+#[tauri::command(async)]
+pub fn enqueue_background_job(
+    state: State<'_, DesktopState>,
+    job: String,
+) -> Result<SettingsMutationReceipt, CommandError> {
+    state.enqueue_background_job_by_id(&job)?;
+    Ok(SettingsMutationReceipt {
+        effect: "background_job_enqueued".to_owned(),
+        message: format!("后台任务 {job} 已进入串行队列。"),
+    })
+}
+
+#[tauri::command(async)]
+pub fn poll_background_events(state: State<'_, DesktopState>) -> Vec<BackgroundEventView> {
+    state.background_events()
+}
 
 #[tauri::command(async)]
 pub fn status(state: State<'_, DesktopState>) -> Result<StatusSnapshot, CommandError> {
