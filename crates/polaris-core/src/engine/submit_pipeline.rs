@@ -313,6 +313,33 @@ impl Engine {
         })
     }
 
+    pub fn attempt_grade_status(&self, attempt_id: &str) -> Result<AttemptGradeStatus> {
+        self.conn
+            .query_row(
+                "SELECT attempt.id, attempt.response_evidence_id,
+                        attempt.provisional_score, attempt.final_score, attempt.graded_at,
+                        EXISTS(SELECT 1 FROM grade_queue queue WHERE queue.attempt_id=attempt.id)
+                 FROM attempts attempt
+                 WHERE attempt.id=?1",
+                [attempt_id],
+                |row| {
+                    Ok(AttemptGradeStatus {
+                        attempt_id: row.get(0)?,
+                        evidence_id: row.get(1)?,
+                        provisional_score: row.get(2)?,
+                        final_score: row.get(3)?,
+                        graded_at: row.get(4)?,
+                        queued: row.get(5)?,
+                    })
+                },
+            )
+            .optional()?
+            .ok_or_else(|| PolarisError::InvalidParameter {
+                key: "attempt_id".to_owned(),
+                value: format!("{attempt_id} not found"),
+            })
+    }
+
     pub fn mastery_state(&self, concept_id: &str) -> Result<Option<StoredMasteryState>> {
         self.conn
             .query_row(

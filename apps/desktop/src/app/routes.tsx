@@ -9,6 +9,14 @@ const MapPage = lazy(async () => {
   const module = await import("../components/MapPage");
   return { default: module.MapPage };
 });
+const PracticePage = lazy(async () => {
+  const module = await import("../components/PracticePage");
+  return { default: module.PracticePage };
+});
+const InboxPage = lazy(async () => {
+  const module = await import("../components/InboxPage");
+  return { default: module.InboxPage };
+});
 
 export const routeDefinitions = [
   { path: "/", key: "today", label: "Today", description: "今天最值得完成的 2–3 个行动。" },
@@ -30,6 +38,14 @@ export const router = createHashRouter([
       element: route.key === "today" ? <TodayPage /> : route.key === "map" ? (
         <Suspense fallback={<section className="map-loading" role="status">正在加载知识地图…</section>}>
           <MapPage />
+        </Suspense>
+      ) : route.key === "practice" ? (
+        <Suspense fallback={<div className="route-loading" role="status">正在恢复学习现场…</div>}>
+          <PracticePage />
+        </Suspense>
+      ) : route.key === "inbox" ? (
+        <Suspense fallback={<div className="route-loading" role="status">正在读取收件箱…</div>}>
+          <InboxPage />
         </Suspense>
       ) : (
         <RoutePlaceholder

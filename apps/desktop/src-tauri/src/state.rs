@@ -2,21 +2,28 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 
+use polaris_core::capture_queue::{CaptureInput, CaptureStatus, LearnerCaptureKind};
 use polaris_core::db::open_database;
 use polaris_core::engine::{Engine, TaskAssignment};
+use polaris_core::inbox_practice::InboxPracticeSubmissionInput;
 use polaris_core::knowledge_map::{
     KnowledgeMapDueStatus, KnowledgeMapGateStatus, KnowledgeMapQuery, KnowledgeMapScope,
     KnowledgeMapSnapshot, KnowledgeMapStateSource,
 };
+use polaris_core::learner_inbox::LearnerInboxAction;
 use polaris_core::notification::NotificationPolicy;
 use polaris_core::pack_state::{PackSwitchReceipt, ThetaMode};
 use polaris_core::prediction_map::{PredictionEstimate, PredictionMapSnapshot};
 use polaris_core::status::StatusSnapshot;
 
 use crate::contracts::{
-    CommandError, MapWorkspaceAggregate, MapWorkspaceAnchor, MapWorkspaceEdge, MapWorkspaceLayer,
+    AttemptGradeStatus, CaptureWorkspaceInput, CaptureWorkspaceReceipt, CommandError,
+    GradeQueueReceipt, InboxActionInput, InboxActionOption, InboxActionReceipt, InboxPracticeDraft,
+    InboxPracticeSubmitInput, InboxPracticeSubmitReceipt, InboxWorkspaceItem, InboxWorkspaceQuery,
+    MapWorkspaceAggregate, MapWorkspaceAnchor, MapWorkspaceEdge, MapWorkspaceLayer,
     MapWorkspaceNode, MapWorkspacePath, MapWorkspaceQuery, MapWorkspaceSnapshot,
-    NotificationReceipt, TodayAction, TodaySignal, TodaySnapshot,
+    NotificationReceipt, PracticeSubmitInput, PracticeSubmitReceipt, PracticeTask,
+    PracticeWorkspaceSnapshot, TodayAction, TodaySignal, TodaySnapshot, WorkbenchAction,
 };
 
 pub struct DesktopState {
@@ -107,6 +114,235 @@ impl DesktopState {
             other => Err(CommandError::state(format!("unknown map view: {other}"))),
         }
     }
+
+    pub fn practice_workspace(
+        &self,
+        session_id: &str,
+    ) -> Result<PracticeWorkspaceSnapshot, CommandError> {
+        let task = self
+            .engine()?
+            .issue_or_resume_task(session_id)
+            .map_err(CommandError::core)?
+            .map(|task| PracticeTask {
+                task_event_id: task.task_event_id,
+                session_id: task.session_id,
+                concept_id: task.concept_id,
+                concept_name: task.concept_name,
+                move_id: task.move_id,
+                task_type: task.task_type,
+                prompt_text: task.prompt_text,
+                reason: task.reason,
+                issued_at: task.issued_at,
+            });
+        let actions = if task.is_some() {
+            workbench_actions(&[
+                ("submit", "提交回答", "primary"),
+                ("capture", "保存为资料", "secondary"),
+                ("today", "返回 Today", "quiet"),
+            ])
+        } else {
+            workbench_actions(&[
+                ("capture", "记录新资料", "primary"),
+                ("inbox", "处理收件箱", "secondary"),
+                ("today", "返回 Today", "quiet"),
+            ])
+        };
+        Ok(PracticeWorkspaceSnapshot { task, actions })
+    }
+
+    pub fn submit_practice(
+        &self,
+        input: PracticeSubmitInput,
+    ) -> Result<PracticeSubmitReceipt, CommandError> {
+        let receipt = self
+            .engine()?
+            .submit_task_response_provisional(
+                &input.session_id,
+                &input.task_event_id,
+                input.response_text,
+                input.self_confidence,
+            )
+            .map_err(CommandError::core)?;
+        Ok(PracticeSubmitReceipt {
+            attempt_id: receipt.attempt_id,
+            provisional_score: receipt.provisional_score,
+            degraded: receipt.degraded,
+            message: "回答已本地落账；后台评分回来后会自动修正。".to_owned(),
+        })
+    }
+
+    pub fn attempt_grade_status(
+        &self,
+        attempt_id: &str,
+    ) -> Result<AttemptGradeStatus, CommandError> {
+        let status = self
+            .engine()?
+            .attempt_grade_status(attempt_id)
+            .map_err(CommandError::core)?;
+        Ok(AttemptGradeStatus {
+            attempt_id: status.attempt_id,
+            evidence_id: status.evidence_id,
+            provisional_score: status.provisional_score,
+            final_score: status.final_score,
+            graded_at: status.graded_at,
+            queued: status.queued,
+        })
+    }
+
+    pub fn process_grade_queue(&self) -> Result<GradeQueueReceipt, CommandError> {
+        let summary = self.engine()?.grade_pending().map_err(CommandError::core)?;
+        Ok(GradeQueueReceipt {
+            processed: i32::try_from(summary.processed).unwrap_or(i32::MAX),
+            pending: i32::try_from(summary.pending).unwrap_or(i32::MAX),
+        })
+    }
+
+    pub fn capture_workspace(
+        &self,
+        input: CaptureWorkspaceInput,
+    ) -> Result<CaptureWorkspaceReceipt, CommandError> {
+        let learner_kind = LearnerCaptureKind::parse(&input.learner_kind)
+            .ok_or_else(|| CommandError::core("unknown learner capture kind"))?;
+        let receipt = self
+            .engine()?
+            .capture_learning_evidence(CaptureInput {
+                session_id: input.session_id,
+                source: input.source,
+                content_type: input.content_type,
+                text: input.text,
+                learner_kind,
+                candidate_concept_ids: input.candidate_concept_ids,
+                note: input.note,
+            })
+            .map_err(CommandError::core)?;
+        Ok(CaptureWorkspaceReceipt {
+            capture_id: receipt.capture_id,
+            evidence_id: receipt.evidence_id,
+            status: receipt.status.as_str().to_owned(),
+            learner_kind: receipt.learner_kind.as_str().to_owned(),
+            effect: receipt.effect.as_str().to_owned(),
+            message: receipt.message,
+        })
+    }
+
+    pub fn inbox_workspace(
+        &self,
+        query: InboxWorkspaceQuery,
+    ) -> Result<Vec<InboxWorkspaceItem>, CommandError> {
+        let statuses = query
+            .statuses
+            .iter()
+            .map(|status| {
+                CaptureStatus::parse(status)
+                    .ok_or_else(|| CommandError::core(format!("unknown inbox status: {status}")))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        self.engine()?
+            .learner_inbox(&statuses, query.limit)
+            .map_err(CommandError::core)
+            .map(|items| {
+                items
+                    .into_iter()
+                    .map(|item| InboxWorkspaceItem {
+                        capture_id: item.capture_id,
+                        evidence_id: item.evidence_id,
+                        status: item.status.as_str().to_owned(),
+                        learner_kind: item.learner_kind.as_str().to_owned(),
+                        source: item.source,
+                        content_type: item.content_type,
+                        text_preview: item.text_preview,
+                        concept_hint: item.concept_hint,
+                        note: item.note,
+                        created_at: item.created_at,
+                        updated_at: item.updated_at,
+                        message: item.message,
+                        actions: item
+                            .actions
+                            .into_iter()
+                            .map(|action| InboxActionOption {
+                                action: action.action.as_str().to_owned(),
+                                label: action.label,
+                            })
+                            .collect(),
+                    })
+                    .collect()
+            })
+    }
+
+    pub fn act_on_inbox(
+        &self,
+        input: InboxActionInput,
+    ) -> Result<InboxActionReceipt, CommandError> {
+        let action = LearnerInboxAction::parse(&input.action)
+            .ok_or_else(|| CommandError::core("unknown learner inbox action"))?;
+        let receipt = self
+            .engine()?
+            .act_on_learner_inbox_item(&input.capture_id, action, input.note)
+            .map_err(CommandError::core)?;
+        Ok(InboxActionReceipt {
+            capture_id: receipt.capture_id,
+            status: receipt.status.as_str().to_owned(),
+            effect: receipt.effect,
+            message: receipt.message,
+        })
+    }
+
+    pub fn draft_inbox_practice(
+        &self,
+        capture_id: &str,
+    ) -> Result<InboxPracticeDraft, CommandError> {
+        let draft = self
+            .engine()?
+            .draft_inbox_practice(capture_id)
+            .map_err(CommandError::core)?;
+        Ok(InboxPracticeDraft {
+            capture_id: draft.capture_id,
+            evidence_id: draft.evidence_id,
+            status: draft.status.as_str().to_owned(),
+            concept_hint: draft.concept_hint,
+            task_type: draft.task_type,
+            prompt: draft.prompt,
+            source_excerpt: draft.source_excerpt,
+            message: draft.message,
+        })
+    }
+
+    pub fn submit_inbox_practice(
+        &self,
+        input: InboxPracticeSubmitInput,
+    ) -> Result<InboxPracticeSubmitReceipt, CommandError> {
+        let receipt = self
+            .engine()?
+            .submit_inbox_practice_provisional(InboxPracticeSubmissionInput {
+                capture_id: input.capture_id,
+                session_id: input.session_id,
+                response_text: input.response_text,
+                self_confidence: input.self_confidence,
+                latency_ms: i64::from(input.latency_ms),
+                hint_count: i64::from(input.hint_count),
+            })
+            .map_err(CommandError::core)?;
+        Ok(InboxPracticeSubmitReceipt {
+            capture_id: receipt.capture_id,
+            attempt_id: receipt.attempt_id,
+            status: receipt.status.as_str().to_owned(),
+            effect: receipt.effect,
+            message: receipt.message,
+            provisional_score: receipt.provisional_score,
+            degraded: receipt.degraded,
+        })
+    }
+}
+
+fn workbench_actions(items: &[(&str, &str, &str)]) -> Vec<WorkbenchAction> {
+    items
+        .iter()
+        .map(|(id, label, kind)| WorkbenchAction {
+            id: (*id).to_owned(),
+            label: (*label).to_owned(),
+            kind: (*kind).to_owned(),
+        })
+        .collect()
 }
 
 fn core_map_query(request: &MapWorkspaceQuery) -> Result<KnowledgeMapQuery, CommandError> {

@@ -2,7 +2,10 @@ use std::time::{Duration, Instant};
 
 use polaris_core::db::{open_database, CURRENT_SCHEMA_VERSION};
 use polaris_core::engine::Engine;
-use polaris_desktop_lib::contracts::MapWorkspaceQuery;
+use polaris_desktop_lib::contracts::{
+    CaptureWorkspaceInput, InboxActionInput, InboxPracticeSubmitInput, InboxWorkspaceQuery,
+    MapWorkspaceQuery, PracticeSubmitInput,
+};
 use polaris_desktop_lib::state::{notification_receipt, DesktopState};
 use tempfile::tempdir;
 
@@ -140,6 +143,180 @@ fn map_workspace_preserves_current_prediction_and_global_contracts() {
         .aggregates
         .iter()
         .any(|item| item.kind == "dimension"));
+}
+
+#[test]
+fn practice_workspace_resumes_draft_and_submits_without_waiting_for_llm() {
+    let dir = tempdir().unwrap();
+    let database = dir.path().join("practice.sqlite");
+    let connection = open_database(&database).unwrap();
+    let mut engine = Engine::new(connection);
+    engine
+        .init_pack(workspace_path("packs/algorithms"))
+        .unwrap();
+    drop(engine);
+    let state = DesktopState::open(&database).unwrap();
+
+    let first = state.practice_workspace("desktop-session").unwrap();
+    let resumed = state.practice_workspace("desktop-session").unwrap();
+    let task = first.task.unwrap();
+    let original_task_event_id = task.task_event_id.clone();
+    assert_eq!(resumed.task.unwrap().task_event_id, task.task_event_id);
+    assert_eq!(first.actions.len(), 3);
+
+    let invalid = state.submit_practice(PracticeSubmitInput {
+        session_id: "desktop-session".to_owned(),
+        task_event_id: task.task_event_id.clone(),
+        response_text: "我的解释".to_owned(),
+        self_confidence: 0,
+    });
+    assert!(invalid.is_err());
+
+    let receipt = state
+        .submit_practice(PracticeSubmitInput {
+            session_id: "desktop-session".to_owned(),
+            task_event_id: task.task_event_id.clone(),
+            response_text: "我会从不变量与边界条件解释这个概念。".to_owned(),
+            self_confidence: 3,
+        })
+        .unwrap();
+    let status = state.attempt_grade_status(&receipt.attempt_id).unwrap();
+    assert!(!status.evidence_id.is_empty());
+    assert_eq!(status.final_score, None);
+    assert!(status.queued);
+
+    let duplicate = state.submit_practice(PracticeSubmitInput {
+        session_id: "desktop-session".to_owned(),
+        task_event_id: task.task_event_id,
+        response_text: "重复回答".to_owned(),
+        self_confidence: 3,
+    });
+    assert!(duplicate.is_err());
+    assert_ne!(
+        state
+            .practice_workspace("desktop-session")
+            .unwrap()
+            .task
+            .unwrap()
+            .task_event_id,
+        original_task_event_id
+    );
+}
+
+#[test]
+fn busy_database_rejects_cleanly_and_keeps_the_issued_task_recoverable() {
+    let dir = tempdir().unwrap();
+    let database = dir.path().join("practice-busy.sqlite");
+    let connection = open_database(&database).unwrap();
+    let mut engine = Engine::new(connection);
+    engine
+        .init_pack(workspace_path("packs/algorithms"))
+        .unwrap();
+    let task = engine
+        .issue_or_resume_task("busy-session")
+        .unwrap()
+        .unwrap();
+    engine
+        .conn()
+        .busy_timeout(Duration::from_millis(20))
+        .unwrap();
+
+    let blocker = open_database(&database).unwrap();
+    blocker.execute_batch("BEGIN IMMEDIATE").unwrap();
+    let result = engine.submit_task_response_provisional(
+        "busy-session",
+        &task.task_event_id,
+        "数据库恢复后仍可重新提交。".to_owned(),
+        3,
+    );
+
+    assert!(result.is_err());
+    let attempt_count: i64 = engine
+        .conn()
+        .query_row("SELECT COUNT(*) FROM attempts", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(attempt_count, 0);
+    blocker.execute_batch("ROLLBACK").unwrap();
+    assert_eq!(
+        engine
+            .issue_or_resume_task("busy-session")
+            .unwrap()
+            .unwrap()
+            .task_event_id,
+        task.task_event_id
+    );
+}
+
+#[test]
+fn inbox_capture_stays_recorded_only_until_a_confident_answer_is_submitted() {
+    let dir = tempdir().unwrap();
+    let database = dir.path().join("inbox.sqlite");
+    let connection = open_database(&database).unwrap();
+    let mut engine = Engine::new(connection);
+    engine
+        .init_pack(workspace_path("packs/algorithms"))
+        .unwrap();
+    drop(engine);
+    let state = DesktopState::open(&database).unwrap();
+
+    let capture = state
+        .capture_workspace(CaptureWorkspaceInput {
+            session_id: Some("inbox-session".to_owned()),
+            source: "desktop".to_owned(),
+            content_type: "text/plain".to_owned(),
+            text: "Dijkstra 在负权边上不能保证正确。".to_owned(),
+            learner_kind: "reference".to_owned(),
+            candidate_concept_ids: vec!["complexity_basics".to_owned()],
+            note: None,
+        })
+        .unwrap();
+    assert_eq!(capture.effect, "recorded_only");
+    let connection = open_database(&database).unwrap();
+    let attempts_before: i64 = connection
+        .query_row("SELECT COUNT(*) FROM attempts", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(attempts_before, 0);
+    drop(connection);
+
+    let open = state
+        .inbox_workspace(InboxWorkspaceQuery {
+            statuses: Vec::new(),
+            limit: 20,
+        })
+        .unwrap();
+    assert_eq!(open.len(), 1);
+    assert_eq!(open[0].actions.len(), 3);
+    state
+        .act_on_inbox(InboxActionInput {
+            capture_id: capture.capture_id.clone(),
+            action: "accept".to_owned(),
+            note: None,
+        })
+        .unwrap();
+    let draft = state.draft_inbox_practice(&capture.capture_id).unwrap();
+    assert_eq!(
+        draft.concept_hint.as_deref(),
+        Some("Big-O, Omega, and Theta notation")
+    );
+
+    let receipt = state
+        .submit_inbox_practice(InboxPracticeSubmitInput {
+            capture_id: capture.capture_id,
+            session_id: "inbox-session".to_owned(),
+            response_text: "贪心松弛依赖已确定距离不会再被更短路径推翻，负权边会破坏它。"
+                .to_owned(),
+            self_confidence: 4,
+            latency_ms: 1_200,
+            hint_count: 0,
+        })
+        .unwrap();
+    assert_eq!(receipt.status, "practiced");
+    assert!(
+        state
+            .attempt_grade_status(&receipt.attempt_id)
+            .unwrap()
+            .queued
+    );
 }
 
 #[test]

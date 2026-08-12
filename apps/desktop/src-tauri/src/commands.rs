@@ -4,8 +4,11 @@ use tauri::{AppHandle, Emitter, State, WebviewWindow};
 use tauri_plugin_notification::NotificationExt;
 
 use crate::contracts::{
-    CommandError, MapWorkspaceQuery, MapWorkspaceSnapshot, NotificationReceipt, TodaySnapshot,
-    WindowModeReceipt,
+    AttemptGradeStatus, CaptureWorkspaceInput, CaptureWorkspaceReceipt, CommandError,
+    GradeQueueReceipt, InboxActionInput, InboxActionReceipt, InboxPracticeDraft,
+    InboxPracticeSubmitInput, InboxPracticeSubmitReceipt, InboxWorkspaceItem, InboxWorkspaceQuery,
+    MapWorkspaceQuery, MapWorkspaceSnapshot, NotificationReceipt, PracticeSubmitInput,
+    PracticeSubmitReceipt, PracticeWorkspaceSnapshot, TodaySnapshot, WindowModeReceipt,
 };
 use crate::shell::apply_window_mode;
 use crate::state::{notification_receipt, DesktopState};
@@ -27,6 +30,102 @@ pub fn map_workspace(
     query: MapWorkspaceQuery,
 ) -> Result<MapWorkspaceSnapshot, CommandError> {
     state.map_workspace(query)
+}
+
+#[tauri::command(async)]
+pub fn practice_workspace(
+    state: State<'_, DesktopState>,
+    session_id: String,
+) -> Result<PracticeWorkspaceSnapshot, CommandError> {
+    state.practice_workspace(&session_id)
+}
+
+#[tauri::command(async)]
+pub fn submit_practice(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    input: PracticeSubmitInput,
+) -> Result<PracticeSubmitReceipt, CommandError> {
+    let receipt = state.submit_practice(input)?;
+    emit_data_changed(
+        &app,
+        &["practice", "today", "map", "mirror"],
+        "provisional_submission",
+    )?;
+    Ok(receipt)
+}
+
+#[tauri::command(async)]
+pub fn attempt_grade_status(
+    state: State<'_, DesktopState>,
+    attempt_id: String,
+) -> Result<AttemptGradeStatus, CommandError> {
+    state.attempt_grade_status(&attempt_id)
+}
+
+#[tauri::command(async)]
+pub fn process_grade_queue(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+) -> Result<GradeQueueReceipt, CommandError> {
+    let receipt = state.process_grade_queue()?;
+    if receipt.processed > 0 {
+        emit_data_changed(&app, &["practice", "today", "map", "mirror"], "final_grade")?;
+    }
+    Ok(receipt)
+}
+
+#[tauri::command(async)]
+pub fn capture_workspace(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    input: CaptureWorkspaceInput,
+) -> Result<CaptureWorkspaceReceipt, CommandError> {
+    let receipt = state.capture_workspace(input)?;
+    emit_data_changed(&app, &["inbox"], "capture_recorded")?;
+    Ok(receipt)
+}
+
+#[tauri::command(async)]
+pub fn inbox_workspace(
+    state: State<'_, DesktopState>,
+    query: InboxWorkspaceQuery,
+) -> Result<Vec<InboxWorkspaceItem>, CommandError> {
+    state.inbox_workspace(query)
+}
+
+#[tauri::command(async)]
+pub fn act_on_inbox(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    input: InboxActionInput,
+) -> Result<InboxActionReceipt, CommandError> {
+    let receipt = state.act_on_inbox(input)?;
+    emit_data_changed(&app, &["inbox"], "inbox_action")?;
+    Ok(receipt)
+}
+
+#[tauri::command(async)]
+pub fn draft_inbox_practice(
+    state: State<'_, DesktopState>,
+    capture_id: String,
+) -> Result<InboxPracticeDraft, CommandError> {
+    state.draft_inbox_practice(&capture_id)
+}
+
+#[tauri::command(async)]
+pub fn submit_inbox_practice(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    input: InboxPracticeSubmitInput,
+) -> Result<InboxPracticeSubmitReceipt, CommandError> {
+    let receipt = state.submit_inbox_practice(input)?;
+    emit_data_changed(
+        &app,
+        &["inbox", "practice", "today", "map", "mirror"],
+        "inbox_practice_submission",
+    )?;
+    Ok(receipt)
 }
 
 #[tauri::command(async)]
@@ -81,4 +180,12 @@ pub fn show_notification(
         .show()
         .map_err(CommandError::core)?;
     Ok(receipt)
+}
+
+fn emit_data_changed(app: &AppHandle, domains: &[&str], reason: &str) -> Result<(), CommandError> {
+    app.emit(
+        DATA_CHANGED_EVENT,
+        serde_json::json!({ "domains": domains, "reason": reason }),
+    )
+    .map_err(CommandError::core)
 }

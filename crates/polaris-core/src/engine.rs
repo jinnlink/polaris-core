@@ -159,6 +159,29 @@ pub struct SubmitReceipt {
     pub degraded: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct IssuedTask {
+    pub task_event_id: String,
+    pub session_id: String,
+    pub concept_id: String,
+    pub concept_name: String,
+    pub move_id: String,
+    pub task_type: String,
+    pub prompt_text: String,
+    pub reason: String,
+    pub issued_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct AttemptGradeStatus {
+    pub attempt_id: String,
+    pub evidence_id: String,
+    pub provisional_score: f64,
+    pub final_score: Option<f64>,
+    pub graded_at: Option<String>,
+    pub queued: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NoAttemptReason {
@@ -625,6 +648,21 @@ impl Engine {
         &mut self,
         input: InboxPracticeSubmissionInput,
     ) -> Result<InboxPracticeSubmissionReceipt> {
+        self.submit_inbox_practice_mode(input, true)
+    }
+
+    pub fn submit_inbox_practice_provisional(
+        &mut self,
+        input: InboxPracticeSubmissionInput,
+    ) -> Result<InboxPracticeSubmissionReceipt> {
+        self.submit_inbox_practice_mode(input, false)
+    }
+
+    fn submit_inbox_practice_mode(
+        &mut self,
+        input: InboxPracticeSubmissionInput,
+        grade_immediately: bool,
+    ) -> Result<InboxPracticeSubmissionReceipt> {
         if !(1..=5).contains(&input.self_confidence) {
             return Err(PolarisError::InvalidParameter {
                 key: "inbox_practice.self_confidence".to_owned(),
@@ -647,27 +685,64 @@ impl Engine {
             });
         }
 
-        let receipt = self.submit(SubmitInput {
-            session_id: session_id.clone(),
-            concept_id: draft.concept_id.clone(),
-            task_type: draft.task_type.clone(),
-            prompt_text: draft.prompt.clone(),
-            response_text,
-            self_confidence: input.self_confidence,
-            latency_ms: input.latency_ms,
-            hint_count: input.hint_count,
-        })?;
-        mark_inbox_practice_submitted(&self.conn, &draft, &session_id, &receipt.attempt_id)?;
+        if grade_immediately {
+            let receipt = self.submit(SubmitInput {
+                session_id: session_id.clone(),
+                concept_id: draft.concept_id.clone(),
+                task_type: draft.task_type.clone(),
+                prompt_text: draft.prompt.clone(),
+                response_text,
+                self_confidence: input.self_confidence,
+                latency_ms: input.latency_ms,
+                hint_count: input.hint_count,
+            })?;
+            mark_inbox_practice_submitted(&self.conn, &draft, &session_id, &receipt.attempt_id)?;
+            return Ok(InboxPracticeSubmissionReceipt {
+                capture_id: draft.capture_id,
+                attempt_id: receipt.attempt_id,
+                status: crate::capture_queue::CaptureStatus::Practiced,
+                effect: "submitted".to_owned(),
+                message: "已提交这道小题，系统会用你的回答更新学习状态。".to_owned(),
+                provisional_score: receipt.provisional_score,
+                degraded: receipt.degraded,
+            });
+        }
 
-        Ok(InboxPracticeSubmissionReceipt {
-            capture_id: draft.capture_id,
-            attempt_id: receipt.attempt_id,
-            status: crate::capture_queue::CaptureStatus::Practiced,
-            effect: "submitted".to_owned(),
-            message: "已提交这道小题，系统会用你的回答更新学习状态。".to_owned(),
-            provisional_score: receipt.provisional_score,
-            degraded: receipt.degraded,
-        })
+        self.conn.execute_batch("BEGIN IMMEDIATE")?;
+        let result = (|| -> Result<InboxPracticeSubmissionReceipt> {
+            let submit_input = SubmitInput {
+                session_id: session_id.clone(),
+                concept_id: draft.concept_id.clone(),
+                task_type: draft.task_type.clone(),
+                prompt_text: draft.prompt.clone(),
+                response_text,
+                self_confidence: input.self_confidence,
+                latency_ms: input.latency_ms,
+                hint_count: input.hint_count,
+            };
+            let receipt = self.submit_provisional(submit_input)?;
+            mark_inbox_practice_submitted(&self.conn, &draft, &session_id, &receipt.attempt_id)?;
+
+            Ok(InboxPracticeSubmissionReceipt {
+                capture_id: draft.capture_id,
+                attempt_id: receipt.attempt_id,
+                status: crate::capture_queue::CaptureStatus::Practiced,
+                effect: "submitted".to_owned(),
+                message: "已提交这道小题，系统会用你的回答更新学习状态。".to_owned(),
+                provisional_score: receipt.provisional_score,
+                degraded: receipt.degraded,
+            })
+        })();
+        match result {
+            Ok(receipt) => {
+                self.conn.execute_batch("COMMIT")?;
+                Ok(receipt)
+            }
+            Err(error) => {
+                let _ = self.conn.execute_batch("ROLLBACK");
+                Err(error)
+            }
+        }
     }
 
     pub fn run_gu_induction(&self) -> Result<GuInductionSummary> {

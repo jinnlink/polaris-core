@@ -2,20 +2,48 @@ import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 import type {
+  AttemptGradeStatus,
+  CaptureWorkspaceInput,
+  CaptureWorkspaceReceipt,
   CommandError,
+  GradeQueueReceipt,
+  InboxActionInput,
+  InboxActionReceipt,
+  InboxPracticeDraft,
+  InboxPracticeSubmitInput,
+  InboxPracticeSubmitReceipt,
+  InboxWorkspaceItem,
+  InboxWorkspaceQuery,
   MapWorkspaceQuery,
   MapWorkspaceSnapshot,
   PackSwitchReceipt,
+  PracticeSubmitInput,
+  PracticeSubmitReceipt,
+  PracticeWorkspaceSnapshot,
   StatusSnapshot,
   TodaySnapshot,
   WindowModeReceipt,
 } from "../contracts/core";
 import { previewMapWorkspace } from "./mapPreview";
+import {
+  previewActOnInbox,
+  previewAttemptGradeStatus,
+  previewCaptureWorkspace,
+  previewDraftInboxPractice,
+  previewInboxWorkspace,
+  previewPracticeWorkspace,
+  previewProcessGradeQueue,
+  previewSubmitInboxPractice,
+  previewSubmitPractice,
+} from "./workbenchPreview";
 
 export const commandKeys = {
   status: ["core", "status"] as const,
   today: ["core", "today"] as const,
   map: (query: MapWorkspaceQuery) => ["core", "map", query] as const,
+  practice: (sessionId: string) => ["core", "practice", sessionId] as const,
+  grade: (attemptId: string) => ["core", "grade", attemptId] as const,
+  inbox: (query: InboxWorkspaceQuery) => ["core", "inbox", query] as const,
 };
 
 function isBrowserPreview() {
@@ -62,6 +90,51 @@ export async function getMapWorkspace(
     return Promise.resolve(previewMapWorkspace(query));
   }
   return invoke<MapWorkspaceSnapshot>("map_workspace", { query });
+}
+
+export async function getPracticeWorkspace(sessionId: string): Promise<PracticeWorkspaceSnapshot> {
+  if (isBrowserPreview()) return Promise.resolve(previewPracticeWorkspace(sessionId));
+  return invoke<PracticeWorkspaceSnapshot>("practice_workspace", { sessionId });
+}
+
+export async function submitPractice(input: PracticeSubmitInput): Promise<PracticeSubmitReceipt> {
+  if (isBrowserPreview()) return Promise.resolve(previewSubmitPractice(input));
+  return invoke<PracticeSubmitReceipt>("submit_practice", { input });
+}
+
+export async function getAttemptGradeStatus(attemptId: string): Promise<AttemptGradeStatus> {
+  if (isBrowserPreview()) return Promise.resolve(previewAttemptGradeStatus(attemptId));
+  return invoke<AttemptGradeStatus>("attempt_grade_status", { attemptId });
+}
+
+export async function processGradeQueue(): Promise<GradeQueueReceipt> {
+  if (isBrowserPreview()) return Promise.resolve(previewProcessGradeQueue());
+  return invoke<GradeQueueReceipt>("process_grade_queue");
+}
+
+export async function captureWorkspace(input: CaptureWorkspaceInput): Promise<CaptureWorkspaceReceipt> {
+  if (isBrowserPreview()) return Promise.resolve(previewCaptureWorkspace(input));
+  return invoke<CaptureWorkspaceReceipt>("capture_workspace", { input });
+}
+
+export async function getInboxWorkspace(query: InboxWorkspaceQuery): Promise<InboxWorkspaceItem[]> {
+  if (isBrowserPreview()) return Promise.resolve(previewInboxWorkspace(query));
+  return invoke<InboxWorkspaceItem[]>("inbox_workspace", { query });
+}
+
+export async function actOnInbox(input: InboxActionInput): Promise<InboxActionReceipt> {
+  if (isBrowserPreview()) return Promise.resolve(previewActOnInbox(input));
+  return invoke<InboxActionReceipt>("act_on_inbox", { input });
+}
+
+export async function draftInboxPractice(captureId: string): Promise<InboxPracticeDraft> {
+  if (isBrowserPreview()) return Promise.resolve(previewDraftInboxPractice(captureId));
+  return invoke<InboxPracticeDraft>("draft_inbox_practice", { captureId });
+}
+
+export async function submitInboxPractice(input: InboxPracticeSubmitInput): Promise<InboxPracticeSubmitReceipt> {
+  if (isBrowserPreview()) return Promise.resolve(previewSubmitInboxPractice(input));
+  return invoke<InboxPracticeSubmitReceipt>("submit_inbox_practice", { input });
 }
 
 export async function switchPack(packId: string): Promise<PackSwitchReceipt> {

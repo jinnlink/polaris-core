@@ -1,6 +1,101 @@
 use super::*;
 
 impl Engine {
+    pub fn issue_or_resume_task(&self, session_id: &str) -> Result<Option<IssuedTask>> {
+        let session_id = session_id.trim();
+        if session_id.is_empty() {
+            return Err(PolarisError::InvalidTaskTurn(
+                "session_id must not be empty".to_owned(),
+            ));
+        }
+        if let Some(task) = self.outstanding_task(session_id)? {
+            return Ok(Some(task));
+        }
+        let Some(task) = self.next_task()? else {
+            return Ok(None);
+        };
+        let task_event_id = self.record_next_task_event(session_id, &task)?;
+        self.outstanding_task_by_id(session_id, &task_event_id)
+    }
+
+    pub fn outstanding_task(&self, session_id: &str) -> Result<Option<IssuedTask>> {
+        let task_event_id = self
+            .conn
+            .query_row(
+                "SELECT next_event.id
+                 FROM behavior_events next_event
+                 WHERE next_event.session_id=?1
+                   AND next_event.type='next'
+                   AND NOT EXISTS (
+                     SELECT 1 FROM behavior_events submitted
+                     WHERE submitted.type='tier2_submission'
+                       AND json_extract(submitted.payload_json, '$.task_event_id')=next_event.id
+                   )
+                 ORDER BY next_event.at DESC, next_event.id DESC
+                 LIMIT 1",
+                [session_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        task_event_id
+            .map(|task_event_id| self.outstanding_task_by_id(session_id, &task_event_id))
+            .transpose()
+            .map(Option::flatten)
+    }
+
+    fn outstanding_task_by_id(
+        &self,
+        session_id: &str,
+        task_event_id: &str,
+    ) -> Result<Option<IssuedTask>> {
+        let row = self
+            .conn
+            .query_row(
+                "SELECT event.id, event.session_id, event.concept_id, concept.name,
+                        event.payload_json, event.at
+                 FROM behavior_events event
+                 JOIN concepts concept ON concept.id=event.concept_id
+                 WHERE event.id=?1 AND event.session_id=?2 AND event.type='next'",
+                params![task_event_id, session_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, String>(5)?,
+                    ))
+                },
+            )
+            .optional()?;
+        let Some((task_event_id, session_id, concept_id, concept_name, payload_json, issued_at)) =
+            row
+        else {
+            return Ok(None);
+        };
+        let payload: serde_json::Value = serde_json::from_str(&payload_json)?;
+        let required = |key: &str| -> Result<String> {
+            payload
+                .get(key)
+                .and_then(serde_json::Value::as_str)
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned)
+                .ok_or_else(|| PolarisError::InvalidTaskTurn(format!("task event has no {key}")))
+        };
+        Ok(Some(IssuedTask {
+            task_event_id,
+            session_id,
+            concept_id,
+            concept_name,
+            move_id: required("move")?,
+            task_type: required("task_type")?,
+            prompt_text: required("prompt")?,
+            reason: required("reason")?,
+            issued_at,
+        }))
+    }
+
     pub fn next_task(&self) -> Result<Option<NextTask>> {
         let ranked = self.ranked_task_candidates()?;
         let Some(best) = ranked.first() else {
@@ -82,12 +177,30 @@ impl Engine {
         response_text: String,
         self_confidence: i32,
     ) -> Result<SubmitReceipt> {
-        self.submit_task_response_with_material(
+        self.submit_task_response_with_material_mode(
             session_id,
             task_event_id,
             response_text,
             self_confidence,
             None,
+            true,
+        )
+    }
+
+    pub fn submit_task_response_provisional(
+        &mut self,
+        session_id: &str,
+        task_event_id: &str,
+        response_text: String,
+        self_confidence: i32,
+    ) -> Result<SubmitReceipt> {
+        self.submit_task_response_with_material_mode(
+            session_id,
+            task_event_id,
+            response_text,
+            self_confidence,
+            None,
+            false,
         )
     }
 
@@ -98,6 +211,25 @@ impl Engine {
         response_text: String,
         self_confidence: i32,
         material_id: Option<&str>,
+    ) -> Result<SubmitReceipt> {
+        self.submit_task_response_with_material_mode(
+            session_id,
+            task_event_id,
+            response_text,
+            self_confidence,
+            material_id,
+            true,
+        )
+    }
+
+    fn submit_task_response_with_material_mode(
+        &mut self,
+        session_id: &str,
+        task_event_id: &str,
+        response_text: String,
+        self_confidence: i32,
+        material_id: Option<&str>,
+        grade_immediately: bool,
     ) -> Result<SubmitReceipt> {
         if !(1..=5).contains(&self_confidence) {
             return Err(PolarisError::InvalidTaskTurn(
@@ -128,19 +260,21 @@ impl Engine {
             let (latency_ms, hint_count) =
                 self.task_response_observation(session_id, task_event_id, &concept_id)?;
 
-            let receipt = self.submit_with_material(
-                SubmitInput {
-                    session_id: session_id.to_owned(),
-                    concept_id: concept_id.clone(),
-                    task_type,
-                    prompt_text,
-                    response_text,
-                    self_confidence,
-                    latency_ms,
-                    hint_count,
-                },
-                material_id,
-            )?;
+            let submit_input = SubmitInput {
+                session_id: session_id.to_owned(),
+                concept_id: concept_id.clone(),
+                task_type,
+                prompt_text,
+                response_text,
+                self_confidence,
+                latency_ms,
+                hint_count,
+            };
+            let receipt = if grade_immediately {
+                self.submit_with_material(submit_input, material_id)?
+            } else {
+                self.submit_provisional_with_material(submit_input, material_id)?
+            };
             crate::teaching_turn::link_task_teaching_turn_to_attempt(
                 &self.conn,
                 task_event_id,
