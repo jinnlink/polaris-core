@@ -270,7 +270,7 @@ fn settings_controls_profile_ai_measurement_export_and_profile_only_reset() {
     let state = DesktopState::open(&database).unwrap();
     let initial = state.settings_workspace().unwrap();
     assert!(initial.profile.enabled);
-    assert_eq!(initial.privacy_calls.len(), 3);
+    assert_eq!(initial.privacy_calls.len(), 4);
     assert!(initial.instruments.iter().all(|instrument| instrument
         .admin_modes
         .contains(&"ema_single_item".to_owned())));

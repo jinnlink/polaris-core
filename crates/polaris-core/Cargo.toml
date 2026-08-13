@@ -21,6 +21,7 @@ toml = "0.8"
 ts-rs = { version = "12", optional = true }
 uuid = { version = "1", features = ["v4"] }
 hnsw_rs = "0.3"
+tempfile = "3"
 
 [dev-dependencies]
 proptest = "1"

@@ -4,7 +4,7 @@ import { ArchiveIcon, ArrowRightIcon, BookOpenTextIcon, CheckCircleIcon, PlusIco
 import { Link, useSearchParams } from "react-router-dom";
 
 import type { InboxPracticeDraft, InboxPracticeSubmitReceipt, InboxWorkspaceItem } from "../contracts/core";
-import { actOnInbox, captureWorkspace, commandKeys, draftInboxPractice, enqueueBackgroundJob, getInboxWorkspace, normalizeCommandError, submitInboxPractice } from "../lib/commands";
+import { actOnInbox, captureWorkspace, commandKeys, decideOverlay, draftInboxPractice, enqueueBackgroundJob, generateSuggestions, getInboxWorkspace, normalizeCommandError, submitInboxPractice } from "../lib/commands";
 
 const OPEN_INBOX = { statuses: [] as string[], limit: 50 };
 const SESSION_KEY = "polaris.practice.session.v1";
@@ -32,6 +32,7 @@ export function InboxPage() {
   const [confidence, setConfidence] = useState<number | null>(null);
   const [practiceReceipt, setPracticeReceipt] = useState<{ receipt: InboxPracticeSubmitReceipt; evidenceId: string } | null>(null);
   const [draftStartedAt, setDraftStartedAt] = useState(0);
+  const [overlayMessage, setOverlayMessage] = useState<string | null>(null);
   const sessionId = useMemo(practiceSessionId, []);
   const conceptId = searchParams.get("concept");
   const inbox = useQuery({ queryKey: commandKeys.inbox(OPEN_INBOX), queryFn: () => getInboxWorkspace(OPEN_INBOX) });
@@ -84,6 +85,18 @@ export function InboxPage() {
         .catch(() => undefined);
     },
   });
+  const overlayDecision = useMutation({
+    mutationFn: ({ item, action: decision }: { item: InboxWorkspaceItem; action: "accept" | "reject" | "rollback" }) => decideOverlay({
+      base_pack_id: item.suggestions[0]?.base_pack_id ?? "",
+      suggestion_ids: decision === "rollback" ? [] : item.suggestions.filter((suggestion) => suggestion.status === "pending").map((suggestion) => suggestion.id),
+      action: decision,
+    }),
+    onSuccess: async (receipt) => { setOverlayMessage(receipt.message); await refresh(); },
+  });
+  const suggestionGeneration = useMutation({
+    mutationFn: (item: InboxWorkspaceItem) => generateSuggestions({ capture_id: item.capture_id, base_pack_id: null }),
+    onSuccess: async (receipt) => { setOverlayMessage(receipt.message); await refresh(); },
+  });
 
   if (inbox.isPending) return <div className="route-loading" role="status">正在读取本地收件箱…</div>;
   if (inbox.error) {
@@ -91,7 +104,7 @@ export function InboxPage() {
     return <div className="route-error" role="alert"><strong>暂时读不到收件箱</strong><span>{error.message}</span><button type="button" onClick={() => void inbox.refetch()}>重试</button></div>;
   }
 
-  const mutationError = capture.error ?? action.error ?? submit.error;
+  const mutationError = capture.error ?? action.error ?? submit.error ?? overlayDecision.error ?? suggestionGeneration.error;
   return (
     <section className="workbench inbox-workbench" aria-labelledby="inbox-title">
       <header className="workbench-header">
@@ -110,6 +123,7 @@ export function InboxPage() {
       )}
 
       {mutationError && <p className="inline-error" role="alert">{normalizeCommandError(mutationError).message}。内容仍保留，可重试或返回 Today。</p>}
+      {overlayMessage && <p className="inline-success" role="status">{overlayMessage}</p>}
 
       <div className="inbox-grid">
         <div className="inbox-list" aria-label="待处理资料">
@@ -118,6 +132,10 @@ export function InboxPage() {
               <div className="inbox-item__meta"><span>{item.learner_kind}</span><span>{item.source}</span><time>{item.updated_at.slice(0, 10)}</time></div>
               <p>{item.text_preview}</p>
               <div className="inbox-item__hint"><span>{item.concept_hint ?? "尚未定位知识点"}</span><strong>{item.message}</strong></div>
+              {item.suggestions.map((suggestion) => <aside className="inbox-suggestion" key={suggestion.id} data-status={suggestion.status}><header><span>{suggestion.kind}</span><strong>{suggestion.status}</strong></header><blockquote>{suggestion.quote}</blockquote><p>{suggestion.reason}</p><small>来源证据 {suggestion.evidence_id} · 模型 {suggestion.model_version}</small></aside>)}
+              {item.suggestions.length === 0 && !item.concept_hint && <div className="inbox-item__actions"><button type="button" disabled={suggestionGeneration.isPending} onClick={() => { setOverlayMessage(null); suggestionGeneration.mutate(item); }}>{suggestionGeneration.isPending ? "正在分析…" : "分析新知识点"}</button><small>会使用已配置的 Tier 1 模型；只生成待确认候选，不会改变掌握度。</small></div>}
+              {item.suggestions.some((suggestion) => suggestion.status === "pending") && <div className="inbox-item__actions"><button type="button" disabled={overlayDecision.isPending} onClick={() => { overlayDecision.mutate({ item, action: "accept" }); }}>接受为个人知识点</button><button type="button" disabled={overlayDecision.isPending} onClick={() => { overlayDecision.mutate({ item, action: "reject" }); }}>不采用</button></div>}
+              {item.suggestions.some((suggestion) => suggestion.status === "installed") && <div className="inbox-item__actions"><button type="button" disabled={overlayDecision.isPending} onClick={() => { overlayDecision.mutate({ item, action: "rollback" }); }}>撤销这一版个人知识</button><small>整版回到上一版；练习记录与原始资料不会删除。</small></div>}
               <div className="inbox-item__actions">
                 {item.actions.slice(0, 3).map((option) => <button key={option.action} type="button" disabled={action.isPending} onClick={() => { action.mutate({ item, action: option.action }); }}>{option.label}</button>)}
                 <details><summary aria-label="更多动作">•••</summary><button type="button" onClick={() => { action.mutate({ item, action: "archive" }); }}><ArchiveIcon size={15} /> 归档</button></details>

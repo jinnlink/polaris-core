@@ -3,6 +3,7 @@ pub mod breeding;
 pub mod calibration;
 pub mod capture_queue;
 pub mod citation;
+pub mod concept_overlay;
 pub mod config;
 pub mod consolidation;
 pub mod db;

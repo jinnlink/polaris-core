@@ -11,6 +11,8 @@ const commands = vi.hoisted(() => ({
   draftInboxPractice: vi.fn(),
   getInboxWorkspace: vi.fn(),
   enqueueBackgroundJob: vi.fn(),
+  decideOverlay: vi.fn(),
+  generateSuggestions: vi.fn(),
   submitInboxPractice: vi.fn(),
 }));
 
@@ -33,6 +35,7 @@ const item = {
   updated_at: "2026-08-10T10:00:00Z",
   message: "仅记录资料，不影响掌握度",
   actions: [{ action: "accept", label: "转成一道小题" }, { action: "reject", label: "忽略" }],
+  suggestions: [{ id: "suggestion-1", kind: "concept", status: "pending", reason: "原文揭示了生命周期边界。", model_version: "test-model-1", evidence_id: "evidence-1", quote: "借用不能活得比所有者更久", base_pack_id: "rust" }],
 };
 
 function renderPage(initialEntry = "/inbox") {
@@ -50,6 +53,8 @@ describe("InboxPage", () => {
     window.localStorage.setItem("polaris.practice.session.v1", "session-test");
     vi.clearAllMocks();
     commands.getInboxWorkspace.mockResolvedValue([item]);
+    commands.decideOverlay.mockResolvedValue({ status: "installed", message: "个人知识层已安全安装。", version: 1 });
+    commands.generateSuggestions.mockResolvedValue({ status: "pending_user_review", count: 1, message: "找到 1 条候选" });
     commands.actOnInbox.mockResolvedValue({ capture_id: "capture-1", status: "practice_ready", effect: "recorded_only", message: "已准备小题" });
     commands.draftInboxPractice.mockResolvedValue({ capture_id: "capture-1", evidence_id: "evidence-1", status: "practice_ready", concept_hint: "ownership", task_type: "free_recall", prompt: "解释借用为何不能越过所有者生命周期。", source_excerpt: item.text_preview, message: "请亲自作答" });
     commands.submitInboxPractice.mockResolvedValue({ capture_id: "capture-1", attempt_id: "attempt-1", status: "submitted", effect: "provisional", message: "回答已本地落账", provisional_score: 0.7, degraded: false });
@@ -85,5 +90,28 @@ describe("InboxPage", () => {
 
     expect(await screen.findByDisplayValue("恢复的 Inbox 草稿")).toBeVisible();
     expect(screen.getByRole("button", { name: "2" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("shows citation provenance and requires an explicit overlay decision", async () => {
+    renderPage();
+
+    expect(await screen.findByText("借用不能活得比所有者更久", { exact: true })).toBeVisible();
+    expect(screen.getByText(/来源证据 evidence-1 · 模型 test-model-1/)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "接受为个人知识点" }));
+
+    await waitFor(() => expect(commands.decideOverlay).toHaveBeenCalledWith({
+      base_pack_id: "rust",
+      suggestion_ids: ["suggestion-1"],
+      action: "accept",
+    }));
+    expect(await screen.findByRole("status")).toHaveTextContent("个人知识层已安全安装");
+  });
+
+  it("offers Tier 1 analysis only for unmapped captures", async () => {
+    commands.getInboxWorkspace.mockResolvedValue([{ ...item, concept_hint: null, suggestions: [] }]);
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "分析新知识点" }));
+    await waitFor(() => expect(commands.generateSuggestions).toHaveBeenCalledWith({ capture_id: "capture-1", base_pack_id: null }));
   });
 });

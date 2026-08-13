@@ -280,6 +280,69 @@ impl Engine {
         &self.conn
     }
 
+    pub fn into_connection(self) -> Connection {
+        self.conn
+    }
+
+    pub fn suggest_capture_with_static_response(
+        &self,
+        capture_id: &str,
+        base_pack_id: &str,
+        model_version: &str,
+        response_json: &str,
+    ) -> Result<Vec<crate::concept_overlay::ConceptSuggestion>> {
+        crate::concept_overlay::suggest_with_static_response(
+            &self.conn,
+            capture_id,
+            base_pack_id,
+            model_version,
+            response_json,
+        )
+    }
+
+    pub fn suggest_capture(
+        &self,
+        capture_id: &str,
+        base_pack_id: &str,
+    ) -> Result<Vec<crate::concept_overlay::ConceptSuggestion>> {
+        crate::concept_overlay::suggest_with_config(
+            &self.conn,
+            capture_id,
+            base_pack_id,
+            crate::grader::LlmConfig::from_env(),
+        )
+    }
+
+    pub fn preview_overlay(
+        &self,
+        base_pack_id: &str,
+        suggestion_ids: &[String],
+    ) -> Result<crate::concept_overlay::OverlayPreview> {
+        crate::concept_overlay::preview_overlay(&self.conn, base_pack_id, suggestion_ids)
+    }
+
+    pub fn accept_overlay(
+        &self,
+        base_pack_id: &str,
+        suggestion_ids: &[String],
+    ) -> Result<crate::concept_overlay::OverlayInstallReceipt> {
+        crate::concept_overlay::accept_overlay(&self.conn, base_pack_id, suggestion_ids)
+    }
+
+    pub fn reject_overlay_suggestion(
+        &self,
+        suggestion_id: &str,
+    ) -> Result<crate::concept_overlay::ConceptSuggestion> {
+        crate::concept_overlay::reject_suggestion(&self.conn, suggestion_id)
+    }
+
+    pub fn rollback_overlay(
+        &self,
+        base_pack_id: &str,
+    ) -> Result<crate::concept_overlay::OverlayRollbackReceipt> {
+        crate::concept_overlay::rollback_overlay(&self.conn, base_pack_id)
+    }
+
     pub fn close_session(&self, session_id: &str) -> Result<SessionCloseSummary> {
         close_session(self, session_id)
     }

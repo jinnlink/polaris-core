@@ -8,6 +8,7 @@ export function previewSettingsWorkspace(): SettingsWorkspaceSnapshot {
     privacy_calls: [
       { id: "llm_grade_attempt", tier: "Tier 1", trigger: "提交回答 / 后台评分", data_sent: ["回答文本", "领域评分规约", "strict-citation 证据提示"], degradation: "启发式临时分 + 评分队列重试", disabled_when_tier0_only: true },
       { id: "llm_mirror_narrative", tier: "Tier 1", trigger: "生成带叙事的镜像报告", data_sent: ["已过门的报告断言、假设与建议"], degradation: "保留结构化本地报告，不生成叙事", disabled_when_tier0_only: true },
+      { id: "llm_concept_suggestion", tier: "Tier 1", trigger: "Inbox 分析新知识点", data_sent: ["选中的原始资料与证据编号", "当前学习空间", "已安装概念的编号、名称与类型"], degradation: "原始资料保持不变，不生成候选，也不更新掌握度", disabled_when_tier0_only: true },
       { id: "embed_concept", tier: "Tier 1", trigger: "刷新概念几何嵌入", data_sent: ["概念与图式名称"], degradation: "关闭几何层，符号层与潜因子层继续", disabled_when_tier0_only: true },
     ],
     instruments: [{ id: "gse", title: "General Self-Efficacy Scale", version: "1.0", citation: "Schwarzer & Jerusalem (1995)", source_url: "https://openscales.net/scale.php?code=GSE", response_min: 1, response_max: 4, admin_modes: ["full_scale", "ema_single_item"], interpretation_notice: "单题 EMA 只是分散证据，不能呈现为标准 GSE 总分。", items: [{ id: "gse_01", dimension: "self_efficacy", prompt: "I can always manage to solve difficult problems if I try hard enough.", keyed: "positive" }] }],

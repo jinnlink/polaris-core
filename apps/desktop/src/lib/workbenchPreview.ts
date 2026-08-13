@@ -38,6 +38,7 @@ const inboxItems: InboxWorkspaceItem[] = [
       { action: "defer", label: "稍后再看" },
       { action: "ignore", label: "忽略" },
     ],
+    suggestions: [],
   },
   {
     capture_id: "capture-union-find",
@@ -57,6 +58,7 @@ const inboxItems: InboxWorkspaceItem[] = [
       { action: "defer", label: "稍后再看" },
       { action: "ignore", label: "忽略" },
     ],
+    suggestions: [],
   },
 ];
 
@@ -129,6 +131,7 @@ export function previewCaptureWorkspace(input: CaptureWorkspaceInput): CaptureWo
       { action: "defer", label: "稍后再看" },
       { action: "ignore", label: "忽略" },
     ],
+    suggestions: [],
   });
   return { capture_id: captureId, evidence_id: `evidence-preview-${String(sequence)}`, status: "pending", learner_kind: input.learner_kind, effect: "recorded_only", message: "已保存为学习资料，不会直接算作掌握。" };
 }

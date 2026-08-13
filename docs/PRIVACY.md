@@ -35,6 +35,17 @@ id: embed_concept
 - degradation: geometry layer disabled; symbolic and latent layers continue
 - disabled_when_tier0_only: true
 
+## Concept Suggestion
+
+id: llm_concept_suggestion
+
+- tier: Tier 1
+- trigger: Inbox「分析新知识点」
+- env: `POLARIS_LLM_FAST_BASE_URL`, `POLARIS_LLM_FAST_MODEL`, `POLARIS_LLM_FAST_API_KEY`
+- data_sent: 用户选中的 raw capture 文本及 evidence id；当前 base pack id；已安装概念的 id、名称与 kind
+- degradation: raw capture 原样保留；不生成候选，也不更新掌握度
+- disabled_when_tier0_only: true
+
 ## Global Learner Profile（仅本机）
 
 - 默认在本地启用，首次记录回答前必须向用户说明并取得确认；用户可随时暂停或关闭。

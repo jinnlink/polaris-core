@@ -53,6 +53,7 @@ fn privacy_inventory_contains_required_external_channels() {
 
     assert!(ids.contains("llm_grade_attempt"));
     assert!(ids.contains("llm_mirror_narrative"));
+    assert!(ids.contains("llm_concept_suggestion"));
     assert!(ids.contains("embed_concept"));
 }
 

@@ -62,6 +62,23 @@ impl PrivacyCallInventory {
                     disabled_when_tier0_only: true,
                 },
                 PrivacyCall {
+                    id: "llm_concept_suggestion",
+                    tier: "Tier 1",
+                    trigger: "Inbox 分析新知识点",
+                    env_keys: &[
+                        "POLARIS_LLM_FAST_BASE_URL",
+                        "POLARIS_LLM_FAST_MODEL",
+                        "POLARIS_LLM_FAST_API_KEY",
+                    ],
+                    data_sent: &[
+                        "selected raw capture text and evidence id",
+                        "active base pack id",
+                        "installed concept ids, names, and kinds",
+                    ],
+                    degradation: "raw capture remains unchanged; no suggestion or mastery update",
+                    disabled_when_tier0_only: true,
+                },
+                PrivacyCall {
                     id: "embed_concept",
                     tier: "Tier 1",
                     trigger: "geometry embedding refresh",

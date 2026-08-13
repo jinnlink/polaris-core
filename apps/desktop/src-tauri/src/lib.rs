@@ -77,6 +77,8 @@ pub fn run() {
             commands::capture_workspace,
             commands::inbox_workspace,
             commands::act_on_inbox,
+            commands::decide_overlay,
+            commands::generate_suggestions,
             commands::draft_inbox_practice,
             commands::submit_inbox_practice,
             commands::switch_pack,

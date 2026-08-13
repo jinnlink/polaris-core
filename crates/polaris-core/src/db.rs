@@ -5,7 +5,7 @@ use rusqlite::{Connection, OpenFlags};
 use crate::config::default_registry;
 use crate::error::{PolarisError, Result};
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 9;
+pub const CURRENT_SCHEMA_VERSION: i64 = 10;
 
 const BASELINE_SCHEMA_VERSION: i64 = 1;
 const BASELINE_MIGRATION_NAME: &str = "baseline_current_schema";
@@ -25,6 +25,8 @@ const MATERIAL_LAYER_SCHEMA_VERSION: i64 = 8;
 const MATERIAL_LAYER_MIGRATION_NAME: &str = "material_layer";
 const GOAL_SCOPE_SCHEMA_VERSION: i64 = 9;
 const GOAL_SCOPE_MIGRATION_NAME: &str = "goal_product_scope";
+const CONCEPT_OVERLAY_SCHEMA_VERSION: i64 = 10;
+const CONCEPT_OVERLAY_MIGRATION_NAME: &str = "concept_suggestion_overlay";
 
 pub fn open_database(path: impl AsRef<Path>) -> Result<Connection> {
     let path = path.as_ref();
@@ -432,6 +434,7 @@ pub fn migrate(conn: &Connection) -> Result<()> {
     migrate_generativity_schema(conn)?;
     migrate_material_layer_schema(conn)?;
     migrate_goal_scope_schema(conn)?;
+    migrate_concept_overlay_schema(conn)?;
 
     Ok(())
 }
@@ -678,6 +681,79 @@ fn migrate_goal_scope_schema(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+fn migrate_concept_overlay_schema(conn: &Connection) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    tx.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS concept_suggestions(
+            id TEXT PRIMARY KEY,
+            capture_id TEXT NOT NULL REFERENCES capture_queue(id),
+            evidence_id TEXT NOT NULL REFERENCES evidence_items(id),
+            base_pack_id TEXT NOT NULL,
+            kind TEXT NOT NULL CHECK(kind IN ('concept','schema','typed_edge','misconception')),
+            status TEXT NOT NULL CHECK(status IN ('pending','accepted','rejected','installed','rolled_back')),
+            payload_json TEXT NOT NULL CHECK(json_valid(payload_json)),
+            quote TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            model_version TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            decided_at TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS overlay_versions(
+            id TEXT PRIMARY KEY,
+            base_pack_id TEXT NOT NULL,
+            version INTEGER NOT NULL CHECK(version > 0),
+            status TEXT NOT NULL CHECK(status IN ('draft','installed','superseded','rolled_back')),
+            parent_version INTEGER,
+            diff_json TEXT NOT NULL CHECK(json_valid(diff_json)),
+            validation_json TEXT NOT NULL CHECK(json_valid(validation_json)),
+            sandbox_json TEXT NOT NULL CHECK(json_valid(sandbox_json)),
+            created_at TEXT NOT NULL,
+            installed_at TEXT,
+            rolled_back_at TEXT,
+            UNIQUE(base_pack_id, version)
+        );
+
+        CREATE TABLE IF NOT EXISTS overlay_provenance(
+            overlay_version_id TEXT NOT NULL REFERENCES overlay_versions(id),
+            suggestion_id TEXT NOT NULL REFERENCES concept_suggestions(id),
+            capture_id TEXT NOT NULL REFERENCES capture_queue(id),
+            evidence_id TEXT NOT NULL REFERENCES evidence_items(id),
+            quote TEXT NOT NULL,
+            model_version TEXT NOT NULL,
+            PRIMARY KEY(overlay_version_id, suggestion_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS overlay_entities(
+            overlay_version_id TEXT NOT NULL REFERENCES overlay_versions(id),
+            entity_id TEXT NOT NULL,
+            kind TEXT NOT NULL CHECK(kind IN ('concept','schema','typed_edge','misconception')),
+            payload_json TEXT NOT NULL CHECK(json_valid(payload_json)),
+            evidence_id TEXT NOT NULL REFERENCES evidence_items(id),
+            PRIMARY KEY(overlay_version_id, entity_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_concept_suggestions_capture_status
+            ON concept_suggestions(capture_id, status, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_concept_suggestions_pack_status
+            ON concept_suggestions(base_pack_id, status, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_overlay_versions_pack_version
+            ON overlay_versions(base_pack_id, version DESC);
+        "#,
+    )?;
+    record_schema_migration(
+        &tx,
+        CONCEPT_OVERLAY_SCHEMA_VERSION,
+        CONCEPT_OVERLAY_MIGRATION_NAME,
+    )?;
+    if schema_version(&tx)? < CONCEPT_OVERLAY_SCHEMA_VERSION {
+        set_schema_version(&tx, CONCEPT_OVERLAY_SCHEMA_VERSION)?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
 pub fn schema_version(conn: &Connection) -> Result<i64> {
     conn.pragma_query_value(None, "user_version", |row| row.get(0))
         .map_err(Into::into)
@@ -867,7 +943,7 @@ mod tests {
             })
             .unwrap();
         assert_eq!(p_init, "0.33");
-        assert_eq!(first_count, 9);
+        assert_eq!(first_count, 10);
         assert_eq!(second_count, first_count);
     }
 
@@ -989,7 +1065,7 @@ mod tests {
 
         assert_eq!(user_version, CURRENT_SCHEMA_VERSION);
         assert_eq!(p_init, "0.33");
-        assert_eq!(migration_count, 9);
+        assert_eq!(migration_count, 10);
         assert_eq!(journal_mode.to_lowercase(), "wal");
     }
 

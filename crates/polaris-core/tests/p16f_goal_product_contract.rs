@@ -10,7 +10,7 @@ use serde_json::json;
 fn schema_v9_adds_generic_goal_scope_without_losing_legacy_goals() {
     let conn = Connection::open_in_memory().unwrap();
     migrate(&conn).unwrap();
-    assert_eq!(CURRENT_SCHEMA_VERSION, 9);
+    assert_eq!(CURRENT_SCHEMA_VERSION, 10);
     assert!(columns(&conn, "goals").contains(&"scope_json".to_owned()));
 
     conn.execute(

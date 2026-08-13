@@ -22,8 +22,8 @@
 
 ### 1.1 Schema 版本与迁移账本
 
-- SQLite schema 版本权威源 = `PRAGMA user_version`，当前由 `db::CURRENT_SCHEMA_VERSION` 定义（P16F 后为 9）。
-- `schema_migrations(version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)` 是迁移账本；version 1 为 baseline，version 2 为 `capture_queue`，version 3 为 `global_profile_governance`，version 4 为 `session_closeout`，version 5 为 `no_attempt_reason`，version 6 为 `teaching_turn_context`，version 7 为 `concept_generativity`，version 8 为 `material_layer`，version 9 为 `goal_product_scope`。
+- SQLite schema 版本权威源 = `PRAGMA user_version`，当前由 `db::CURRENT_SCHEMA_VERSION` 定义（P12F 后为 10）。
+- `schema_migrations(version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)` 是迁移账本；version 1 为 baseline，version 2 为 `capture_queue`，version 3 为 `global_profile_governance`，version 4 为 `session_closeout`，version 5 为 `no_attempt_reason`，version 6 为 `teaching_turn_context`，version 7 为 `concept_generativity`，version 8 为 `material_layer`，version 9 为 `goal_product_scope`，version 10 为 `concept_suggestion_overlay`。
 - `migrate()` 对空库和旧的未版本化库都必须幂等：先补齐当前 schema，再写 baseline 与后续迁移账本并设置 `user_version`。
 - 旧库已有业务行和用户手动 `meta` 参数不得被迁移覆盖；默认参数继续使用 `INSERT OR IGNORE`。
 - 若数据库 `user_version` 高于当前二进制支持版本，写路径必须拒绝打开并提示版本不支持，避免旧程序误写新库。
@@ -110,6 +110,48 @@ behavior_events(id TEXT PRIMARY KEY, session_id TEXT, at TEXT,
 
 grade_queue(attempt_id TEXT PRIMARY KEY, enqueued_at TEXT, retry_count INTEGER DEFAULT 0, last_error TEXT)
 ```
+
+### P12F Concept Suggestion + Overlay Pack
+
+```sql
+concept_suggestions(id TEXT PRIMARY KEY,
+       capture_id TEXT NOT NULL REFERENCES capture_queue(id),
+       evidence_id TEXT NOT NULL REFERENCES evidence_items(id),
+       base_pack_id TEXT NOT NULL,
+       kind TEXT NOT NULL,                 -- concept|schema|typed_edge|misconception
+       status TEXT NOT NULL,               -- pending|accepted|rejected|installed|rolled_back
+       payload_json TEXT NOT NULL CHECK(json_valid(payload_json)),
+       quote TEXT NOT NULL, reason TEXT NOT NULL, model_version TEXT NOT NULL,
+       created_at TEXT NOT NULL, decided_at TEXT)
+
+overlay_versions(id TEXT PRIMARY KEY, base_pack_id TEXT NOT NULL,
+       version INTEGER NOT NULL CHECK(version > 0),
+       status TEXT NOT NULL,               -- draft|installed|superseded|rolled_back
+       parent_version INTEGER,
+       diff_json TEXT NOT NULL CHECK(json_valid(diff_json)),
+       validation_json TEXT NOT NULL CHECK(json_valid(validation_json)),
+       sandbox_json TEXT NOT NULL CHECK(json_valid(sandbox_json)),
+       created_at TEXT NOT NULL, installed_at TEXT, rolled_back_at TEXT,
+       UNIQUE(base_pack_id, version))
+
+overlay_provenance(overlay_version_id TEXT NOT NULL REFERENCES overlay_versions(id),
+       suggestion_id TEXT NOT NULL REFERENCES concept_suggestions(id),
+       capture_id TEXT NOT NULL REFERENCES capture_queue(id),
+       evidence_id TEXT NOT NULL REFERENCES evidence_items(id),
+       quote TEXT NOT NULL, model_version TEXT NOT NULL,
+       PRIMARY KEY(overlay_version_id, suggestion_id))
+
+overlay_entities(overlay_version_id TEXT NOT NULL REFERENCES overlay_versions(id),
+       entity_id TEXT NOT NULL, kind TEXT NOT NULL,
+       payload_json TEXT NOT NULL CHECK(json_valid(payload_json)),
+       evidence_id TEXT NOT NULL REFERENCES evidence_items(id),
+       PRIMARY KEY(overlay_version_id, entity_id))
+```
+
+- suggestion 只能来自没有可靠现有概念映射的 raw capture；每条强制保存精确 quote、evidence id、理由和模型版本。strict-citation 失败不落 suggestion，raw capture 状态不变。
+- base Pack 行不可变。安装时把上一 installed 版本与本次接受项合成为一个完整新版本；先复用 `pack validate`，再复用 `pack sandbox`。id 冲突、未知边端点、非法边型或 prerequisite 环均拒绝。
+- 当前 overlay 的 concept/schema/edge 物化到学习图谱时使用 `provenance='overlay:<overlay_version_id>'`；`overlay_entities` 保存完整版本快照，`overlay_provenance` 保存从版本到 suggestion/capture/evidence/quote/model 的来源账本。
+- 整版回滚停用当前版本并恢复 `parent_version` 的完整实体集合；没有父版本则清空活动 overlay。安装、升级和回滚均不得创建或删除 `attempts`，也不得写或删除 `mastery_states`；raw evidence 永久保留。
 
 ### P16F 目标产品契约
 

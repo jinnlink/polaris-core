@@ -53,6 +53,18 @@ pub struct LearnerInboxActionOption {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LearnerInboxSuggestion {
+    pub id: String,
+    pub kind: String,
+    pub status: String,
+    pub reason: String,
+    pub model_version: String,
+    pub evidence_id: String,
+    pub quote: String,
+    pub base_pack_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LearnerInboxItem {
     pub capture_id: String,
     pub evidence_id: String,
@@ -67,6 +79,7 @@ pub struct LearnerInboxItem {
     pub updated_at: String,
     pub message: String,
     pub actions: Vec<LearnerInboxActionOption>,
+    pub suggestions: Vec<LearnerInboxSuggestion>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -219,6 +232,19 @@ fn item_from_row(conn: &Connection, row: RawInboxRow) -> Result<LearnerInboxItem
         }
     })?;
     let concept_hint = first_concept_name(conn, &row.candidate_concept_ids)?;
+    let suggestions = crate::concept_overlay::suggestions_for_capture(conn, &row.capture_id)?
+        .into_iter()
+        .map(|suggestion| LearnerInboxSuggestion {
+            id: suggestion.id,
+            kind: suggestion.kind.as_str().to_owned(),
+            status: suggestion.status,
+            reason: suggestion.reason,
+            model_version: suggestion.model_version,
+            evidence_id: suggestion.evidence_id,
+            quote: suggestion.quote,
+            base_pack_id: suggestion.base_pack_id,
+        })
+        .collect();
     Ok(LearnerInboxItem {
         capture_id: row.capture_id,
         evidence_id: row.evidence_id,
@@ -233,6 +259,7 @@ fn item_from_row(conn: &Connection, row: RawInboxRow) -> Result<LearnerInboxItem
         updated_at: row.updated_at,
         message: status_message(status, concept_hint.as_deref()),
         actions: action_options(status),
+        suggestions,
     })
 }
 

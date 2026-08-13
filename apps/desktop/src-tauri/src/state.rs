@@ -35,21 +35,23 @@ use crate::background::{BackgroundEvent, BackgroundJob, BackgroundJobResult, Ser
 use crate::contracts::{
     AiInteractionProfileUpdate, AiInteractionProfileView, AttemptGradeStatus, BackgroundEventView,
     CaptureWorkspaceInput, CaptureWorkspaceReceipt, CommandError, FullDeleteInput,
-    FullDeleteReceiptView, FullDeleteScopePreview, GoalDimensionView, GoalEditorInput,
-    GoalMilestoneView, GoalMutationReceipt, GoalScopeInput, GoalView, GoalWorkspaceSnapshot,
-    GradeQueueReceipt, InboxActionInput, InboxActionOption, InboxActionReceipt, InboxPracticeDraft,
-    InboxPracticeSubmitInput, InboxPracticeSubmitReceipt, InboxWorkspaceItem, InboxWorkspaceQuery,
-    LifecycleSnapshot, MapWorkspaceAggregate, MapWorkspaceAnchor, MapWorkspaceEdge,
-    MapWorkspaceLayer, MapWorkspaceNode, MapWorkspacePath, MapWorkspaceQuery, MapWorkspaceSnapshot,
-    MirrorCurvePoint, MirrorPhaseItem, MirrorReportView, NotificationReceipt, PracticeSubmitInput,
-    PracticeSubmitReceipt, PracticeTask, PracticeWorkspaceSnapshot, PrivacyCallView,
-    ProfileBehaviorFact, ProfileDimensionView, ProfileExportInput, ProfileInstrumentItemView,
-    ProfileInstrumentView, ProfileMeasurementSubmitInput, ProfileSettingsUpdateInput,
-    ProfileSettingsView, ProfileWorkspaceSnapshot, ReportCitationView, ReportFeedbackInput,
-    ReportItemView, ReportMutationReceipt, ReportNarrativeView, ReportSkippedView,
-    ReportsWorkspaceSnapshot, SettingsMutationReceipt, SettingsWorkspaceSnapshot, TodayAction,
-    TodaySignal, TodaySnapshot, TrustActivityView, TrustExperimentView, TrustGateView,
-    TrustParameterView, TrustWorkspaceSnapshot, WorkbenchAction,
+    FullDeleteReceiptView, FullDeleteScopePreview, GenerateSuggestionsInput,
+    GenerateSuggestionsReceipt, GoalDimensionView, GoalEditorInput, GoalMilestoneView,
+    GoalMutationReceipt, GoalScopeInput, GoalView, GoalWorkspaceSnapshot, GradeQueueReceipt,
+    InboxActionInput, InboxActionOption, InboxActionReceipt, InboxPracticeDraft,
+    InboxPracticeSubmitInput, InboxPracticeSubmitReceipt, InboxSuggestionView, InboxWorkspaceItem,
+    InboxWorkspaceQuery, LifecycleSnapshot, MapWorkspaceAggregate, MapWorkspaceAnchor,
+    MapWorkspaceEdge, MapWorkspaceLayer, MapWorkspaceNode, MapWorkspacePath, MapWorkspaceQuery,
+    MapWorkspaceSnapshot, MirrorCurvePoint, MirrorPhaseItem, MirrorReportView, NotificationReceipt,
+    OverlayDecisionInput, OverlayDecisionReceipt, PracticeSubmitInput, PracticeSubmitReceipt,
+    PracticeTask, PracticeWorkspaceSnapshot, PrivacyCallView, ProfileBehaviorFact,
+    ProfileDimensionView, ProfileExportInput, ProfileInstrumentItemView, ProfileInstrumentView,
+    ProfileMeasurementSubmitInput, ProfileSettingsUpdateInput, ProfileSettingsView,
+    ProfileWorkspaceSnapshot, ReportCitationView, ReportFeedbackInput, ReportItemView,
+    ReportMutationReceipt, ReportNarrativeView, ReportSkippedView, ReportsWorkspaceSnapshot,
+    SettingsMutationReceipt, SettingsWorkspaceSnapshot, TodayAction, TodaySignal, TodaySnapshot,
+    TrustActivityView, TrustExperimentView, TrustGateView, TrustParameterView,
+    TrustWorkspaceSnapshot, WorkbenchAction,
 };
 use crate::lifecycle::{
     append_redacted_log, backup_database_to, begin_run, export_diagnostic_bundle, finish_run,
@@ -1599,9 +1601,104 @@ impl DesktopState {
                                 label: action.label,
                             })
                             .collect(),
+                        suggestions: item
+                            .suggestions
+                            .into_iter()
+                            .map(|suggestion| InboxSuggestionView {
+                                id: suggestion.id,
+                                kind: suggestion.kind,
+                                status: suggestion.status,
+                                reason: suggestion.reason,
+                                model_version: suggestion.model_version,
+                                evidence_id: suggestion.evidence_id,
+                                quote: suggestion.quote,
+                                base_pack_id: suggestion.base_pack_id,
+                            })
+                            .collect(),
                     })
                     .collect()
             })
+    }
+
+    pub fn decide_overlay(
+        &self,
+        input: OverlayDecisionInput,
+    ) -> Result<OverlayDecisionReceipt, CommandError> {
+        let engine = self.engine()?;
+        match input.action.as_str() {
+            "accept" => {
+                let receipt = engine
+                    .accept_overlay(&input.base_pack_id, &input.suggestion_ids)
+                    .map_err(CommandError::core)?;
+                Ok(OverlayDecisionReceipt {
+                    status: receipt.status,
+                    message: format!(
+                        "个人知识层 v{} 已通过校验与 sandbox，并安全安装。",
+                        receipt.version
+                    ),
+                    version: Some(
+                        i32::try_from(receipt.version)
+                            .map_err(|_| CommandError::core("个人知识版本号超出桌面显示范围"))?,
+                    ),
+                })
+            }
+            "reject" => {
+                for id in &input.suggestion_ids {
+                    engine
+                        .reject_overlay_suggestion(id)
+                        .map_err(CommandError::core)?;
+                }
+                Ok(OverlayDecisionReceipt {
+                    status: "rejected".to_owned(),
+                    message: "已拒绝候选；原始资料仍然保留。".to_owned(),
+                    version: None,
+                })
+            }
+            "rollback" => {
+                let receipt = engine
+                    .rollback_overlay(&input.base_pack_id)
+                    .map_err(CommandError::core)?;
+                Ok(OverlayDecisionReceipt {
+                    status: "rolled_back".to_owned(),
+                    message: format!(
+                        "已回滚个人知识层 v{}；原始资料仍保留。",
+                        receipt.rolled_back_version
+                    ),
+                    version: receipt
+                        .active_version
+                        .map(i32::try_from)
+                        .transpose()
+                        .map_err(|_| CommandError::core("个人知识版本号超出桌面显示范围"))?,
+                })
+            }
+            action => Err(CommandError::core(format!(
+                "unknown overlay action: {action}"
+            ))),
+        }
+    }
+
+    pub fn generate_suggestions(
+        &self,
+        input: GenerateSuggestionsInput,
+    ) -> Result<GenerateSuggestionsReceipt, CommandError> {
+        let engine = self.engine()?;
+        let base_pack_id = input
+            .base_pack_id
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| {
+                polaris_core::pack_state::active_pack(engine.conn())
+                    .ok()
+                    .flatten()
+            })
+            .ok_or_else(|| CommandError::core("请先在 Today 选择一个学习空间"))?;
+        let suggestions = engine
+            .suggest_capture(&input.capture_id, &base_pack_id)
+            .map_err(CommandError::core)?;
+        Ok(GenerateSuggestionsReceipt {
+            status: "pending_user_review".to_owned(),
+            count: suggestions.len(),
+            message: format!("找到 {} 条证据绑定候选，请逐条确认。", suggestions.len()),
+        })
     }
 
     pub fn act_on_inbox(

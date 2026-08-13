@@ -250,6 +250,45 @@ pub struct InboxActionOption {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct InboxSuggestionView {
+    pub id: String,
+    pub kind: String,
+    pub status: String,
+    pub reason: String,
+    pub model_version: String,
+    pub evidence_id: String,
+    pub quote: String,
+    pub base_pack_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, TS)]
+pub struct OverlayDecisionInput {
+    pub base_pack_id: String,
+    pub suggestion_ids: Vec<String>,
+    pub action: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct OverlayDecisionReceipt {
+    pub status: String,
+    pub message: String,
+    pub version: Option<i32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, TS)]
+pub struct GenerateSuggestionsInput {
+    pub capture_id: String,
+    pub base_pack_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct GenerateSuggestionsReceipt {
+    pub status: String,
+    pub count: usize,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 pub struct InboxWorkspaceItem {
     pub capture_id: String,
     pub evidence_id: String,
@@ -264,6 +303,7 @@ pub struct InboxWorkspaceItem {
     pub updated_at: String,
     pub message: String,
     pub actions: Vec<InboxActionOption>,
+    pub suggestions: Vec<InboxSuggestionView>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, TS)]
@@ -825,6 +865,11 @@ pub fn generated_typescript_contracts() -> String {
         CaptureWorkspaceReceipt::decl(&config),
         InboxWorkspaceQuery::decl(&config),
         InboxActionOption::decl(&config),
+        InboxSuggestionView::decl(&config),
+        OverlayDecisionInput::decl(&config),
+        OverlayDecisionReceipt::decl(&config),
+        GenerateSuggestionsInput::decl(&config),
+        GenerateSuggestionsReceipt::decl(&config),
         InboxWorkspaceItem::decl(&config),
         InboxActionInput::decl(&config),
         InboxActionReceipt::decl(&config),

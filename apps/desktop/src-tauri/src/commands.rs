@@ -7,10 +7,11 @@ use crate::contracts::{
     AiInteractionProfileUpdate, AttemptGradeStatus, BackgroundEventView, CaptureWorkspaceInput,
     CaptureWorkspaceReceipt, CommandError, CredentialInput, DatabasePathInput,
     DiagnosticExportInput, FullDeleteInput, FullDeleteReceiptView, FullDeleteScopePreview,
-    GoalEditorInput, GoalMutationReceipt, GoalWorkspaceSnapshot, GradeQueueReceipt,
-    InboxActionInput, InboxActionReceipt, InboxPracticeDraft, InboxPracticeSubmitInput,
-    InboxPracticeSubmitReceipt, InboxWorkspaceItem, InboxWorkspaceQuery, LifecycleSnapshot,
-    MapWorkspaceQuery, MapWorkspaceSnapshot, NotificationReceipt, PracticeSubmitInput,
+    GenerateSuggestionsInput, GenerateSuggestionsReceipt, GoalEditorInput, GoalMutationReceipt,
+    GoalWorkspaceSnapshot, GradeQueueReceipt, InboxActionInput, InboxActionReceipt,
+    InboxPracticeDraft, InboxPracticeSubmitInput, InboxPracticeSubmitReceipt, InboxWorkspaceItem,
+    InboxWorkspaceQuery, LifecycleSnapshot, MapWorkspaceQuery, MapWorkspaceSnapshot,
+    NotificationReceipt, OverlayDecisionInput, OverlayDecisionReceipt, PracticeSubmitInput,
     PracticeSubmitReceipt, PracticeWorkspaceSnapshot, ProfileExportInput,
     ProfileMeasurementSubmitInput, ProfileSettingsUpdateInput, ProfileWorkspaceSnapshot,
     ReportFeedbackInput, ReportMutationReceipt, ReportsWorkspaceSnapshot, SettingsMutationReceipt,
@@ -384,6 +385,28 @@ pub fn act_on_inbox(
 ) -> Result<InboxActionReceipt, CommandError> {
     let receipt = state.act_on_inbox(input)?;
     emit_data_changed(&app, &["inbox"], "inbox_action")?;
+    Ok(receipt)
+}
+
+#[tauri::command(async)]
+pub fn decide_overlay(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    input: OverlayDecisionInput,
+) -> Result<OverlayDecisionReceipt, CommandError> {
+    let receipt = state.decide_overlay(input)?;
+    emit_data_changed(&app, &["inbox", "today", "map"], "overlay_decision")?;
+    Ok(receipt)
+}
+
+#[tauri::command(async)]
+pub fn generate_suggestions(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    input: GenerateSuggestionsInput,
+) -> Result<GenerateSuggestionsReceipt, CommandError> {
+    let receipt = state.generate_suggestions(input)?;
+    emit_data_changed(&app, &["inbox"], "suggestions_generated")?;
     Ok(receipt)
 }
 

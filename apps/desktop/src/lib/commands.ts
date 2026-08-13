@@ -21,6 +21,8 @@ import type {
   InboxPracticeSubmitReceipt,
   InboxWorkspaceItem,
   InboxWorkspaceQuery,
+  OverlayDecisionInput,
+  OverlayDecisionReceipt,
   MapWorkspaceQuery,
   MapWorkspaceSnapshot,
   PackSwitchReceipt,
@@ -40,6 +42,8 @@ import type {
   FullDeleteInput,
   FullDeleteReceiptView,
   FullDeleteScopePreview,
+  GenerateSuggestionsInput,
+  GenerateSuggestionsReceipt,
   LifecycleSnapshot,
   StatusSnapshot,
   TodaySnapshot,
@@ -241,6 +245,20 @@ export async function getInboxWorkspace(query: InboxWorkspaceQuery): Promise<Inb
 export async function actOnInbox(input: InboxActionInput): Promise<InboxActionReceipt> {
   if (isBrowserPreview()) return Promise.resolve(previewActOnInbox(input));
   return invoke<InboxActionReceipt>("act_on_inbox", { input });
+}
+
+export async function decideOverlay(input: OverlayDecisionInput): Promise<OverlayDecisionReceipt> {
+  if (isBrowserPreview()) {
+    if (input.action === "accept") return { status: "installed", message: "个人知识层已安全安装。", version: 1 };
+    if (input.action === "rollback") return { status: "rolled_back", message: "已撤销这一版个人知识；原始资料仍保留。", version: null };
+    return { status: "rejected", message: "已拒绝候选；原始资料仍保留。", version: null };
+  }
+  return invoke<OverlayDecisionReceipt>("decide_overlay", { input });
+}
+
+export async function generateSuggestions(input: GenerateSuggestionsInput): Promise<GenerateSuggestionsReceipt> {
+  if (isBrowserPreview()) return { status: "pending_user_review", count: 1, message: "找到 1 条证据绑定候选，请逐条确认。" };
+  return invoke<GenerateSuggestionsReceipt>("generate_suggestions", { input });
 }
 
 export async function draftInboxPractice(captureId: string): Promise<InboxPracticeDraft> {
