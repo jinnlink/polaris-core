@@ -1,6 +1,8 @@
 # 票队列（单票制）
 
-状态：**P17G In Progress；P17F 已提交（`887341f`）；P17E 已提交（`2445190`）；P17D 已提交（`4a1fe2c`）；P17C 已提交（`dbd3682`）；P17B 已提交（`a458b5b`）；P17A 已提交（`333f3bf`）；P16F 已提交（`af7de94`）；P16E 已提交（`35fd61c`）；P16L 已提交（`62de660`）；P16K 已提交（`f398e51`）；P16J 已提交（`c4d0c51`）；P16I 已提交（`7cbbd0b`）；P16H 已提交（`81cd25f`）；P16G 已提交（`b558fae`）；P16G2 已提交（`2735169`）；P16G1 已提交（`825f8a7`）；P16D 已提交（`7a478cc`）；P16C 已提交（`7dc54f2`）；P16B 已提交（`60effc0`）；P16A 已提交（`fbcad7b`）；P15B 已提交（`a9fd13b`）**。任何时刻只允许 1 张票 In Progress。
+> **当前有效状态（2026-08-13）：P12F 已提交（`d20158b`）；P17G Deferred 且未完成。** 当前机器不重启。
+
+状态：**P12F 已提交（`d20158b`）；P17G Deferred 且未完成；P17F 已提交（`887341f`）；P17E 已提交（`2445190`）；P17D 已提交（`4a1fe2c`）；P17C 已提交（`dbd3682`）；P17B 已提交（`a458b5b`）；P17A 已提交（`333f3bf`）；P16F 已提交（`af7de94`）；P16E 已提交（`35fd61c`）；P16L 已提交（`62de660`）；P16K 已提交（`f398e51`）；P16J 已提交（`c4d0c51`）；P16I 已提交（`7cbbd0b`）；P16H 已提交（`81cd25f`）；P16G 已提交（`b558fae`）；P16G2 已提交（`2735169`）；P16G1 已提交（`825f8a7`）；P16D 已提交（`7a478cc`）；P16C 已提交（`7dc54f2`）；P16B 已提交（`60effc0`）；P16A 已提交（`fbcad7b`）；P15B 已提交（`a9fd13b`）**。当前没有 In Progress 票。
 P12F 已登记为正式排队票；P12G 是 `Learned` 仓库外部依赖门，必须另开该仓库正式票并取得写权限，不能从本队列直接认领。
 P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject\Learned\rust-mastery-lab\docs\ENHANCEMENT_ROADMAP.md`）。
 **Phase 7+ 产品形态轴线见 `docs/PRODUCT_ROADMAP.md`**（轴 6 学习者形态 / 轴 7 多 Pack 承载 / 轴 8 工程演进 / 轴 9 信任面板）。
@@ -137,11 +139,11 @@ P03E+ 优先级见 `docs/ENHANCEMENT_ROADMAP.md`（月度对齐见 `C:\MyProject
 - [x] **P17D 学习工作台**（`TICKET_P17D_LEARNING_WORKBENCH.md`）← 已提交（`4a1fe2c`）；依赖 P17B；Practice、Capture、Inbox、Practice Bridge 与乐观评分修正；服务环节：验证真懂 → 针对性补缺
 - [x] **P17E 画像与治理工作区**（`TICKET_P17E_PROFILE_GOVERNANCE_WORKSPACE.md`）← 已实现、通过验收并提交（`2445190`）；依赖 P17C/P17D；Profile、Goals、Mirror、Reports、Trust、Privacy 与 Settings；服务环节：全环节（学习者知情与控制）
 - [x] **P17F 桌面生命周期**（`TICKET_P17F_DESKTOP_LIFECYCLE.md`）← 已实现、通过验收并提交（`887341f`）；依赖 P17E；后台任务、数据库解析、启动项、密钥、托盘退出、崩溃恢复和日志导出；服务环节：全环节（本地可靠性）
-- [ ] **P17G Windows 发布硬化**（`TICKET_P17G_WINDOWS_RELEASE_HARDENING.md`）← **In Progress：本地实现与自动化基线全绿，待生产签名 workflow 和干净 Windows VM transcript**；依赖 P17F；无障碍、性能、视觉回归、NSIS、签名更新和 GitHub Releases CI；服务环节：全环节（公开发布）
+- [ ] **P17G Windows 发布硬化**（`TICKET_P17G_WINDOWS_RELEASE_HARDENING.md`）← **Deferred（未完成）：生产签名暂不配置；用户裁决当前机器不重启，Windows Sandbox smoke 延后**；依赖 P17F；无障碍、性能、视觉回归、NSIS、签名更新和 GitHub Releases CI；服务环节：全环节（公开发布）
 
 ## Phase 18 — Overlay、跨仓桥接与真实验收
 
-- [ ] **P12F Concept Suggestion + Overlay Pack**（`TICKET_P12F_CONCEPT_OVERLAY_PACK.md`）← 依赖 P17G；从 Capture 提议带 provenance 的概念/边/图式，人工接受后写可回滚 overlay pack，绝不直接修改 mastery；服务环节：定位模糊 → 针对性补缺
+- [x] **P12F Concept Suggestion + Overlay Pack**（`TICKET_P12F_CONCEPT_OVERLAY_PACK.md`）← **已实现、通过验收并提交（`d20158b`）；P17G 仍未完成**；从 Capture 提议带 provenance 的概念/边/图式，人工接受后写可回滚 overlay pack，绝不直接修改 mastery；服务环节：定位模糊 → 针对性补缺
 
 > **P12G 外部依赖门**：P12F 完成后，在 `C:\MyProject\Learned\rust-mastery-lab` 另开“Coursebook ↔ Polaris”正式票并取得该仓库写权限；不得由本仓库执行 AI 直接修改冻结仓库，也不得复活 Aura。P12G 完成前禁止认领 P18A。
 

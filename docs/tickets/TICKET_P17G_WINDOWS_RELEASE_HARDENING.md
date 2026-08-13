@@ -1,6 +1,6 @@
 # P17G Windows 发布硬化
 
-状态：In Progress；依赖 P17F。
+状态：Deferred（未完成；2026-08-13 用户裁决当前机器不重启，先推进 P12F）；依赖 P17F。
 
 服务主命题：全环节（公开发布）。
 
@@ -66,7 +66,14 @@
 
 - 尚未在 GitHub 受保护环境使用生产签名密钥运行 release job，因此不能把本地测试签名描述为生产签名。
 - 当前机器不是一次性干净 Windows VM；安装、已有数据库升级、两种卸载语义和失败更新回滚脚本尚未在干净 VM 留下真实 transcript。
-- 建议下一步：提交并推送本票实现，先观察 PR 无 secret 路径；配置受保护环境后运行 signed draft；最后在一次性 Windows 10/11 x64 VM 执行两份 smoke 脚本并把 transcript 回填本票。以上结果齐全前，P17G 保持 `In Progress`。
+- 恢复本票后建议：先观察 PR 无 secret 路径；取得用户授权并配置受保护环境后运行 signed draft；最后在一次性 Windows 10/11 x64 VM 执行两份 smoke 脚本并回填 transcript。以上结果齐全前，P17G 保持 `Deferred` 且不视为完成。
+
+### 用户裁决（2026-08-13）
+
+- 用户决定暂不配置生产 updater 签名密钥。
+- 禁止后续执行 AI 自行生成长期生产私钥、写入本机凭据存储或上传 GitHub Secret；恢复该步骤必须再次取得用户明确授权。
+- 开发构建、无签名安装包与本地测试签名继续保持“自动更新禁用”语义，不得描述为生产发布。
+- P17G 标记为 `Deferred` 且不视为完成；生产签名 Draft Release 与一次性 Windows 10/11 VM transcript 延后。用户已明确裁决允许先开发 P12F。
 
 ### 回滚方式
 
@@ -76,7 +83,7 @@
 
 ## AI 续跑复验记录（2026-08-13）
 
-- 当前状态：本地实现、交付完整性审计与可在本机执行的验证门均已完成；P17G 仍保持 In Progress，等待生产签名环境和干净 Windows 10/11 x64 VM 留痕。
+- 当前状态：本地实现、交付完整性审计与可在本机执行的验证门均已完成；P17G 为 Deferred 且未完成，等待恢复生产签名环境和干净 Windows 10/11 x64 VM 留痕。
 - 审计结论：PR job 不挂 release environment，正常不读取签名 secret；手动 release job 挂 `windows-release` 受保护环境并在构建前检查私钥、密码和公钥，缺一即失败。更新 UI 只在签名 release 构建启用，展示版本与说明后才允许用户确认安装。
 - `pnpm lint`：通过，0 warning。
 - `pnpm typecheck`：通过。
